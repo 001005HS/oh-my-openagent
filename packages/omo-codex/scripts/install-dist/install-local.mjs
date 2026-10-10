@@ -19396,6 +19396,7 @@ var nonNegativeInteger = number2().int().nonnegative();
 var OmoComputerSettingsLayerSchema = object({
   enabled: boolean2().describe("Experimental: register the computer tool in OmO Native sessions (default: on where the host is supported; false leaves it unregistered)"),
   display: string2().min(1),
+  showCursor: boolean2().describe("Show the display-only macOS cursor overlay (default: true; false hides it)"),
   max_width: positiveInteger,
   max_height: positiveInteger,
   screenshot_max_bytes: positiveInteger,
