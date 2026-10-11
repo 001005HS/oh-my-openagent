@@ -8,6 +8,7 @@ use senpi_desktop_core::backend::{AxBackend, Backend, DeliveryMode, PointerEvent
 use senpi_desktop_core::error::{CoreResult, DesktopError};
 use senpi_desktop_core::frame::FrameGeometry;
 use senpi_desktop_core::keys::KeyName;
+use senpi_desktop_core::menus::MenuItem;
 use senpi_desktop_core::types::{
     CaptureCaps, DesktopCapabilities, DesktopDisplay, DesktopPoint, DesktopWindow, DisplaySelector,
     FrontWindow, Target,
@@ -157,6 +158,22 @@ impl Backend for Win32Backend {
 
     fn ax(&mut self) -> Option<&mut dyn AxBackend> {
         Some(&mut self.ax)
+    }
+
+    fn menu_items(&mut self, window: &DesktopWindow, path: &[String]) -> CoreResult<Vec<MenuItem>> {
+        self.ax.menu_items(window, path, self.integrity)
+    }
+
+    /// Both admitted delivery modes invoke the exact window's command directly,
+    /// without activation or keyboard input. Foreground admission is core's job.
+    fn menu_select(
+        &mut self,
+        window: &DesktopWindow,
+        path: &[String],
+        _delivery: DeliveryMode,
+        check_stop: &dyn Fn() -> CoreResult<()>,
+    ) -> CoreResult<()> {
+        self.ax.menu_select(window, path, self.integrity, check_stop)
     }
 
     /// Without input nothing was ever pressed, so nothing is held.

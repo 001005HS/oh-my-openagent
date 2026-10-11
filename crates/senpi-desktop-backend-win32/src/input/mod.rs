@@ -49,6 +49,14 @@ pub(crate) use foreground::raise_window;
 #[cfg(target_os = "windows")]
 pub(crate) use native::foreground_window_id;
 
+#[cfg(target_os = "windows")]
+pub(crate) fn menu_target(
+    id: &str,
+    integrity: crate::integrity::IntegrityRid,
+) -> senpi_desktop_core::error::CoreResult<windows_sys::Win32::Foundation::HWND> {
+    native::Window::target(id, integrity).map(native::Window::hwnd)
+}
+
 #[cfg(test)]
 mod tests;
 
