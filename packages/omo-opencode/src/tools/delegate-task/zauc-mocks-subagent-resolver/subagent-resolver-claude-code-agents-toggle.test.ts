@@ -85,10 +85,6 @@ describe("resolveSubagentExecution claude_code.agents toggle", () => {
       hasProviderModelsCache: () => readProviderModelsCacheMock() !== null,
       _resetMemCacheForTesting: () => {},
     }))
-    mock.module("../../../features/claude-code-agent-loader/loader", () => ({
-      loadUserAgents: loadUserAgentsMock,
-      loadProjectAgents: loadProjectAgentsMock,
-    }))
     mock.module("../../../features/claude-code-agent-loader", () => ({
       loadUserAgents: loadUserAgentsMock,
       loadProjectAgents: loadProjectAgentsMock,
