@@ -6,8 +6,21 @@ import { loginDevice } from "./device-flow"
 import { createCredentialStore } from "./keystore"
 import { BrowserUnavailable, loginLoopback } from "./loopback"
 import { type ChooseDevice, type ListedDevice, serviceOrigin, SignInError } from "./protocol"
-import { createSession } from "./session"
+import { createSession, type Session } from "./session"
 import { terminalText } from "./terminal-text"
+
+type Opener = (url: string) => Promise<boolean>
+export type ServiceAuthDeps = { readonly open?: Opener; readonly store?: typeof createCredentialStore }
+
+// Probe the service before anything user-visible (a browser tab, a device code) so an
+// unreachable or not-yet-launched service fails at once instead of after a dead page and a wait.
+export async function ensureServiceAvailable(session: Pick<Session, "request">): Promise<void> {
+  try {
+    await session.request("/v1/health", { method: "GET" })
+  } catch {
+    throw new SignInError("OmO accounts aren't available yet.")
+  }
+}
 
 type Options = { readonly api?: string; readonly accounts?: string; readonly device?: boolean; readonly browser?: boolean }
 
@@ -29,14 +42,14 @@ const chooseDevice: ChooseDevice = async devices => {
   return agreed === true ? chosen : null
 }
 
-async function run(action: "login" | "logout" | "whoami", options: Options): Promise<void> {
+async function run(action: "login" | "logout" | "whoami", options: Options, deps: ServiceAuthDeps): Promise<void> {
   const controller = new AbortController()
   const cancel = () => controller.abort()
   process.once("SIGINT", cancel)
   process.once("SIGTERM", cancel)
   try {
     const api = serviceOrigin(options.api ?? process.env.OMO_SERVICE_API_URL ?? "https://api.omo.dev")
-    const store = createCredentialStore(api)
+    const store = (deps.store ?? createCredentialStore)(api)
     const session = createSession({ api, store, signal: controller.signal })
     if (action === "logout") {
       const revoked = await session.logout()
@@ -50,13 +63,14 @@ async function run(action: "login" | "logout" | "whoami", options: Options): Pro
       console.log(saved ? `Signed in to ${api} as ${terminalText(saved.device.name)}.` : "Not signed in.")
       return
     }
+    await ensureServiceAvailable(session)
     const name = deviceName()
     const platform = devicePlatform()
     if (!options.device && options.browser !== false) {
       try {
         await loginLoopback(session, {
           accounts: serviceOrigin(options.accounts ?? process.env.OMO_SERVICE_ACCOUNTS_URL ?? "https://accounts.omo.dev"),
-          name, platform, open: openSignInBrowser, chooseDevice,
+          name, platform, open: deps.open ?? openSignInBrowser, chooseDevice,
         })
         console.log("Signed in to OmO.")
         return
@@ -83,23 +97,23 @@ async function run(action: "login" | "logout" | "whoami", options: Options): Pro
   }
 }
 
-export function configureServiceAuthCommands(program: Command): void {
+export function configureServiceAuthCommands(program: Command, deps: ServiceAuthDeps = {}): void {
   program.command("login").description("Sign in to OmO using the OS credential store")
     .option("--device", "Use a device code instead of a browser callback")
     .option("--no-browser", "Sign in by device code without opening a browser")
     .option("--api <url>", "OmO API origin (or OMO_SERVICE_API_URL)")
     .option("--accounts <url>", "OmO accounts origin (or OMO_SERVICE_ACCOUNTS_URL)")
-    .action((options: Options) => run("login", options))
+    .action((options: Options) => run("login", options, deps))
   for (const action of ["logout", "whoami"] as const) {
     program.command(action)
       .description(action === "logout" ? "Remove stored OmO credentials and device keys" : "Show the current OmO device sign-in")
       .option("--api <url>", "OmO API origin (or OMO_SERVICE_API_URL)")
-      .action((options: Options) => run(action, options))
+      .action((options: Options) => run(action, options, deps))
   }
 }
 
-export async function runServiceAuthCommand(args: readonly string[]): Promise<void> {
+export async function runServiceAuthCommand(args: readonly string[], deps: ServiceAuthDeps = {}): Promise<void> {
   const program = new Command("omo")
-  configureServiceAuthCommands(program)
+  configureServiceAuthCommands(program, deps)
   await program.parseAsync([...args], { from: "user" })
 }
