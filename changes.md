@@ -31,7 +31,7 @@ The macOS backend now implements the `Backend` menu hooks over AXUIElement, so `
 
 ## 2026-10-11 - Adopt senpi 2026.10.11
 
-Every `@code-yeongyu/senpi` pin moves from 2026.10.10-12 to 2026.10.11: the root devDependency, `omo-native` and its provider map comment, the `omo-senpi` and `senpi-task` peer/dev pins with their `senpi-tui` and `senpi-ai` aliases, the pin and package-shape assertions, and the coverage test's comment. `bun.lock` resolves all 17 senpi entries at 2026.10.11 (refreshed with `bun install --no-cache`), and the committed Senpi plugin and service-auth bundles are regenerated on Linux (node 24, bun 1.4.2) against it.
+Every `@code-yeongyu/senpi` pin moves from 2026.10.10-12 to 2026.10.11: the root devDependency, `omo-native` and its provider map comment, the `omo-senpi` and `senpi-task` peer/dev pins with their `senpi-tui` and `senpi-ai` aliases, the pin and package-shape assertions, and the coverage test's comment. `bun.lock` resolves all 17 senpi entries at 2026.10.11 (refreshed with `bun install --no-cache`), and the committed Senpi plugin bundle (`omo.js`, whose embedded pin moves) and the service-auth bundle were rebuilt on Linux (node 24, bun 1.4.2) against it: `build-extension.mjs --check`, `build-install.mjs --check` and `build-service-auth.ts --check` all pass with no further byte change.
 
 ## 2026-10-10 - Adopt senpi 2026.10.10-12; task shards opt into the caller's lifetime
 
