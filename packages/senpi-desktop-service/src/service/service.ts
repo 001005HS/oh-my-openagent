@@ -8,6 +8,8 @@ import {
 	type StopPathStatus,
 } from "@oh-my-opencode/senpi-desktop-protocol";
 import { type ChildFactory, engineChildFactory } from "./child";
+import { ControlGrants } from "./control-grants";
+import { deadline } from "./deadline";
 import { type Listener, NotificationHub, type Unsubscribe } from "./notifications";
 import { isDesktopCapabilities, isStopPathStatus, parseHello, parseSessionOpened } from "./parse";
 import { type CallOptions, DesktopEngineRpcError, DesktopServiceError, RpcClient } from "./rpc-client";
@@ -65,9 +67,7 @@ export class DesktopService {
 	#connection: Connection | undefined;
 	#desired: DesiredSession | undefined;
 	#lastStopPath: StopPathStatus | undefined;
-	/** `control.grant` requests sent, and how many of them a successful `control.revoke` has covered. */
-	#grantsSent = 0;
-	#grantsRevoked = 0;
+	readonly #grants = new ControlGrants();
 
 	constructor(options: DesktopServiceOptions = {}) {
 		this.#createChild = options.createChild ?? engineChildFactory();
@@ -84,6 +84,10 @@ export class DesktopService {
 		return this.#hub.onStopPathChange(listener);
 	}
 
+	/**
+	 * Failures no caller awaits: a malformed notification, a failed heartbeat or best-effort revoke, and
+	 * anything passed to `reportError`. A host must subscribe, or these are lost.
+	 */
 	onError(listener: Listener<Error>): Unsubscribe {
 		return this.#hub.onError(listener);
 	}
@@ -113,17 +117,15 @@ export class DesktopService {
 
 	async call(method: EngineMethod, params: unknown, options: CallOptions = {}): Promise<unknown> {
 		const connection = await this.#live();
-		// Counted before the request is sent: a grant whose reply is lost to a cancel may still be live.
-		if (method === "control.grant") this.#grantsSent += 1;
-		const covers = this.#grantsSent;
-		const result = await connection.rpc.request(method, params, options);
-		if (method === "control.revoke") this.#revoked(covers);
-		return result;
+		const request = () => connection.rpc.request(method, params, options);
+		if (method === "control.grant") return this.#grants.grant(request, options.signal?.aborted === true);
+		if (method === "control.revoke") return this.#grants.revoke(request);
+		return request();
 	}
 
-	/** A revoke that succeeded covers every grant sent before it; one that failed or was dropped covers none. */
-	#revoked(covers: number): void {
-		this.#grantsRevoked = Math.max(this.#grantsRevoked, covers);
+	/** Reports a failure nobody awaits (a best-effort revoke) to `onError` listeners instead of dropping it. */
+	reportError(error: unknown): void {
+		this.#hub.emitError(error instanceof Error ? error : new Error(String(error)));
 	}
 
 	/**
@@ -136,12 +138,9 @@ export class DesktopService {
 	 */
 	revokeControl(): Promise<void> {
 		const connection = this.#connection;
-		if (connection === undefined || !connection.rpc.alive || this.#grantsSent <= this.#grantsRevoked) {
-			return Promise.resolve();
-		}
-		const covers = this.#grantsSent;
-		return connection.rpc.request("control.revoke", {}, { timeoutMs: REVOKE_TIMEOUT_MS }).then(
-			() => this.#revoked(covers),
+		if (connection === undefined || !connection.rpc.alive || !this.#grants.possiblyLive) return Promise.resolve();
+		return this.#grants.revoke(() => connection.rpc.request("control.revoke", {}, { timeoutMs: REVOKE_TIMEOUT_MS })).then(
+			() => undefined,
 			(error: unknown) => {
 				if (error instanceof DesktopServiceError || error instanceof DesktopEngineRpcError) {
 					this.#hub.emitError(error);
@@ -297,20 +296,4 @@ export class DesktopService {
 
 function malformed(method: string): DesktopServiceError {
 	return new DesktopServiceError("Internal", `desktop engine sent a malformed ${method} result`);
-}
-
-function deadline<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
-	return new Promise((resolve, reject) => {
-		const timer = setTimeout(() => reject(new DesktopServiceError("Timeout", message)), ms);
-		work.then(
-			(value) => {
-				clearTimeout(timer);
-				resolve(value);
-			},
-			(error: unknown) => {
-				clearTimeout(timer);
-				reject(error);
-			},
-		);
-	});
 }

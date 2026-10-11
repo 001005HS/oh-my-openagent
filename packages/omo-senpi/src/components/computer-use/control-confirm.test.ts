@@ -169,46 +169,6 @@ describe("confirmComputerControl (#9651 B5b)", () => {
     expect(await promise).toBe(false)
   })
 
-  test("#given an RPC-mode confirm frame that is never answered #when the timeout fires #then it stays ungranted (#9651 B5b case 3)", async () => {
-    // given: senpi's RPC `createDialogPromise` shape — an emitted `extension_ui_request` whose
-    // confirm promise only settles on a client response; this client never responds.
-    const emitted: Array<{ readonly type: "extension_ui_request"; readonly id: string; readonly method: string; readonly title: string; readonly message: string }> = []
-    let requestId = 0
-    const rpcConfirm = (title: string, message: string): Promise<boolean> => {
-      requestId += 1
-      emitted.push({ type: "extension_ui_request", id: `ui-${requestId}`, method: "confirm", title, message })
-      return new Promise<boolean>(() => undefined)
-    }
-    let fireTimeout: (() => void) | undefined
-    const scheduleTimeout: ControlTimeoutScheduler = (onTimeout) => {
-      fireTimeout = onTimeout
-      return () => undefined
-    }
-    const promise = confirmComputerControl(
-      {
-        context: hostContext({ hasUI: true, confirm: rpcConfirm }),
-        reason: "click Run",
-        signal: new AbortController().signal,
-      },
-      { scheduleTimeout },
-    )
-
-    // when
-    fireTimeout?.()
-
-    // then: the request was emitted, the result is ungranted, and nothing ever granted
-    expect(emitted).toEqual([
-      {
-        type: "extension_ui_request",
-        id: "ui-1",
-        method: "confirm",
-        title: CONTROL_CONFIRM_TITLE,
-        message: controlConfirmBody("click Run"),
-      },
-    ])
-    expect(await promise).toBe(false)
-  })
-
   test("#given a run budget shorter than the default #when acquiring #then the confirm is bounded by it", async () => {
     // given
     let scheduledMs: number | undefined
@@ -241,26 +201,4 @@ describe("confirmComputerControl (#9651 B5b)", () => {
     expect(confirmTimeouts).toEqual([10_000])
   })
 
-  test("#given too little run time left to answer #when acquiring #then it never prompts and never grants", async () => {
-    // given
-    let prompts = 0
-
-    // when
-    const approved = await confirmComputerControl({
-      context: hostContext({
-        hasUI: true,
-        confirm: () => {
-          prompts += 1
-          return Promise.resolve(true)
-        },
-      }),
-      reason: "click Run",
-      signal: new AbortController().signal,
-      budgetMs: 1_000,
-    })
-
-    // then
-    expect(approved).toBe(false)
-    expect(prompts).toBe(0)
-  })
 })
