@@ -36,6 +36,8 @@ mod foreground;
 #[cfg(target_os = "windows")]
 mod global;
 #[cfg(target_os = "windows")]
+mod menu_guard;
+#[cfg(target_os = "windows")]
 mod native;
 #[cfg(target_os = "windows")]
 mod system;
@@ -48,6 +50,9 @@ pub(crate) use dispatch::{cursor_position, warp_cursor, Win32Input};
 pub(crate) use foreground::raise_window;
 #[cfg(target_os = "windows")]
 pub(crate) use native::foreground_window_id;
+
+#[cfg(target_os = "windows")]
+pub(crate) use menu_guard::menu_pattern_safe;
 
 #[cfg(target_os = "windows")]
 pub(crate) fn menu_target(

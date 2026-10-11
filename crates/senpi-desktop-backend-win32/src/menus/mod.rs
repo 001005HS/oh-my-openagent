@@ -2,6 +2,7 @@
 //! and command dispatch. Matching and refusal policy belong to desktop core.
 
 pub(crate) mod native;
+pub(crate) mod pattern_guard;
 
 use senpi_desktop_core::error::{CoreResult, DesktopError};
 

@@ -127,6 +127,7 @@ impl<'a> UiaMenus<'a> {
             ));
         }
         self.owns(&current.element)?;
+        self.target.pattern_safe()?;
         self.target.attached(0)?;
         (self.stop)()?;
         command.run()

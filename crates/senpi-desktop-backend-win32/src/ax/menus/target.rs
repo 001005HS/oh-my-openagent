@@ -74,4 +74,8 @@ impl Target {
         }
         Ok(())
     }
+
+    pub fn pattern_safe(&self) -> CoreResult<()> {
+        crate::input::menu_pattern_safe(&self.hwnd.addr().to_string(), self.integrity)
+    }
 }
