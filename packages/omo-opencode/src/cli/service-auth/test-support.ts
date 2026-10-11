@@ -23,13 +23,25 @@ export async function temporaryHome() {
   return home
 }
 
-export function fakeApi(handler: (request: Request) => Response | Promise<Response>) {
-  const noProxy = process.env.NO_PROXY
-  process.env.NO_PROXY = "127.0.0.1"
+let noProxyHolders = 0
+let noProxyBefore: string | undefined
+
+function holdNoProxy() {
+  if (noProxyHolders === 0) {
+    noProxyBefore = process.env.NO_PROXY
+    process.env.NO_PROXY = "127.0.0.1"
+  }
+  noProxyHolders += 1
   onTestFinished(() => {
-    if (noProxy === undefined) delete process.env.NO_PROXY
-    else process.env.NO_PROXY = noProxy
+    noProxyHolders -= 1
+    if (noProxyHolders > 0) return
+    if (noProxyBefore === undefined) delete process.env.NO_PROXY
+    else process.env.NO_PROXY = noProxyBefore
   })
+}
+
+export function fakeApi(handler: (request: Request) => Response | Promise<Response>) {
+  holdNoProxy()
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: handler })
   onTestFinished(() => server.stop(true))
   return server.url.origin
