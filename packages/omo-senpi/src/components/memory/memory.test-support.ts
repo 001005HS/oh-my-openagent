@@ -1,6 +1,21 @@
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import type { OmoMemorySettings } from "@oh-my-opencode/omo-config-core"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
+
+// Every memory test that registers the component without its own `env` falls through to
+// process.env, and memory-core resolves the default root from os.homedir(), which Bun fixes at
+// process start - the root harness's hermetic HOME does not reach it. Component registration
+// sweeps the resolved memory root (transient-sweep.ts), so that fallthrough must land in a
+// per-process temp dir and never in the developer's real ~/.omo/memory. Unconditional on purpose:
+// no test here legitimately needs the real root, and a shell-exported OMO_MEMORY_HOME is real.
+// The directory lives for the whole process, so it goes in the root test preload's process-scoped
+// directory, which is removed with the run (#9766).
+const processTempDir = process.env.OMO_TEST_PROCESS_TMPDIR ?? tmpdir()
+process.env.OMO_MEMORY_HOME = join(mkdtempSync(join(processTempDir, "omo-memory-test-home-")), "memory")
 import type { ComponentContext } from "../../extension/types"
 import type { SenpiOmoConfigResult } from "../config-resolution"
 
@@ -8,6 +23,7 @@ export type SessionEntryFixture = {
   readonly type: string
   readonly customType?: string
   readonly data?: unknown
+  readonly timestamp?: string
 }
 
 export class MemoryFakeExtensionAPI extends FakeExtensionAPI {
@@ -27,7 +43,6 @@ export function memorySettings(overrides: Partial<OmoMemorySettings> = {}): OmoM
   return {
     enabled: true,
     agent: "auto",
-    tool_exposure: "direct",
     reflection: {
       enabled: true,
       trigger: { step_count: 25, on_compaction: true },
@@ -51,7 +66,8 @@ export function memorySettings(overrides: Partial<OmoMemorySettings> = {}): OmoM
     write_notice: { enabled: true },
     sync: { enabled: true },
     search: { enabled: true },
-    recall: { enabled: true, max_items: 2 },
+    recall: { enabled: true, max_items: 2, category: "quick", event_caps: { tool_args: 400, result_head: 600, assistant: 1500, prompt: 4000 }, sidecar_max_tokens: 48000, max_concurrent_wakes: 2, tool_budget: 8, query_expansion: false },
+    projection: { max_entries_per_directory: 40, max_bytes: 24576 },
     compile_warn_tokens: 30000,
     agents: {},
     ...overrides,
@@ -81,12 +97,15 @@ export function sessionContext(options: {
   readonly entries?: readonly SessionEntryFixture[]
   readonly notifications?: Array<{ message: string; level: string }>
   readonly sessionId?: string
+  /** The session's own working directory, as senpi's ExtensionContext reports it. */
+  readonly cwd?: string
 } = {}): {
   readonly sessionManager: {
     getEntries(): readonly SessionEntryFixture[]
     getSessionId(): string
   }
   readonly ui: { notify(message: string, level: string): void }
+  readonly cwd?: string
 } {
   const notifications = options.notifications ?? []
   return {
@@ -95,5 +114,6 @@ export function sessionContext(options: {
       getSessionId: () => options.sessionId ?? "session-1",
     },
     ui: { notify: (message, level) => notifications.push({ message, level }) },
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
   }
 }
