@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **OpenCode task delegation and team creation now honor `claude_code.agents: false`, so disabled Claude Code agents fail fast instead of being selected.** Thanks to @cynkai. ([#8744](https://github.com/code-yeongyu/oh-my-openagent/issues/8744), [#8802](https://github.com/code-yeongyu/oh-my-openagent/pull/8802))
 
+**Delegated OpenCode sessions show their task category in the title.** Background, synchronous and fallback-created child sessions prefix the category while keeping the description and agent suffix; tasks without a category keep their existing title. ([#6854](https://github.com/code-yeongyu/oh-my-openagent/issues/6854), [#7256](https://github.com/code-yeongyu/oh-my-openagent/pull/7256))
+
 ## [5.1.30] - 2026-10-11
 
 **`ulw-research` reads sources in your own browser instead of fetching them.** The Phase 0 brief now decides `Collection: search-only | browser` by one rule (search-only only when a result snippet settles every axis), and the web workers read every candidate through the `browser` skill's attached engine: one named session per worker, one tab per source, several tabs side by side while comparing, with a full-page screenshot per top source. `webfetch` is reserved for raw files, hosts the browser cannot open go to `ultimate-browsing` with their provenance, and a team member's brief names the `browser` skill to read since members cannot carry `load_skills`. `ultimate-browsing` no longer presents itself as the research browsing lane, and the `browser` skill no longer sends plain page reading elsewhere. ([#9958](https://github.com/code-yeongyu/oh-my-openagent/issues/9958), [#9959](https://github.com/code-yeongyu/oh-my-openagent/pull/9959))
