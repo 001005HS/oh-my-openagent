@@ -67,7 +67,10 @@ struct Fixture {
     renamed: Cell<bool>,
     reads: Cell<usize>,
     rename_after_read: bool,
+    root_style: u32,
+    submenu_style: u32,
     dispatched: RefCell<Vec<(u32, usize)>>,
+    calls: RefCell<Vec<&'static str>>,
 }
 
 impl NativeMenu for Fixture {
@@ -119,6 +122,7 @@ impl NativeMenu for Fixture {
         })
     }
     fn attached(&self, _root: usize) -> CoreResult<()> {
+        self.calls.borrow_mut().push("attached");
         if self.detached.get() {
             Err(failed("detached"))
         } else {
@@ -126,6 +130,7 @@ impl NativeMenu for Fixture {
         }
     }
     fn count(&self, menu: usize) -> CoreResult<i32> {
+        self.calls.borrow_mut().push("count");
         Ok(if menu == 1 {
             1
         } else if self.changed_count.get() {
@@ -134,12 +139,13 @@ impl NativeMenu for Fixture {
             3
         })
     }
-    fn style(&self, _menu: usize) -> CoreResult<u32> {
+    fn style(&self, menu: usize) -> CoreResult<u32> {
         self.detached.set(self.change_at_style);
         self.changed_count.set(self.count_at_style);
-        Ok(0)
+        Ok(if menu == 1 { self.root_style } else { self.submenu_style })
     }
     fn dispatch(&self, _entry: Entry, message: u32, wparam: usize) -> CoreResult<()> {
+        self.calls.borrow_mut().push("dispatch");
         self.dispatched.borrow_mut().push((message, wparam));
         Ok(())
     }
@@ -216,6 +222,36 @@ fn changed_count_after_resolution_never_dispatches() {
     };
     assert!(native::select(&source, 1, &path(&["File", "Open"]), &|| Ok(())).is_err());
     assert!(source.dispatched.borrow().is_empty());
+}
+
+#[test]
+fn the_menu_bar_style_alone_selects_position_notification() {
+    let by_position = Fixture {
+        root_style: NOTIFY_BY_POSITION,
+        ..Fixture::default()
+    };
+    native::select(&by_position, 1, &path(&["File", "Open"]), &|| Ok(())).unwrap();
+    assert_eq!(*by_position.dispatched.borrow(), vec![(0x126, 0)]);
+    let submenu_only = Fixture {
+        submenu_style: NOTIFY_BY_POSITION,
+        ..Fixture::default()
+    };
+    native::select(&submenu_only, 1, &path(&["File", "Open"]), &|| Ok(())).unwrap();
+    assert_eq!(*submenu_only.dispatched.borrow(), vec![(0x111, 42)]);
+}
+
+#[test]
+fn the_last_stop_check_runs_after_every_revalidation_and_right_before_dispatch() {
+    let source = Fixture::default();
+    let stop = || {
+        source.calls.borrow_mut().push("stop");
+        Ok(())
+    };
+    native::select(&source, 1, &path(&["File", "Open"]), &stop).unwrap();
+    let calls = source.calls.borrow();
+    assert_eq!(calls[calls.len() - 2..], ["stop", "dispatch"]);
+    let last_revalidation = calls.iter().rposition(|call| *call != "stop" && *call != "dispatch");
+    assert_eq!(last_revalidation, Some(calls.len() - 3));
 }
 
 #[test]

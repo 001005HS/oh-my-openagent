@@ -90,7 +90,9 @@ pub(crate) fn select(
     if original.chain != current.chain || original.item.path != current.item.path {
         return Err(failed("native menu changed; no command was dispatched"));
     }
-    let style = source.style(current.entry.menu)?;
+    // MNS_NOTIFYBYPOS is a menu-header style: only the menu bar's style decides
+    // how Windows reports a command from any of its submenus.
+    let style = source.style(root)?;
     let (message, wparam) = native_message(current.entry.id, current.entry.position, style)?;
     source.attached(root)?;
     for (entry, count) in &current.chain {

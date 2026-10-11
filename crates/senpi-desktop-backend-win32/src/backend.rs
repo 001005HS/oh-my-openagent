@@ -164,15 +164,19 @@ impl Backend for Win32Backend {
         self.ax.menu_items(window, path, self.integrity)
     }
 
-    /// Both admitted delivery modes invoke the exact window's command directly,
-    /// without activation or keyboard input. Foreground admission is core's job.
+    /// Both modes run the exact window's command without keyboard input;
+    /// foreground delivery raises the window first, which also admits UIA
+    /// providers that take foreground while they act.
     fn menu_select(
         &mut self,
         window: &DesktopWindow,
         path: &[String],
-        _delivery: DeliveryMode,
+        delivery: DeliveryMode,
         check_stop: &dyn Fn() -> CoreResult<()>,
     ) -> CoreResult<()> {
+        if delivery == DeliveryMode::Foreground {
+            self.raise_window(&window.id)?;
+        }
         self.ax.menu_select(window, path, self.integrity, check_stop)
     }
 

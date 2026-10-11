@@ -5,8 +5,9 @@ use senpi_desktop_core::error::CoreResult;
 use super::failed;
 use crate::delivery;
 
+/// Refuses a background UIA command on a provider that takes foreground while
+/// it acts; the caller exempts a window that already owns foreground.
 pub(crate) fn require_safe(
-    owns_foreground: bool,
     class: &str,
     image: Option<&str>,
     embedded_chromium: bool,
@@ -31,7 +32,7 @@ pub(crate) fn require_safe(
         || delivery::is_uwp_frame_class(class)
         || delivery::is_winui3_class(class)
         || class == "Microsoft.UI.Content.DesktopChildSiteBridge";
-    if !owns_foreground && activating {
+    if activating {
         return Err(failed(
             "this window can take foreground during UI Automation actions; no command was dispatched; explicitly focus the target first",
         ));
@@ -55,10 +56,9 @@ mod tests {
             ("Custom", Some("C:/Windows/SystemApps/Photos.exe"), false),
             ("Custom", None, true),
         ] {
-            assert!(require_safe(false, class, image, embedded).is_err());
-            assert!(require_safe(true, class, image, embedded).is_ok());
+            assert!(require_safe(class, image, embedded).is_err());
         }
-        assert!(require_safe(false, "Custom", None, false).is_ok());
-        assert!(require_safe(false, "Custom", Some("C:/notepad.exe/other.exe"), false).is_ok());
+        assert!(require_safe("Custom", None, false).is_ok());
+        assert!(require_safe("Custom", Some("C:/notepad.exe/other.exe"), false).is_ok());
     }
 }

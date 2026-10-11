@@ -52,4 +52,6 @@ impl Win32Ax {
 #[cfg(test)]
 mod live_tests;
 #[cfg(test)]
+mod live_uia_tests;
+#[cfg(test)]
 mod live_window;

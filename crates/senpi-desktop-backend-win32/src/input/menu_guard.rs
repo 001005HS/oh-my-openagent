@@ -44,7 +44,6 @@ pub(crate) fn menu_pattern_safe(id: &str, integrity: IntegrityRid) -> CoreResult
         return Ok(());
     }
     crate::menus::pattern_guard::require_safe(
-        false,
         &window.class_name(),
         image_name(window).as_deref(),
         window.has_chromium_descendant(),
