@@ -47,7 +47,8 @@ jobs:
     if: github.event_name != 'release' || (!github.event.release.draft && !github.event.release.prerelease && github.event.release.author.login != 'github-actions[bot]')
     # Calling jobs with uses cannot set continue-on-error; isolate failure here.
     continue-on-error: ${{ inputs.automatic == true }}
-    runs-on: ubuntu-latest
+    # Pin until this release/deploy path is proven on Ubuntu 26.04: #9983.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
