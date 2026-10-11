@@ -1,3 +1,7 @@
+## 2026-10-11 - Preserve category reasoning through background launch and resume (#8510)
+
+Category model overrides and `models` chains no longer inherit the builtin category's variant. MoerAI's fix in #9013 is retained, with the background reasoning-lowering correction identified by willowite: resolve canonical reasoning against the selected model before session creation or dispatch. Loaded configuration keeps the precedence `reasoning > reasoningEffort > variant`; a legacy variant supplies reasoning only when no higher-precedence field is set, and a retained `default` remains neutral. Builtin categories preserve their existing variants, including fallback rungs without a variant of their own. Background attempt projection preserves the current model's generation settings, so a resumed task retains effort-only reasoning as well. The regression matrix passes user settings through the config schema and observes session creation, sync and background dispatch, resumed dispatch, and the provider-facing `chat.params` hook. Thanks to pointfish6660 for the per-session evidence.
+
 ## 2026-10-11 - Side-panel wiring tests use fixed cwd fixtures (#9877)
 
 The side-panel wiring harness supplies a fixed host cwd instead of inheriting the checkout directory. Its session-facts/location test covers both a short path rendered in full and a deliberately long path with an exact leading-ellipsis result at 52 columns. Long checkout paths no longer fail the full-path assertion, and the complete wiring still guards location clipping. Production rendering is unchanged.
