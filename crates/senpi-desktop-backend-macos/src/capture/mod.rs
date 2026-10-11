@@ -46,9 +46,17 @@ impl MacCapture {
         self.shooter.permission_granted()
     }
 
+    /// The displays the session's selector names (all, for active).
     pub(crate) fn displays(&self) -> CoreResult<Vec<DesktopDisplay>> {
         self.require_permission()?;
         displays::enumerate(&self.selector)
+    }
+
+    /// Every monitor, whatever the session's selector, so a per-call display
+    /// target can name one the session does not capture by default.
+    pub(crate) fn all_displays(&self) -> CoreResult<Vec<DesktopDisplay>> {
+        self.require_permission()?;
+        displays::enumerate(&DisplaySelector::All)
     }
 
     pub(crate) fn windows(&self) -> CoreResult<Vec<DesktopWindow>> {

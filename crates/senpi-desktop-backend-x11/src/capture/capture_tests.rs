@@ -76,6 +76,8 @@ fn a_selected_display_is_captured_alone() {
 
     assert_eq!((image.width(), image.height()), (1280, 800));
     assert_eq!(image.get_pixel(0, 0).0, root_pixel(0x80, 0x18));
+    let listed: Vec<String> = capture.all_displays().unwrap().into_iter().map(|display| display.name).collect();
+    assert_eq!(listed, ["DP-1", "HDMI-1"], "a configured display still lists every monitor for per-call targets");
 }
 
 #[test]

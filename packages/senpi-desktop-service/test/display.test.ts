@@ -50,17 +50,19 @@ describe("display handles", { timeout: 30_000 }, () => {
 			]);
 		expect(log.requests.find((request) => request.method === "click")?.params)
 			.toEqual({ target: `display:${selector}`, x: 20, y: 10, opts: {} });
-		expect(log.requests.some((request) => request.method === "displays")).toBe(selector === "1");
+		expect(log.requests.some((request) => request.method === "displays")).toBe(false);
 	});
 
-	it("refuses an unknown id before capture", async () => {
+	it("leaves an id's validity to the engine, which refuses an unknown one at capture", async () => {
 		// Given
 		const { log, run } = await open();
 		// When
-		const result = run(`await desktop.display("missing");`);
+		const result = run(`const display = await desktop.display("DP-1"); await display.screenshot({ silent: true });`);
 		// Then
-		await expect(result).rejects.toThrow("Unknown display: missing");
-		expect(log.requests.some((request) => request.method === "capture")).toBe(false);
+		await expect(result).rejects.toThrow("no display DP-1");
+		expect(log.requests.some((request) => request.method === "displays")).toBe(false);
+		expect(log.requests.find((request) => request.method === "capture")?.params)
+			.toEqual(expect.objectContaining({ target: "display:DP-1" }));
 	});
 
 	it.each(["", null, 2])("refuses invalid selector %s", async (selector) => {

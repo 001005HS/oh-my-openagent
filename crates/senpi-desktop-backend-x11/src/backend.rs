@@ -129,7 +129,7 @@ impl<S: XServer + Send, I: InputServer + Send> Backend for X11Backend<S, I> {
     }
 
     fn displays(&mut self) -> CoreResult<Vec<DesktopDisplay>> {
-        self.capture.displays()
+        self.capture.all_displays()
     }
 
     fn windows(&mut self) -> CoreResult<Vec<DesktopWindow>> {

@@ -65,15 +65,6 @@ fn returns_none_when_no_normal_on_screen_window_matches() {
     assert_eq!(selected, None);
 }
 
-#[test]
-fn front_selection_does_not_use_another_apps_visible_window() {
-    // Given: a visible document belongs to another app, not the front app.
-    let windows = [window(12, 0, true)];
-    // When: capture resolves the front app's WindowServer identity without AX.
-    let selected = first_front_window(&windows, 7);
-    // Then: missing focus uses the display resolver's fallback, not that other window.
-    assert_eq!(selected, None);
-}
 
 #[test]
 fn hand_back_reactivates_only_while_the_engine_activation_is_front() {

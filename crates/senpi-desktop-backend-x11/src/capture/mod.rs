@@ -66,6 +66,15 @@ impl<S: XServer> X11Capture<S> {
         monitors::displays(&self.server, &self.selector)
     }
 
+    /// Every monitor, whatever the session's selector, so a per-call display
+    /// target can name one the session does not capture by default.
+    ///
+    /// # Errors
+    /// `CaptureFailed` when RandR fails.
+    pub fn all_displays(&self) -> CoreResult<Vec<DesktopDisplay>> {
+        monitors::displays(&self.server, &DisplaySelector::All)
+    }
+
     /// # Errors
     /// `CaptureFailed` when an EWMH atom cannot be interned.
     pub fn windows(&self) -> CoreResult<Vec<DesktopWindow>> {

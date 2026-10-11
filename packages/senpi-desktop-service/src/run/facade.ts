@@ -53,16 +53,11 @@ export function createDesktopFacade(scope: RunScope) {
 			method("displays", async ({ call }) =>
 				expectResult("displays", await call("displays", {}), listOf(isDisplay)),
 			),
-		/** Resolve a per-call display target without changing the session's default capture. */
+		/** A per-call display target, without changing the session's default capture; the engine refuses an unknown id at first use. */
 		display: (selector: string): Promise<InputTarget & { readonly id: string }> =>
-			method("display", async ({ call }) => {
+			method("display", async () => {
 				if (typeof selector !== "string" || selector.length === 0)
 					throw new ComputerRunError("assertion", "display requires an id, 'active', or 'all'");
-				if (selector !== "active" && selector !== "all") {
-					const displays = expectResult("displays", await call("displays", {}), listOf(isDisplay));
-					if (!displays.some((display) => display.id === selector))
-						throw new ComputerRunError("assertion", `Unknown display: ${selector}`);
-				}
 				return Object.assign(new InputTarget(scope, `display:${selector}`, DISPLAY_METHODS), { id: selector });
 			}),
 		windows: (filter?: WindowFilter): Promise<readonly DesktopWindow[]> =>
