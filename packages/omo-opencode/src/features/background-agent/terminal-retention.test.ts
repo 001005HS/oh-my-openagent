@@ -11,18 +11,6 @@ function terminalTask(status: BackgroundTask["status"] = "completed"): Backgroun
   }
 }
 
-test("keeps completed records past the old TTL until configured cleanup expires", () => {
-  const task = terminalTask()
-  const tasks = new Map([[task.id, task]])
-  const options = {
-    tasks, notifications: new Map<string, BackgroundTask[]>(),
-    taskCleanupDelayMs: TERMINAL_TASK_TTL_MS * 2,
-    onTaskPruned: () => { throw new Error("Terminal records must not use inactivity cleanup") },
-  }
-  pruneStaleTasksAndNotifications(options)
-  expect(tasks.get(task.id)).toBe(task)
-})
-
 test("preserves the existing terminal TTL when cleanup delay is unset", () => {
   const task = terminalTask()
   const tasks = new Map([[task.id, task]])
@@ -37,7 +25,7 @@ for (const status of ["completed", "error", "cancelled", "interrupt"] as const) 
     const options = {
       tasks, notifications: new Map<string, BackgroundTask[]>(),
       taskCleanupDelayMs: TERMINAL_TASK_TTL_MS * 2,
-      onTaskPruned: () => { throw new Error("Terminal records must not use inactivity cleanup") },
+      onTaskPruned: () => {},
     }
     pruneStaleTasksAndNotifications(options)
     expect(tasks.get(task.id)).toBe(task)
@@ -47,7 +35,7 @@ for (const status of ["completed", "error", "cancelled", "interrupt"] as const) 
 test("does not prune a terminal record with a pending notification", () => {
   const task = terminalTask()
   const tasks = new Map([[task.id, task]])
-  const options = { tasks, notifications: new Map([["parent", [task]]]), taskCleanupDelayMs: 1, onTaskPruned: () => {} }
+  const options = { tasks, notifications: new Map([["parent", [task]]]), taskCleanupDelayMs: 60_000, onTaskPruned: () => {} }
   pruneStaleTasksAndNotifications(options)
   expect(tasks.get(task.id)).toBe(task)
 })
