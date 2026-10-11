@@ -2947,9 +2947,7 @@ describe("BackgroundManager.resume concurrency key", () => {
       parentSessionId: "parent", parentMessageId: "message", completedAt: new Date(),
     }
     getTaskMap(manager).set(task.id, task)
-    const resumed = manager.resume({ sessionId: "queued-session", prompt: "latest", parentSessionId: "parent", parentMessageId: "message" })
-    resumed.catch(() => {})
-    const result = await Promise.race([resumed, Bun.sleep(500).then(() => undefined)])
+    const result = await manager.resume({ sessionId: "queued-session", prompt: "latest", parentSessionId: "parent", parentMessageId: "message" })
     expect(result?.status).toBe("pending")
     expect(task.queuedAt).toBeInstanceOf(Date)
   })
@@ -2963,6 +2961,7 @@ describe("BackgroundManager.resume concurrency key", () => {
     getTaskMap(manager).set(task.id, task)
     await manager.resume({ sessionId: "latest-session", prompt: "latest", parentSessionId: "parent", parentMessageId: "message" })
     expect(task.prompt).toBe("latest")
+    expect(task.originalPrompt).toBe("original")
   })
 
   test("should re-acquire using external task concurrency key", async () => {
@@ -3545,8 +3544,10 @@ describe("BackgroundManager - Non-blocking Queue Integration", () => {
       // then
       expect(task.attempts).toHaveLength(1)
       expect(task.currentAttemptID).toBe(task.attempts?.[0]?.attemptId)
+      const currentAttemptID = task.currentAttemptID
+      if (currentAttemptID === undefined) throw new Error("Expected a current launch attempt")
       expect(task.attempts?.[0]).toEqual({
-        attemptId: task.currentAttemptID,
+        attemptId: currentAttemptID,
         attemptNumber: 1,
         providerId: "openai",
         modelId: "gpt-5.6-luna-fast",

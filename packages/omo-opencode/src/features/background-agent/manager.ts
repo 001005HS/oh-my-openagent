@@ -128,6 +128,10 @@ import type {
 type OpencodeClient = PluginInput["client"]
 
 type ResumeTaskSnapshot = {
+  prompt: string
+  originalPrompt?: string
+  queuedAt?: Date
+  historyEntry?: import("./task-history").TaskHistoryEntry
   status: BackgroundTask["status"]
   completedAt?: Date
   error?: string
@@ -508,8 +512,12 @@ export class BackgroundManager {
     this.tasksByParentSession.set(parentSessionID, taskIDs)
   }
 
-  private captureResumeTaskSnapshot(task: BackgroundTask): ResumeTaskSnapshot {
+  private captureResumeTaskSnapshot(task: BackgroundTask, resumeParentSessionID: string): ResumeTaskSnapshot {
     return {
+      prompt: task.prompt,
+      originalPrompt: task.originalPrompt,
+      queuedAt: task.queuedAt,
+      historyEntry: this.taskHistory.getByParentSession(resumeParentSessionID).find(entry => entry.id === task.id),
       status: task.status,
       completedAt: task.completedAt,
       error: task.error,
@@ -530,19 +538,25 @@ export class BackgroundManager {
     snapshot: ResumeTaskSnapshot,
     skippedStatus: Exclude<PromptAsyncGateResult["status"], "dispatched" | "queued" | "failed">,
   ): void {
+    if (this.shutdownTriggered) return
     log("[background-agent] Restoring task after skipped resume prompt:", {
       taskId: task.id,
       sessionID: task.sessionId,
       skippedStatus,
     })
 
+    const resumeParentSessionID = task.parentSessionId
     this.cleanupPendingByParent(task)
+    this.taskHistory.restoreEntry(resumeParentSessionID, task.id, snapshot.historyEntry)
 
     if (task.concurrencyKey) {
       this.concurrencyManager.release(task.concurrencyKey)
     }
 
     task.status = snapshot.status
+    task.prompt = snapshot.prompt
+    task.originalPrompt = snapshot.originalPrompt
+    task.queuedAt = snapshot.queuedAt
     task.completedAt = snapshot.completedAt
     task.error = snapshot.error
     task.startedAt = snapshot.startedAt
@@ -560,6 +574,9 @@ export class BackgroundManager {
       this.scheduleTaskRemoval(task.id)
     }
     this.updateBackgroundTaskMarker(task.parentSessionId)
+    if (resumeParentSessionID !== task.parentSessionId) {
+      this.updateBackgroundTaskMarker(resumeParentSessionID)
+    }
   }
 
   private removeTaskFromParentIndex(taskID: string, parentSessionID: string | undefined): void {
@@ -1347,7 +1364,7 @@ The fallback retry session is now created and can be inspected directly.
         "Wait for it to start and complete before resuming it with task_id.")
     }
 
-    const resumeSnapshot = this.captureResumeTaskSnapshot(existingTask)
+    const resumeSnapshot = this.captureResumeTaskSnapshot(existingTask, input.parentSessionId)
     const completionTimer = this.completionTimers.get(existingTask.id)
     if (completionTimer) {
       clearTimeout(completionTimer)
@@ -1385,14 +1402,14 @@ The fallback retry session is now created and can be inspected directly.
     getTaskToastManager()?.addTask({ id: existingTask.id, description: existingTask.description, agent: existingTask.agent, isBackground: true, status: "queued" })
     this.updateBackgroundTaskMarker(existingTask.parentSessionId)
     admission.then(async () => {
-      if (existingTask.status !== "pending" || existingTask.pendingResume !== resumeToken) {
+      if (this.shutdownTriggered || existingTask.status !== "pending" || existingTask.pendingResume !== resumeToken) {
         this.concurrencyManager.release(concurrencyKey)
         return
       }
       await this.startResumedTask(existingTask, input, resumeSnapshot, concurrencyKey)
     }).catch((error: unknown) => {
-      if (existingTask.status !== "pending" || existingTask.pendingResume !== resumeToken) return
       log("[background-agent] Queued resume was not admitted:", { taskId: existingTask.id, error: error instanceof Error ? error.message : String(error) })
+      if (this.shutdownTriggered || existingTask.status !== "pending" || existingTask.pendingResume !== resumeToken) return
       existingTask.pendingResume = undefined
       this.restoreTaskAfterSkippedResume(existingTask, resumeSnapshot, "unavailable")
     })
@@ -1400,8 +1417,13 @@ The fallback retry session is now created and can be inspected directly.
   }
 
   private async startResumedTask(existingTask: BackgroundTask, input: ResumeInput, resumeSnapshot: ResumeTaskSnapshot, concurrencyKey: string): Promise<BackgroundTask> {
+    if (this.shutdownTriggered) {
+      this.concurrencyManager.release(concurrencyKey)
+      return existingTask
+    }
     if (!existingTask.sessionId) throw new Error(`Task has no sessionID: ${existingTask.id}`)
     existingTask.pendingResume = undefined
+    existingTask.originalPrompt ??= existingTask.prompt
     existingTask.prompt = input.prompt
     existingTask.concurrencyKey = concurrencyKey
     existingTask.concurrencyGroup = concurrencyKey
@@ -1420,6 +1442,11 @@ The fallback retry session is now created and can be inspected directly.
     // Reset startedAt on resume to prevent immediate completion
     // The MIN_IDLE_TIME_MS check uses startedAt, so resumed tasks need fresh timing
     existingTask.startedAt = new Date()
+    this.taskHistory.record(input.parentSessionId, {
+      id: existingTask.id, sessionID: existingTask.sessionId, agent: existingTask.agent,
+      description: existingTask.description, status: "running", category: existingTask.category,
+      startedAt: existingTask.startedAt,
+    })
 
     existingTask.progress = {
       toolCalls: existingTask.progress?.toolCalls ?? 0,
@@ -3232,9 +3259,24 @@ The task was re-queued on a fallback model after a retryable failure.
     this.stopPolling()
     const trackedSessionIDs = new Set<string>()
     const abortRequests: Array<{ sessionID: string; promise: Promise<unknown> }> = []
+    const queuedResumeParents = new Set<string>()
 
     // Abort all running sessions to prevent zombie processes (#1240)
     for (const task of this.tasks.values()) {
+      if (task.pendingResume) {
+        queuedResumeParents.add(task.parentSessionId)
+        task.pendingResume = undefined
+        task.status = "cancelled"
+        task.completedAt = new Date()
+        this.concurrencyManager.cancelWaiter(task.concurrencyGroup ?? task.agent, task.id)
+        this.cleanupPendingByParent(task)
+        removeTaskToastTracking(task.id)
+        this.taskHistory.record(task.parentSessionId, {
+          id: task.id, sessionID: task.sessionId, agent: task.agent,
+          description: task.description, status: "cancelled", completedAt: task.completedAt,
+        })
+        this.updateBackgroundTaskMarker(task.parentSessionId)
+      }
       if (task.sessionId) {
         trackedSessionIDs.add(task.sessionId)
       }
@@ -3312,6 +3354,9 @@ The task was re-queued on a fallback model after a retryable failure.
     this.queuesByKey.clear()
     this.processingKeys.clear()
     this.taskHistory.clearAll()
+    for (const parentSessionID of queuedResumeParents) {
+      this.updateBackgroundTaskMarker(parentSessionID)
+    }
     this.completedTaskSummaries.clear()
     this.unregisterProcessCleanup()
     log("[background-agent] Shutdown complete")
