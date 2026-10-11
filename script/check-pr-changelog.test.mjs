@@ -6,42 +6,63 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { load } from "js-yaml"
 import { checkPrChangelog, hasAddedUnreleasedLine, isUserFacingPath } from "./check-pr-changelog.mjs"
+import { shippingPolicy } from "./changelog-shipping-policy.mjs"
+
+const root = fileURLToPath(new URL("..", import.meta.url))
+const tracked = execFileSync("git", ["-C", root, "ls-files", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean)
+const policy = shippingPolicy(tracked, (path) => readFileSync(join(root, path), "utf8"))
+const manifestPolicy = (manifest) => shippingPolicy(["package.json"], () => JSON.stringify(manifest))
 
 describe("shipped path classifier", () => {
-  const files = ["dist", "bin", "assets/*.json", "packages/example/runtime", "packages/example/scripts",
-    "!packages/example/scripts/install", ".agents/skills", "script/qa/strip-ansi.mjs", "docs/reference/guide.md"]
   test.each([
     "packages/omo-opencode/src/tools/delegate-task/categories.ts",
     "packages/omo-senpi/src/components/onboarding/component.ts",
-    "packages/senpi-desktop-engine/crates/runtime/src/lib.rs",
+    "crates/senpi-desktop-backend-macos/src/ax/menus/select.rs",
+    "crates/senpi-desktop-core/src/menus/mod.rs",
+    "packages/omo-native/compile-entry.ts", "packages/omo-native/compiled-update.ts",
+    "packages/omo-native/bin/lib/daemon-operations.js",
+    "packages/omo-senpi/plugin/runtime/dag/sdk.js",
+    "packages/omo-senpi/plugin/package.json",
+    "packages/omo-senpi/plugin/daemon-launch-spec.json",
+    "packages/omo-senpi/plugin/scripts/install.mjs",
+    "packages/omo-opencode/src/testing/create-plugin-module.ts",
     "packages/omo-senpi/skills/onboarding/SKILL.md",
-    "packages/shared-skills/skills/research/SKILL.md",
+    "packages/shared-skills/skills/ulw-research/SKILL.md",
     "packages/prompts-core/prompts/ultrawork/codex.md",
-    ".agents/skills/research/SKILL.md", ".opencode/command/run.md",
-    "bin/omo.js", "postinstall.mjs", "package.json",
-    "assets/runtime.json", "packages/example/runtime/entry.mjs",
-    "packages/example/scripts/bootstrap.ps1", "script/qa/strip-ansi.mjs",
+    ".agents/skills/opencode-qa/SKILL.md",
+    "bin/oh-my-opencode.js", "postinstall.mjs", "package.json",
+    "script/build-binaries.ts", "script/build-omo-binary.ts", "script/build-omo-native.ts",
+    "script/build.ts", "script/qa/strip-ansi.mjs",
   ])("requires a note for %s", (path) => {
-    expect(isUserFacingPath(path, files)).toBe(true)
+    expect(tracked).toContain(path)
+    expect(isUserFacingPath(path, policy)).toBe(true)
   })
   test.each([
     "packages/omo-senpi/src/components/onboarding/component.test.ts",
     "packages/omo-senpi/src/components/onboarding/test-harness.ts",
-    "packages/omo-senpi/src/__fixtures__/source.ts",
-    "packages/omo-senpi/src/tests/source.ts",
-    "packages/example/runtime/source.spec.mjs",
+    "packages/isolation-core/src/backends/git-fixture.ts",
+    "packages/isolation-core/src/merge/abandoned-concurrent-merge.fixture.ts",
+    "packages/isolation-core/src/merge/merge-fixture.ts",
+    "packages/omo-opencode/src/testing/module-mock-lifecycle.ts",
+    "packages/omo-opencode/src/features/team-mode/test-support/async-test-helpers.ts",
+    "crates/senpi-desktop-backend-macos/src/ax/menus/live_tests.rs",
+    "crates/senpi-desktop-backend-macos/src/ax/menus/tests.rs",
     "packages/omo-senpi/plugin/extensions/omo.js",
-    "packages/example/dist/runtime.js", "dist/cli.js",
     "packages/omo-codex/scripts/install-dist/install-local.mjs",
-    "packages/example/src/config.generated.ts",
-    "packages/shared-skills/upstreams/design/source.ts",
-    "packages/example/scripts/install/setup.mjs",
-    "packages/example/runtime/AGENTS.md", ".agents/skills/example/README.md",
-    "docs/reference/guide.md", "README.md", "AGENTS.md", "changes.md",
-    "script/build.ts", "scripts/check-third-party-notices.mjs",
+    "docs/reference/omo-ai-publishing.md", "README.md", "AGENTS.md", "changes.md",
+    "scripts/check-third-party-notices.mjs",
+    "script/qa/omo-native-eval-smoke-stop.mjs", "script/qa/omo-native-eval-smoke.mjs",
     ".github/workflows/ci.yml", "bun.lock",
   ])("does not require a note for %s", (path) => {
-    expect(isUserFacingPath(path, files)).toBe(false)
+    expect(tracked).toContain(path)
+    expect(isUserFacingPath(path, policy)).toBe(false)
+  })
+  test("uses manifest glob, bin and negative entries", () => {
+    const packagePolicy = manifestPolicy({ files: ["assets/*.json", "!assets/private.json"], bin: { cli: "launcher.mjs" } })
+    expect(isUserFacingPath("assets/runtime.json", packagePolicy)).toBe(true)
+    expect(isUserFacingPath("assets/private.json", packagePolicy)).toBe(false)
+    expect(isUserFacingPath("launcher.mjs", packagePolicy)).toBe(true)
+    expect(isUserFacingPath("unpublished.mjs", packagePolicy)).toBe(false)
   })
 })
 
@@ -72,7 +93,7 @@ describe("Unreleased added-line detection", () => {
 })
 
 describe("gate verdict", () => {
-  const facts = { changedFiles: ["packages/example/src/runtime.ts"], before: "", after: "", diff: "" }
+  const facts = { changedFiles: ["packages/omo-native/compile-entry.ts"], policy, before: "", after: "", diff: "" }
   test("fails a runtime change despite unrelated labels", () => {
     expect(checkPrChangelog({ ...facts, labels: ["No-changelog", "ci:full-matrix"] }).pass).toBe(false)
   })
@@ -83,7 +104,7 @@ describe("gate verdict", () => {
     expect(checkPrChangelog({ ...facts, changedFiles: ["docs/guide.md"] }).pass).toBe(true)
   })
   test("classifies removed shipped entries using the previous manifest", () => {
-    expect(checkPrChangelog({ ...facts, changedFiles: ["assets/runtime.json"], files: [], previousFiles: ["assets/*.json"] }).pass).toBe(false)
+    expect(checkPrChangelog({ ...facts, changedFiles: ["assets/runtime.json"], policy: manifestPolicy({ files: [] }), previousPolicy: manifestPolicy({ files: ["assets/*.json"] }) }).pass).toBe(false)
   })
 })
 
@@ -94,6 +115,8 @@ test("CLI uses the PR merge base, includes deleted sources, and accepts a real n
   const run = (base, labels = "[]") => spawnSync(process.execPath, [script, "--repo", repo, "--base", base, "--labels", labels], { encoding: "utf8", cwd: "/tmp" })
   try {
     git("init", "-q")
+    git("config", "user.name", "YeonGyu-Kim")
+    git("config", "user.email", "code.yeon.gyu@gmail.com")
     writeFileSync(join(repo, "package.json"), JSON.stringify({ files: ["assets/runtime.json"] }))
     writeFileSync(join(repo, "CHANGELOG.md"), "## [Unreleased]\n\n## [1.0.0]\nOld note.\n")
     mkdirSync(join(repo, "assets"))
@@ -125,25 +148,68 @@ test("CLI uses the PR merge base, includes deleted sources, and accepts a real n
   }
 })
 
-test("workflow limits label events before acquiring isolated concurrency", () => {
+test("workflow emits one real gate verdict for every label event and passes the merge queue", () => {
   const workflow = load(readFileSync(new URL("../.github/workflows/changelog-gate.yml", import.meta.url), "utf8"))
   const ci = load(readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8"))
-  const job = workflow.jobs["changelog-gate"]
+  const checks = Object.values(workflow.jobs).filter((job) => job.name === "Changelog gate")
+  expect(checks).toHaveLength(1)
+  const [job] = checks
   expect(workflow.on.pull_request.branches).toEqual(["dev"])
   expect(workflow.on.pull_request.types).toEqual(["opened", "synchronize", "reopened", "labeled", "unlabeled"])
   expect(workflow.concurrency).toBeUndefined()
-  const enabled = new Function("github", `return (${job.if})`)
-  for (const action of ["opened", "synchronize", "reopened", "labeled", "unlabeled"]) {
-    for (const label of ["no-changelog", "ci:full-matrix", "bug"]) {
-      expect(enabled({ event: { action, label: { name: label } } })).toBe(
-        !["labeled", "unlabeled"].includes(action) || label === "no-changelog")
-    }
-  }
-  expect(job.concurrency.group).toBe("pr-changelog-gate-${{ github.event.pull_request.number }}")
+  expect(job.if).toBeUndefined()
   expect(job.concurrency.group).not.toBe(ci.concurrency.group)
   expect(ci.on.pull_request.types).not.toContain("labeled")
   expect(ci.on.pull_request.types).not.toContain("unlabeled")
-  expect(job.steps[0].with.ref).toBe("${{ github.event.pull_request.head.sha }}")
-  expect(job.steps[0].with["fetch-depth"]).toBe(0)
-  expect(job.steps.at(-1).run).toBe("bun script/check-pr-changelog.mjs")
-})
+  expect(workflow.on.merge_group.types).toContain("checks_requested")
+  const gate = job.steps.find((step) => step.env?.EVENT_NAME)
+  expect(gate.if).toBeUndefined()
+  const repo = mkdtempSync(join(tmpdir(), "changelog-workflow-"))
+  const git = (...args) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" }).trim()
+  const run = (eventName, action, labels, base, head) => spawnSync("bash", ["-eo", "pipefail", "-c", gate.run], {
+    cwd: repo, encoding: "utf8",
+    env: { ...process.env, EVENT_NAME: eventName, GITHUB_EVENT_ACTION: action, CHANGELOG_GATE_LABELS: JSON.stringify(labels), CHANGELOG_GATE_BASE: base, PR_HEAD: head },
+  })
+  try {
+    git("init", "-q")
+    git("config", "user.name", "YeonGyu-Kim")
+    git("config", "user.email", "code.yeon.gyu@gmail.com")
+    writeFileSync(join(repo, "package.json"), JSON.stringify({ files: ["runtime.mjs"] }))
+    writeFileSync(join(repo, "runtime.mjs"), "export const value = 1\n")
+    writeFileSync(join(repo, "CHANGELOG.md"), "## [Unreleased]\n\n")
+    git("add", ".")
+    git("commit", "-qm", "initial fixture")
+    const ancestor = git("rev-parse", "HEAD")
+    writeFileSync(join(repo, "runtime.mjs"), "export const value = 2\n")
+    git("add", ".")
+    git("commit", "-qm", "old PR without gate or note")
+    const head = git("rev-parse", "HEAD")
+    git("checkout", "-q", ancestor)
+    mkdirSync(join(repo, "script"))
+    for (const name of ["check-pr-changelog.mjs", "changelog-shipping-policy.mjs"]) {
+      writeFileSync(join(repo, "script", name), readFileSync(new URL(name, import.meta.url), "utf8"))
+    }
+    git("add", ".")
+    git("commit", "-qm", "base adopts gate")
+    const base = git("rev-parse", "HEAD")
+    // The gate comes from this base checkout, not the older PR head.
+    expect(spawnSync("git", ["-C", repo, "cat-file", "-e", `${head}:script/check-pr-changelog.mjs`]).status).not.toBe(0)
+    for (const action of ["opened", "synchronize", "reopened", "labeled", "unlabeled"]) {
+      for (const labels of [[], ["bug"], ["ci:full-matrix"], ["no-changelog"]]) {
+        const result = run("pull_request", action, labels, base, head)
+        expect(result.status, `${result.stderr}\nsignal=${result.signal}`).toBe(labels.includes("no-changelog") ? 0 : 1)
+        expect(result.stdout.match(/changelog-gate: (?:PASS|FAIL)/g)).toHaveLength(1)
+      }
+    }
+    expect(run("merge_group", "checks_requested", [], "", "").status).toBe(0)
+    const summary = job.steps.find((step) => step.name === "Write job summary")
+    const summaryPath = join(repo, "summary.md")
+    const result = spawnSync("bash", ["-eo", "pipefail", "-c", summary.run], {
+      cwd: repo, env: { ...process.env, JOB_STATUS: "failure", GITHUB_STEP_SUMMARY: summaryPath }, encoding: "utf8",
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(readFileSync(summaryPath, "utf8")).toContain("failure")
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+}, 20_000)

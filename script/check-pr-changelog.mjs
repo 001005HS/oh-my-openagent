@@ -1,31 +1,10 @@
 #!/usr/bin/env bun
 import { execFileSync } from "node:child_process"
+import { isUserFacingPath, shippingPolicy } from "./changelog-shipping-policy.mjs"
+
+export { isUserFacingPath }
 
 const noChangelogLabel = "no-changelog"
-
-// Development artifacts never trigger release notes, even inside a shipped directory.
-function excludedPath(path) {
-  return /(^|\/)(?:tests?|__tests__|__fixtures__|fixtures|test-fixtures|node_modules|dist|build|install-dist|upstreams)(\/|$)/.test(path)
-    || /(?:^|\/)(?:AGENTS|README|CHANGELOG|changes|THIRD-PARTY-NOTICES)\.md$/i.test(path)
-    || /\.(?:test|spec|snap)\.[^/]+$/.test(path)
-    || /(?:^|\/)(?:test-harness|test-utils|test-support)(?:\.[^/]+)?$/.test(path)
-    || /^packages\/omo-senpi\/plugin\/extensions\//.test(path)
-    || /(?:^|\/)[^/]+\.generated\.[^/]+$/.test(path)
-}
-
-export function isUserFacingPath(path, files = []) {
-  if (excludedPath(path) || /^(?:docs|\.github)\//.test(path)) return false
-  const included = files.filter((entry) => !entry.startsWith("!"))
-  const excluded = files.filter((entry) => entry.startsWith("!")).map((entry) => entry.slice(1))
-  const matches = (entry) => new Bun.Glob(entry).match(path)
-    || new Bun.Glob(`${entry.replace(/\/$/, "")}/**`).match(path)
-  if (excluded.some(matches)) return false
-  if (path === "package.json" || path === "postinstall.mjs" || path.startsWith("bin/")) return true
-  if (/^packages\/[^/]+\/(?:src|crates)\//.test(path)) return true
-  if (/^(?:\.agents|\.opencode)\/(?:skills|commands?)\//.test(path)) return true
-  if (/^packages\/[^/]+\/(?:skills|commands?|prompts)\//.test(path)) return true
-  return included.some(matches)
-}
 
 export function hasAddedUnreleasedLine(before, after, diff) {
   // Keep original line numbers while ignoring Markdown comments, including multiline ones.
@@ -57,8 +36,8 @@ export function hasAddedUnreleasedLine(before, after, diff) {
   return false
 }
 
-export function checkPrChangelog({ changedFiles, files = [], previousFiles = files, before, after, diff, labels = [] }) {
-  const userFacingFiles = changedFiles.filter((path) => isUserFacingPath(path, files) || isUserFacingPath(path, previousFiles))
+export function checkPrChangelog({ changedFiles, policy, previousPolicy = policy, before, after, diff, labels = [] }) {
+  const userFacingFiles = changedFiles.filter((path) => isUserFacingPath(path, policy) || isUserFacingPath(path, previousPolicy))
   if (labels.includes(noChangelogLabel)) return { pass: true, reason: "no-changelog label present", userFacingFiles }
   if (userFacingFiles.length === 0) return { pass: true, reason: "no user-facing changes", userFacingFiles }
   const pass = hasAddedUnreleasedLine(before, after, diff)
@@ -84,16 +63,18 @@ export function main(argv) {
   const mergeBase = git("merge-base", resolve(base), head).trim()
   // Disable rename detection: deleting a shipped source by moving it to docs must still count.
   const changedFiles = git("diff", "--no-renames", "--name-only", "-z", mergeBase, head).split("\0").filter(Boolean)
-  const beforeManifest = JSON.parse(git("show", `${mergeBase}:package.json`))
-  const afterManifest = JSON.parse(git("show", `${head}:package.json`))
+  const policyAt = (revision) => shippingPolicy(
+    git("ls-tree", "-r", "--name-only", "-z", revision).split("\0").filter(Boolean),
+    (path) => git("show", `${revision}:${path}`),
+  )
   const readChangelog = (revision) => {
     const exists = git("ls-tree", "--name-only", revision, "--", "CHANGELOG.md").trim()
     return exists ? git("show", `${revision}:CHANGELOG.md`) : ""
   }
   const result = checkPrChangelog({
     changedFiles,
-    files: afterManifest.files ?? [],
-    previousFiles: beforeManifest.files ?? [],
+    policy: policyAt(head),
+    previousPolicy: policyAt(mergeBase),
     before: readChangelog(mergeBase),
     after: readChangelog(head),
     diff: git("diff", "--no-ext-diff", "--no-textconv", "--unified=0", mergeBase, head, "--", "CHANGELOG.md"),
