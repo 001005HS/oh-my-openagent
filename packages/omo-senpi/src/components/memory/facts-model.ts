@@ -26,7 +26,10 @@ export function resolveFactsModel(
     const declared = new Set([
       ...(quick.model === undefined ? [] : [quick.model]),
       ...(quick.models ?? []).map((entry) => typeof entry === "string" ? entry : entry.model),
-      ...(quick.fallback_models === undefined ? [] : Array.isArray(quick.fallback_models) ? quick.fallback_models : [quick.fallback_models]),
+      ...(quick.fallback_models === undefined
+        ? []
+        : (Array.isArray(quick.fallback_models) ? quick.fallback_models : [quick.fallback_models])
+            .map((entry) => typeof entry === "string" ? entry : entry.model)),
     ])
     if (!declared.has(resolution.model) || !available.has(resolution.model)) {
       return { kind: "category_unavailable", category: "quick", cause: "model_unavailable" }

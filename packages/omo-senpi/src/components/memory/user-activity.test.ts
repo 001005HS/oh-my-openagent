@@ -16,6 +16,7 @@ test.each(["child", "dag_child", "member", "dream_child"])(
     await pi.dispatch("input_disposition", { inputId: "task-input", disposition: "started" }, eventCtx)
 
     expect(activity.has(SESSION)).toBe(false)
+    expect(activity.hasInput(SESSION)).toBe(false)
   },
 )
 
@@ -31,9 +32,21 @@ test.each([
   await pi.dispatch("input_disposition", { inputId: "task-input", disposition: "queued" }, eventCtx)
 
   expect(activity.has(SESSION)).toBe(false)
+  expect(activity.hasInput(SESSION)).toBe(false)
 })
 
-test("#given an ordinary top-level RPC session #when a real input is accepted #then automatic memory activity is enabled", async () => {
+test("#given an ordinary top-level RPC input #when the engine reaches before_agent_start #then prompt-time memory can observe it before disposition", async () => {
+  const pi = new MemoryFakeExtensionAPI()
+  const activity = createMemoryUserActivity({})
+  activity.register(pi)
+
+  await pi.dispatch("input", { source: "rpc", inputId: "user-input", text: "Remember this." }, eventCtx)
+
+  expect(activity.hasInput(SESSION)).toBe(true)
+  expect(activity.has(SESSION)).toBe(false)
+})
+
+test("#given an ordinary top-level RPC input #when the engine accepts it #then automatic memory activity remains enabled after disposition", async () => {
   const pi = new MemoryFakeExtensionAPI()
   const activity = createMemoryUserActivity({})
   activity.register(pi)
@@ -42,4 +55,17 @@ test("#given an ordinary top-level RPC session #when a real input is accepted #t
   await pi.dispatch("input_disposition", { inputId: "user-input", disposition: "started" }, eventCtx)
 
   expect(activity.has(SESSION)).toBe(true)
+  expect(activity.hasInput(SESSION)).toBe(true)
+})
+
+test("#given a tracked top-level input #when the engine handles it without a turn #then prompt-time memory admission is revoked", async () => {
+  const pi = new MemoryFakeExtensionAPI()
+  const activity = createMemoryUserActivity({})
+  activity.register(pi)
+
+  await pi.dispatch("input", { source: "rpc", inputId: "user-input", text: "Remember this." }, eventCtx)
+  await pi.dispatch("input_disposition", { inputId: "user-input", disposition: "handled" }, eventCtx)
+
+  expect(activity.has(SESSION)).toBe(false)
+  expect(activity.hasInput(SESSION)).toBe(false)
 })

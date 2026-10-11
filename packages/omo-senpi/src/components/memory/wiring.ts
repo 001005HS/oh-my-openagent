@@ -12,6 +12,7 @@ import { type SkillsUsageTracker } from "./skills-usage"
 import { type MemoryUsageTracker } from "./memory-usage"
 import { createMemoryNoticeWiring } from "./memory-notice-wiring"
 import { createKibitzerComposition, type KibitzerComposition } from "./kibitzer"
+import { createPressureDreamAdmission } from "./pressure-dream-admission"
 import { createMemoryRecallWiring } from "./recall-wiring"
 import { branchEntryCount, sessionIdFrom } from "./wiring-context"
 import { createMemoryUserActivity } from "./user-activity"
@@ -119,6 +120,10 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
   })
 
   const dreamTriggerWiring = buildDreamTriggerWiring(options, runtimeWiring, activeSession, userActivity.has)
+  const pressureDreamAdmission = createPressureDreamAdmission({
+    request: (sessionId) => dreamTriggerWiring.requestPressureDream(sessionId),
+    ...(options.logger === undefined ? {} : { logger: options.logger }),
+  })
   shutdownDrain.registerEvaluator(dreamTriggerWiring.shutdownEvaluator())
 
   function resolvePalacePeople(): PalacePeopleOptions | undefined {
@@ -142,7 +147,7 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
         env: options.env,
         cwd: options.cwd,
         loadConfig: options.loadConfig,
-        resolveContext: (sessionId) => userActivity.has(sessionId) ? resolveContext(sessionId) : undefined,
+        resolveContext: (sessionId) => userActivity.hasInput(sessionId) ? resolveContext(sessionId) : undefined,
         recall: recallWiring,
         corpusCache,
         ...(ctx.idleCoordinator === undefined ? {} : { coordinator: ctx.idleCoordinator }),
@@ -189,6 +194,7 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
               } catch (error) {
                 if (options.logger !== undefined) logBindReconcileFailure(options.logger, error)
               }
+              pressureDreamAdmission.requestDeferred(sessionId)
             })
           }
           await reflectionLive.onSettled(sessionId, eventCtx)
@@ -200,6 +206,7 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
     async afterBind(pi, sessionId, identity, eventCtx): Promise<void> {
       activeSession.current = sessionId
       userActivity.reset(sessionId)
+      pressureDreamAdmission.reset(sessionId)
       lastEventCtx.current = eventCtx
       reflectionLive.attach(sessionId)
       registerMemoryFilesystemPolicy(pi, identity)
@@ -214,10 +221,7 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
         identity,
         eventCtx,
         () => {
-          if (!userActivity.has(sessionId)) return
-          void dreamTriggerWiring.requestPressureDream(sessionId).catch((error: unknown) => {
-            options.logger?.warn("omo-senpi memory pressure dream trigger failed", { error: describe(error) })
-          })
+          pressureDreamAdmission.deferOrRequest(sessionId, userActivity.has(sessionId))
         },
       )
     },
@@ -249,6 +253,7 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
         }
       }
       await shutdownDrain.run(input, { journalFlushed })
+      pressureDreamAdmission.reset(input.sessionId)
       userActivity.reset(input.sessionId)
     },
 

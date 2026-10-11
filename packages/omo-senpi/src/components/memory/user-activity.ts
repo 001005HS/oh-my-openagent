@@ -9,6 +9,8 @@ export function createMemoryUserActivity(env: NodeJS.ProcessEnv = process.env) {
   const inputs = new Map<string, string>()
   return {
     has: (sessionId: string): boolean => accepted.has(sessionId),
+    hasInput: (sessionId: string): boolean =>
+      accepted.has(sessionId) || inputs.values().some((owner) => owner === sessionId),
     reset(sessionId: string): void {
       accepted.delete(sessionId)
       reconciled.delete(sessionId)
