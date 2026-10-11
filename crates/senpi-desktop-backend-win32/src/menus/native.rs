@@ -90,12 +90,13 @@ pub(crate) fn select(
     if original.chain != current.chain || original.item.path != current.item.path {
         return Err(failed("native menu changed; no command was dispatched"));
     }
-    // Windows documents MNS_NOTIFYBYPOS as a menu-header style, yet some
-    // implementations honour it on a submenu too. When the menu bar and the
-    // containing menu disagree the notification form is unknowable, so refuse.
+    // Windows documents MNS_NOTIFYBYPOS as a menu-header style, so the menu
+    // bar's style decides; yet some implementations also honour it on a
+    // submenu alone, and for that one case the notification form is
+    // disputed, so it is refused rather than guessed.
     let style = source.style(root)?;
     let containing = source.style(current.entry.menu)?;
-    if (style ^ containing) & NOTIFY_BY_POSITION != 0 {
+    if style & NOTIFY_BY_POSITION == 0 && containing & NOTIFY_BY_POSITION != 0 {
         return Err(failed(
             "the menu bar and the containing menu disagree on position notification; no command was dispatched",
         ));

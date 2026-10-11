@@ -191,14 +191,24 @@ fn an_agreeing_menu_bar_and_submenu_notify_by_position_with_the_containing_menu(
 }
 
 #[test]
-fn a_menu_bar_and_submenu_that_disagree_on_position_notification_dispatch_nothing() {
+fn a_submenu_style_the_menu_bar_lacks_dispatches_nothing() {
     let submenu_only = Fixture {
         submenu_style: NOTIFY_BY_POSITION,
         ..Fixture::default()
     };
-    let error = native::select(&submenu_only, 1, &path(&["File", "Open"]), &|| Ok(())).unwrap_err();
-    assert!(error.message.contains("disagree"), "{}", error.message);
+    assert!(native::select(&submenu_only, 1, &path(&["File", "Open"]), &|| Ok(())).is_err());
     assert!(submenu_only.dispatched.borrow().is_empty());
+}
+
+#[test]
+fn a_menu_bar_style_alone_notifies_by_position_with_the_containing_menu() {
+    let bar_only = Fixture {
+        root_style: NOTIFY_BY_POSITION,
+        ..Fixture::default()
+    };
+    native::select(&bar_only, 1, &path(&["File", "Open"]), &|| Ok(())).unwrap();
+    assert_eq!(*bar_only.dispatched.borrow(), vec![(0x126, 0)]);
+    assert_eq!(*bar_only.lparam_menus.borrow(), vec![2]);
 }
 
 #[test]

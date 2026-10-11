@@ -32,7 +32,7 @@ pub(crate) fn require_safe(
         || delivery::is_winui3_class(class);
     if activating {
         return Err(DesktopError::background_unavailable(
-            "this window takes foreground during UI Automation actions; no command was dispatched; retry with delivery: \"foreground\"",
+            "this window takes foreground during UI Automation actions; no command was dispatched; retry with delivery:\"foreground\"",
         ));
     }
     Ok(())

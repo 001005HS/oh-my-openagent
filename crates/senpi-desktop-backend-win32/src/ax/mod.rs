@@ -5,7 +5,7 @@
 
 mod action;
 mod automation;
-mod menus;
+pub(crate) mod menus;
 mod patterns;
 mod props;
 

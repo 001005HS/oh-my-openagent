@@ -48,7 +48,6 @@ pub(crate) fn native_message(id: u32, position: u32, style: u32) -> CoreResult<(
     }
 }
 
-
 #[cfg(test)]
 mod native_tests;
 #[cfg(test)]

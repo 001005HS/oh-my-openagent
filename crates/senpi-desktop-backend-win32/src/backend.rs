@@ -165,8 +165,8 @@ impl Backend for Win32Backend {
     }
 
     /// Both modes run the exact window's command without keyboard input;
-    /// foreground delivery raises the window first, which also admits UIA
-    /// providers that take foreground while they act.
+    /// foreground delivery raises the proven target before the command, which
+    /// also admits UIA providers that take foreground while they act.
     fn menu_select(
         &mut self,
         window: &DesktopWindow,
@@ -174,12 +174,9 @@ impl Backend for Win32Backend {
         delivery: DeliveryMode,
         check_stop: &dyn Fn() -> CoreResult<()>,
     ) -> CoreResult<()> {
-        if delivery == DeliveryMode::Foreground {
-            senpi_desktop_core::menus::validate_path(path, false)?;
-            check_stop()?;
-            self.raise_window(&window.id)?;
-        }
-        self.ax.menu_select(window, path, self.integrity, check_stop)
+        let raise: crate::ax::menus::RaiseWindow<'_> = &input::raise_window;
+        let raise = (delivery == DeliveryMode::Foreground).then_some(raise);
+        self.ax.menu_select(window, path, self.integrity, check_stop, raise)
     }
 
     /// Without input nothing was ever pressed, so nothing is held.
