@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test"
 import { reconcileReviewClaims } from "./pr-review-claims.mjs"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 
 function fixture() {
   const pr = {
@@ -45,7 +47,19 @@ function fixture() {
 
 test("a fork claim requests the actual label owner and blocks the exact head", async () => {
   const f = fixture()
-  await reconcileReviewClaims(f)
+  const workflow = Bun.YAML.parse(readFileSync(
+    new URL("../.github/workflows/review-claims.yml", import.meta.url), "utf8"))
+  const step = workflow.jobs.reconcile.steps.find(step => step.with?.script)
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+  const oldWorkspace = process.env.GITHUB_WORKSPACE
+  try {
+    process.env.GITHUB_WORKSPACE = fileURLToPath(new URL("..", import.meta.url))
+    f.context.eventName = "workflow_run"
+    await new AsyncFunction("github", "context", "core", step.with.script)(f.github, f.context, f.core)
+  } finally {
+    if (oldWorkspace === undefined) delete process.env.GITHUB_WORKSPACE
+    else process.env.GITHUB_WORKSPACE = oldWorkspace
+  }
   expect(f.requested).toEqual([["claimer"]])
   expect(f.removed).toEqual(["stale-review"])
   expect(f.checks[0]).toMatchObject({

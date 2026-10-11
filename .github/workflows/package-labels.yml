@@ -40,6 +40,7 @@ jobs:
       - name: Check out trusted automation helper
         uses: actions/checkout@v7
         with:
+          repository: ${{ github.repository }}
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
           sparse-checkout: script/pr-automation-context.mjs
