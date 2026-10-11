@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Computer use can list and choose menu commands on Windows.** `menus.items` and `menus.select` read a window's classic menu bar directly, or its UI Automation menu when it has none, and run the chosen command without keyboard input. Elevated windows, ambiguous or disabled labels, submenus, and menus that change mid-request are refused before anything runs; apps that take focus while they act are refused in the background and work with `delivery: "foreground"`. ([#9651](https://github.com/code-yeongyu/oh-my-openagent/issues/9651), [#9991](https://github.com/code-yeongyu/oh-my-openagent/pull/9991))
+
 **`background_task.taskCleanupDelayMs` now also sets how long finished background tasks stay retrievable.** A delay longer than 30 minutes is no longer cut short; leaving it unset keeps the existing timing. Thanks to @imadal1n. ([#9984](https://github.com/code-yeongyu/oh-my-openagent/pull/9984))
 
 **The MCP OAuth callback server answers errors in plain text.** Its not-found, provider-error and missing-parameter responses are now sent as `text/plain; charset=utf-8` with `X-Content-Type-Options: nosniff`, so an `error_description` in the callback URL is shown as text and never rendered as HTML. MCP sign-in currently runs through a second callback server that never echoed that text, so nothing you see changes; consolidating the two is tracked separately. Thanks to @niStee. ([#6464](https://github.com/code-yeongyu/oh-my-openagent/pull/6464), [#9979](https://github.com/code-yeongyu/oh-my-openagent/issues/9979))
