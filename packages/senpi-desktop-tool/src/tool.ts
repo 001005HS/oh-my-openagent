@@ -19,10 +19,21 @@ import { type ComputerHostContext, runSnapshot } from "./session";
 import { computerToolDefinition } from "./tool-definition";
 import { computerFailure } from "./cua-errors";
 
+/** One `desktop.control.acquire` confirmation request, carried to the host component (#9651 B5b). */
+export interface ControlConfirmRequest {
+	readonly context: ComputerHostContext;
+	readonly reason: string;
+	readonly signal: AbortSignal;
+	/** How long the run can still wait for the answer; the confirm must settle within it. */
+	readonly budgetMs?: number;
+}
+
 export interface ComputerToolDeps {
 	readonly handle: ComputerHandle;
 	/** The host tool pipeline (`pi.executeTool`) behind `tool.<name>()` inside `run` code. */
 	readonly executeTool: ExecuteTool;
+	/** The host component's human confirm for the foreground-control grant; absent: never grants. */
+	readonly confirmControl?: (request: ControlConfirmRequest) => Promise<boolean>;
 }
 
 /** `details` of every `computer` result; `value` is what the eval-kernel `computer` facade returns. */
@@ -31,6 +42,8 @@ export interface ComputerToolDetails {
 	readonly readOnly?: boolean;
 	readonly screenshots?: readonly ComputerScreenshot[];
 	readonly audit?: readonly AuditRecord[];
+	/** Mirrors the top-level `isError` so a code-mode marshal (which reads `details`) reports the failure. */
+	readonly isError?: boolean;
 }
 
 /** Structurally the agent's `AgentToolResult<ComputerToolDetails>`. */
@@ -82,9 +95,19 @@ export async function runComputer(
 	await handle.activate(context);
 	const snapshot = runSnapshot(handle.settings(), context, request.readOnly);
 	const timeoutMs = request.timeoutSeconds * 1000;
+	const confirmControl = deps.confirmControl;
 	const outcome = await runComputerCode(
 		{ code: request.code, snapshot, timeoutMs, ...(signal === undefined ? {} : { signal }) },
-		{ service: handle.service, executeTool },
+		{
+			service: handle.service,
+			executeTool,
+			...(confirmControl === undefined
+				? {}
+				: {
+						confirmControl: (reason: string, runSignal: AbortSignal, budgetMs: number) =>
+							confirmControl({ context, reason, signal: runSignal, budgetMs }),
+					}),
+		},
 	);
 	const content = [...outcome.displays];
 	if (outcome.returnValue !== undefined) content.push({ type: "text", text: stringify(outcome.returnValue) });
@@ -152,11 +175,12 @@ async function permissionResult(result: Promise<ComputerToolResult>, handle: Com
 		return await result;
 	} catch (error) {
 		if (!(error instanceof DesktopEngineRpcError) || error.data === null || !("code" in error.data) ||
-			error.data.code !== "PermissionDenied") throw error;
+			(error.data.code !== "PermissionDenied" && error.data.code !== "ControlRequired" &&
+				error.data.code !== "InputBusy" && error.data.code !== "Suspended")) throw error;
 		const failure = computerFailure(error.data.code, error.message, handle.settings().stopHotkey, error.data.permission);
 		return {
 			content: [{ type: "text", text: JSON.stringify(failure, null, 2) }],
-			details: { value: failure },
+			details: { value: failure, isError: true },
 			isError: true,
 		};
 	}

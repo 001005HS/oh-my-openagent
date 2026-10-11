@@ -86,6 +86,10 @@
 		defineValueMethods(win, windowValueMethods, via);
 		defineMethod(win, "find", async query => (await callValue(via(step("find", [query])))).map(makeElement));
 		defineMethod(win, "ref", ref => resolveElement([step("ref", [ref])]));
+		defineMethod(win, "menu", Object.freeze({
+			items: path => callValue(via(step("menu.items", [path]))),
+			select: path => callValue(via(step("menu.select", [path]))),
+		}));
 		return Object.freeze(win);
 	};
 	const resolveWindow = async chain => {
@@ -103,6 +107,11 @@
 	computer.clipboard = Object.freeze({
 		read: () => callValue([step("clipboard.read", [])]),
 		write: text => callValue([step("clipboard.write", [text])]),
+	});
+	computer.control = Object.freeze({
+		acquire: options => callValue([step("control.acquire", [options])]),
+		release: () => callValue([step("control.release", [])]),
+		state: () => callValue([step("control.state", [])]),
 	});
 	computer.run = async (fnOrCode, options) => {
 		if (typeof fnOrCode !== "function" && typeof fnOrCode !== "string") {
