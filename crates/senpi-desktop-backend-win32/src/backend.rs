@@ -175,6 +175,8 @@ impl Backend for Win32Backend {
         check_stop: &dyn Fn() -> CoreResult<()>,
     ) -> CoreResult<()> {
         if delivery == DeliveryMode::Foreground {
+            senpi_desktop_core::menus::validate_path(path, false)?;
+            check_stop()?;
             self.raise_window(&window.id)?;
         }
         self.ax.menu_select(window, path, self.integrity, check_stop)

@@ -3,7 +3,7 @@
 use senpi_desktop_core::error::CoreResult;
 use senpi_desktop_core::menus::{match_index, require_command, require_enabled, MenuItem};
 
-use super::{failed, native_message, MAX_ITEMS};
+use super::{failed, native_message, MAX_ITEMS, NOTIFY_BY_POSITION};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Entry {
@@ -90,9 +90,16 @@ pub(crate) fn select(
     if original.chain != current.chain || original.item.path != current.item.path {
         return Err(failed("native menu changed; no command was dispatched"));
     }
-    // MNS_NOTIFYBYPOS is a menu-header style: only the menu bar's style decides
-    // how Windows reports a command from any of its submenus.
+    // Windows documents MNS_NOTIFYBYPOS as a menu-header style, yet some
+    // implementations honour it on a submenu too. When the menu bar and the
+    // containing menu disagree the notification form is unknowable, so refuse.
     let style = source.style(root)?;
+    let containing = source.style(current.entry.menu)?;
+    if (style ^ containing) & NOTIFY_BY_POSITION != 0 {
+        return Err(failed(
+            "the menu bar and the containing menu disagree on position notification; no command was dispatched",
+        ));
+    }
     let (message, wparam) = native_message(current.entry.id, current.entry.position, style)?;
     source.attached(root)?;
     for (entry, count) in &current.chain {

@@ -48,28 +48,8 @@ pub(crate) fn native_message(id: u32, position: u32, style: u32) -> CoreResult<(
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum UiaCommand {
-    Invoke,
-    Legacy,
-    Toggle,
-}
 
-pub(crate) fn uia_command(invoke: bool, legacy: Option<&str>, toggle: bool) -> CoreResult<UiaCommand> {
-    if invoke {
-        Ok(UiaCommand::Invoke)
-    } else if let Some(action) = legacy {
-        if action.trim().is_empty() {
-            Err(failed("UIA menu command has no invokable default action"))
-        } else {
-            Ok(UiaCommand::Legacy)
-        }
-    } else if toggle {
-        Ok(UiaCommand::Toggle)
-    } else {
-        Err(failed("UIA menu command has no supported command pattern"))
-    }
-}
-
+#[cfg(test)]
+mod native_tests;
 #[cfg(test)]
 mod tests;

@@ -34,6 +34,7 @@ $form.Controls.Add($strip)
 
 struct Form {
     child: Child,
+    script: PathBuf,
     record: PathBuf,
 }
 
@@ -43,6 +44,7 @@ impl Drop for Form {
             eprintln!("form cleanup failed: {error}");
         }
         drop(std::fs::remove_file(&self.record));
+        drop(std::fs::remove_file(&self.script));
     }
 }
 
@@ -59,7 +61,11 @@ fn open(title: &str) -> Form {
         .arg(&record)
         .spawn()
         .unwrap();
-    Form { child, record }
+    Form {
+        child,
+        script,
+        record,
+    }
 }
 
 fn until<T>(what: &str, mut probe: impl FnMut() -> Option<T>) -> T {

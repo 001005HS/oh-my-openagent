@@ -1,7 +1,7 @@
 //! Invokable command patterns, never SelectionItem or ExpandCollapse.
 
 use super::super::uia_error;
-use crate::menus::{failed, uia_command, UiaCommand};
+use crate::menus::failed;
 use senpi_desktop_core::error::CoreResult;
 use uiautomation::{
     patterns::{UIInvokePattern, UILegacyIAccessiblePattern, UITogglePattern},
@@ -16,27 +16,19 @@ pub(super) enum Command {
 
 impl Command {
     pub fn new(element: &UIElement) -> CoreResult<Self> {
-        let invoke = element.get_pattern::<UIInvokePattern>().ok();
-        let legacy = if invoke.is_none() {
-            element.get_pattern::<UILegacyIAccessiblePattern>().ok()
-        } else {
-            None
-        };
-        let action = legacy
-            .as_ref()
-            .map(|pattern| pattern.get_default_action().map_err(uia_error))
-            .transpose()?;
-        let toggle = if invoke.is_none() && legacy.is_none() {
-            element.get_pattern::<UITogglePattern>().ok()
-        } else {
-            None
-        };
-        match uia_command(invoke.is_some(), action.as_deref(), toggle.is_some())? {
-            UiaCommand::Invoke => invoke.map(Self::Invoke),
-            UiaCommand::Legacy => legacy.map(Self::Legacy),
-            UiaCommand::Toggle => toggle.map(Self::Toggle),
+        if let Ok(pattern) = element.get_pattern::<UIInvokePattern>() {
+            return Ok(Self::Invoke(pattern));
         }
-        .ok_or_else(|| failed("UIA command pattern disappeared"))
+        if let Ok(pattern) = element.get_pattern::<UILegacyIAccessiblePattern>() {
+            if pattern.get_default_action().map_err(uia_error)?.trim().is_empty() {
+                return Err(failed("UIA menu command has no invokable default action"));
+            }
+            return Ok(Self::Legacy(pattern));
+        }
+        element
+            .get_pattern::<UITogglePattern>()
+            .map(Self::Toggle)
+            .map_err(|_| failed("UIA menu command has no supported command pattern"))
     }
 
     pub fn run(self) -> CoreResult<()> {
