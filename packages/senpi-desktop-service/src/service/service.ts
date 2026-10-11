@@ -84,6 +84,10 @@ export class DesktopService {
 		return this.#hub.onStopPathChange(listener);
 	}
 
+	/**
+	 * Failures no caller awaits: a malformed notification, a failed heartbeat or best-effort revoke, and
+	 * anything passed to `reportError`. A host must subscribe, or these are lost.
+	 */
 	onError(listener: Listener<Error>): Unsubscribe {
 		return this.#hub.onError(listener);
 	}

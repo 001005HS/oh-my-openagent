@@ -14,17 +14,20 @@ describe("foreground-control grant boundaries (#9967)", HANG_GUARD, () => {
 	it("gives run code no handle-level path to control.grant", async () => {
 		// Given: the method seam that once let run code send any engine method (M1)
 		const { service, log } = await openDesktop();
-		const exploit = `const w = await desktop.window("202");
-			return await w.method("click", (scope) => scope.call("control.grant", { reason: "x", confirmationId: "y" }));`;
+		const grant = `(scope) => scope.call("control.grant", { reason: "x", confirmationId: "y" })`;
+		const viaMethod = `const w = await desktop.window("202"); return await w.method("click", ${grant});`;
+		const viaSend = `const w = await desktop.window("202"); return await w.send("click", "control.grant", { reason: "x", confirmationId: "y" });`;
 
 		// When
 		const surface = await run(service, `const w = await desktop.window("202"); return [typeof w.method, typeof w.send];`);
-		const error = await rejectionOf(run(service, exploit));
+		const methodError = await rejectionOf(run(service, viaMethod));
+		const sendError = await rejectionOf(run(service, viaSend));
 
 		// Then
-		expect(surface.returnValue).toEqual(["undefined", "undefined"]);
-		expect(error).toMatchObject({ message: expect.stringContaining("w.method is not a function") });
 		expect(methods(log)).not.toContain("control.grant");
+		expect(surface.returnValue).toEqual(["undefined", "undefined"]);
+		expect(methodError).toMatchObject({ message: expect.stringContaining("w.method is not a function") });
+		expect(sendError).toMatchObject({ message: expect.stringContaining("w.send is not a function") });
 	});
 
 	it("sends no revoke after a grant the engine refused", async () => {
@@ -36,6 +39,21 @@ describe("foreground-control grant boundaries (#9967)", HANG_GUARD, () => {
 			}),
 		);
 		await log.nthRequest("control.grant", 1);
+
+		// When: the turn ends
+		await service.revokeControl();
+		// One engine round trip: a revoke sent above would be logged before this reply.
+		await service.call("control.state", {});
+
+		// Then
+		expect(methods(log)).not.toContain("control.revoke");
+	});
+
+	it("sends no revoke after a grant cancelled before it was sent", async () => {
+		// Given: the client refuses a pre-aborted request, so nothing reached the engine (L2)
+		const { service, log } = await openDesktop();
+		const cancelled = AbortSignal.abort();
+		await rejectionOf(service.call("control.grant", { reason: "x", confirmationId: "y" }, { signal: cancelled }));
 
 		// When: the turn ends
 		await service.revokeControl();
@@ -76,20 +94,25 @@ describe("foreground-control grant boundaries (#9967)", HANG_GUARD, () => {
 		// When
 		controller.abort();
 
-		// Then
-		expect(await rejectionOf(acquired)).toBeDefined();
+		// Then: the engine-call record is the claim; the rejection only confirms the run ended
+		const outcome = await acquired.then(
+			() => "resolved",
+			() => "rejected",
+		);
 		expect(engineCalls).toEqual(["control.state"]);
+		expect(outcome).toBe("rejected");
 	});
 
 	it("reports a failed-run revoke that rejects with a non-engine error instead of dropping it", async () => {
 		// Given: a revoke that fails with a programming bug (L3)
-		const reported = Promise.withResolvers<unknown>();
+		const reported: unknown[] = [];
 		const bug = new TypeError("revoke bug");
+		const revoke = Promise.reject(bug);
 		const service = {
 			call: () => Promise.resolve({}),
 			onAudit: () => () => undefined,
-			revokeControl: () => Promise.reject(bug),
-			reportError: (error: unknown) => reported.resolve(error),
+			revokeControl: () => revoke,
+			reportError: (error: unknown) => void reported.push(error),
 		};
 
 		// When
@@ -100,7 +123,10 @@ describe("foreground-control grant boundaries (#9967)", HANG_GUARD, () => {
 			}),
 		);
 
+		// The runtime attached its handler to the same rejection first, so it has run once ours runs.
+		await revoke.catch(() => undefined);
+
 		// Then
-		expect(await reported.promise).toBe(bug);
+		expect(reported).toEqual([bug]);
 	});
 });
