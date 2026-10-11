@@ -6,11 +6,13 @@ use senpi_desktop_core::error::{CoreResult, DesktopError, ErrorCode};
 use senpi_desktop_core::types::DesktopWindow;
 
 use crate::fake::{editor, FakeBus, FakeNode, EDITOR_RECT};
+use crate::menu_target::MenuTarget;
 use crate::menus::{accelerator, command_index, items, select};
+use crate::WindowIds;
 
-fn window() -> DesktopWindow {
+pub(crate) fn window() -> DesktopWindow {
     DesktopWindow {
-        id: "0x800001".into(),
+        id: "atspi::1.10:/org/a11y/atspi/accessible/10".into(),
         title: "notes.txt - gedit".into(),
         app: "gedit".into(),
         pid: Some(4242),
@@ -23,7 +25,7 @@ fn window() -> DesktopWindow {
     }
 }
 
-fn command(name: &str) -> FakeNode {
+pub(crate) fn command(name: &str) -> FakeNode {
     let mut item = FakeNode::new(Role::MenuItem, name);
     item.state.insert(State::Sensitive);
     item.interfaces.insert(Interface::Action);
@@ -31,7 +33,7 @@ fn command(name: &str) -> FakeNode {
     item
 }
 
-fn submenu(name: &str) -> FakeNode {
+pub(crate) fn submenu(name: &str) -> FakeNode {
     let mut menu = FakeNode::new(Role::Menu, name);
     menu.state.insert(State::Sensitive);
     menu
@@ -40,7 +42,7 @@ fn submenu(name: &str) -> FakeNode {
 /// The editor (frame 10) with a filler (20) holding a menu bar (30):
 /// File (40) = Open… (41), separator (42), Save (43, Ctrl+S), Recent (44)
 /// wrapping an unnamed Menu (45) around a.txt (46); Edit (50) = disabled Undo (51).
-fn menus() -> FakeBus {
+pub(crate) fn menus() -> FakeBus {
     let mut bus = editor();
     bus.add(20, 10, FakeNode::new(Role::Filler, ""));
     bus.add(30, 20, FakeNode::new(Role::MenuBar, ""));
@@ -60,15 +62,24 @@ fn menus() -> FakeBus {
     bus
 }
 
-fn path(labels: &[&str]) -> Vec<String> {
+/// The menu request for `window`, whose id is an AT-SPI frame id.
+pub(crate) fn on(window: &DesktopWindow) -> MenuTarget<'_> {
+    MenuTarget {
+        window,
+        ids: WindowIds::AtSpiFrames,
+        windows: &[],
+    }
+}
+
+pub(crate) fn path(labels: &[&str]) -> Vec<String> {
     labels.iter().map(|label| (*label).to_string()).collect()
 }
 
-fn no_stop() -> CoreResult<()> {
+pub(crate) fn no_stop() -> CoreResult<()> {
     Ok(())
 }
 
-fn actions(bus: &FakeBus) -> Vec<&String> {
+pub(crate) fn actions(bus: &FakeBus) -> Vec<&String> {
     bus.calls.iter().filter(|call| call.starts_with("action")).collect()
 }
 
@@ -79,7 +90,7 @@ fn titles(listed: &[senpi_desktop_core::menus::MenuItem]) -> Vec<&str> {
 #[test]
 fn the_menu_bar_lists_its_top_level_menus_as_submenus() {
     let mut bus = menus();
-    let listed = items(&mut bus, &window(), &[]).unwrap();
+    let listed = items(&mut bus, on(&window()), &[]).unwrap();
     assert_eq!(titles(&listed), ["File", "Edit"]);
     assert!(listed.iter().all(|item| item.has_submenu && item.enabled));
 }
@@ -87,7 +98,7 @@ fn the_menu_bar_lists_its_top_level_menus_as_submenus() {
 #[test]
 fn a_menu_lists_its_items_without_separators_and_with_their_shortcuts() {
     let mut bus = menus();
-    let listed = items(&mut bus, &window(), &path(&["file"])).unwrap();
+    let listed = items(&mut bus, on(&window()), &path(&["file"])).unwrap();
     assert_eq!(titles(&listed), ["Open…", "Save", "Recent"]);
     assert_eq!(listed[1].path, path(&["File", "Save"]));
     assert_eq!(listed[1].shortcut.as_deref(), Some("<Primary>s"));
@@ -97,21 +108,21 @@ fn a_menu_lists_its_items_without_separators_and_with_their_shortcuts() {
 #[test]
 fn a_submenu_wrapped_in_an_unnamed_menu_lists_through_the_wrapper() {
     let mut bus = menus();
-    let listed = items(&mut bus, &window(), &path(&["File", "Recent"])).unwrap();
+    let listed = items(&mut bus, on(&window()), &path(&["File", "Recent"])).unwrap();
     assert_eq!(titles(&listed), ["a.txt"]);
 }
 
 #[test]
 fn selecting_a_command_runs_its_declared_action_once() {
     let mut bus = menus();
-    select(&mut bus, &window(), &path(&["File", "Save"]), &no_stop).unwrap();
+    select(&mut bus, on(&window()), &path(&["File", "Save"]), &no_stop).unwrap();
     assert_eq!(actions(&bus), ["action 43 #0"]);
 }
 
 #[test]
 fn a_label_without_its_trailing_ellipsis_selects_the_item() {
     let mut bus = menus();
-    select(&mut bus, &window(), &path(&["File", "Open"]), &no_stop).unwrap();
+    select(&mut bus, on(&window()), &path(&["File", "Open"]), &no_stop).unwrap();
     assert_eq!(actions(&bus), ["action 41 #0"]);
 }
 
@@ -119,7 +130,7 @@ fn a_label_without_its_trailing_ellipsis_selects_the_item() {
 fn an_ambiguous_label_is_refused_and_runs_nothing() {
     let mut bus = menus();
     bus.add(47, 40, command("save"));
-    let error = select(&mut bus, &window(), &path(&["File", "Save"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &path(&["File", "Save"]), &no_stop).unwrap_err();
     assert!(error.message.contains("ambiguous"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -127,7 +138,7 @@ fn an_ambiguous_label_is_refused_and_runs_nothing() {
 #[test]
 fn a_disabled_command_is_refused_and_runs_nothing() {
     let mut bus = menus();
-    let error = select(&mut bus, &window(), &path(&["Edit", "Undo"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &path(&["Edit", "Undo"]), &no_stop).unwrap_err();
     assert!(error.message.contains("disabled"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -135,7 +146,7 @@ fn a_disabled_command_is_refused_and_runs_nothing() {
 #[test]
 fn a_submenu_is_not_a_command() {
     let mut bus = menus();
-    let error = select(&mut bus, &window(), &path(&["File", "Recent"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &path(&["File", "Recent"]), &no_stop).unwrap_err();
     assert!(error.message.contains("leaf menu command"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -144,7 +155,7 @@ fn a_submenu_is_not_a_command() {
 fn a_child_whose_parent_link_disagrees_is_refused_before_any_action() {
     let mut bus = menus();
     bus.nodes.get_mut(&43).unwrap().parent = 50;
-    let error = select(&mut bus, &window(), &path(&["File", "Save"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &path(&["File", "Save"]), &no_stop).unwrap_err();
     assert!(error.message.contains("parent ownership"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -156,7 +167,7 @@ fn a_child_from_another_application_is_refused_before_any_action() {
     let mut foreign = command("Quit");
     foreign.application = 2;
     bus.add(60, 40, foreign);
-    let error = select(&mut bus, &window(), &path(&["File", "Save"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &path(&["File", "Save"]), &no_stop).unwrap_err();
     assert!(error.message.contains("cross-application"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -165,7 +176,7 @@ fn a_child_from_another_application_is_refused_before_any_action() {
 fn a_command_without_one_activation_action_is_refused() {
     let mut bus = menus();
     bus.nodes.get_mut(&43).unwrap().actions = vec!["click".into(), "activate".into()];
-    let error = select(&mut bus, &window(), &path(&["File", "Save"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &path(&["File", "Save"]), &no_stop).unwrap_err();
     assert!(error.message.contains("activation action"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -182,7 +193,7 @@ fn a_stop_before_the_action_runs_nothing() {
             Ok(())
         }
     };
-    let error = select(&mut bus, &window(), &path(&["File", "Save"]), &stop_at_last_check).unwrap_err();
+    let error = select(&mut bus, on(&window()), &path(&["File", "Save"]), &stop_at_last_check).unwrap_err();
     assert_eq!(error.code, ErrorCode::Suspended);
     assert_eq!(calls.get(), 5, "the stop check before the action must be the one that refused");
     assert!(actions(&bus).is_empty());
@@ -191,7 +202,7 @@ fn a_stop_before_the_action_runs_nothing() {
 #[test]
 fn a_frame_without_a_menu_bar_refuses_listing() {
     let mut bus = editor();
-    let error = items(&mut bus, &window(), &[]).unwrap_err();
+    let error = items(&mut bus, on(&window()), &[]).unwrap_err();
     assert!(error.message.contains("no accessible menu bar"), "{}", error.message);
 }
 

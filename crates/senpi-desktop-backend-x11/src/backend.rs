@@ -198,22 +198,30 @@ impl<S: XServer + Send, I: InputServer + Send> Backend for X11Backend<S, I> {
     }
 
     fn menu_items(&mut self, window: &DesktopWindow, path: &[String]) -> CoreResult<Vec<MenuItem>> {
-        self.ax.as_mut().ok_or_else(DesktopError::ax_unsupported)?.menu_items(window, path)
+        let windows = self.capture.windows()?;
+        self.ax
+            .as_mut()
+            .ok_or_else(DesktopError::ax_unsupported)?
+            .menu_items(window, &windows, path)
     }
 
-    /// The command runs through its own AT-SPI action, which needs neither
-    /// focus nor a raised window, so both delivery modes dispatch the same way.
+    /// The command runs through its own AT-SPI action, which needs no focus;
+    /// foreground delivery raises the window first.
     fn menu_select(
         &mut self,
         window: &DesktopWindow,
         path: &[String],
-        _delivery: DeliveryMode,
+        delivery: DeliveryMode,
         check_stop: &dyn Fn() -> CoreResult<()>,
     ) -> CoreResult<()> {
+        if delivery == DeliveryMode::Foreground {
+            self.raise_window(&window.id)?;
+        }
+        let windows = self.capture.windows()?;
         self.ax
             .as_mut()
             .ok_or_else(DesktopError::ax_unsupported)?
-            .menu_select(window, path, check_stop)
+            .menu_select(window, &windows, path, check_stop)
     }
 
     fn ax(&mut self) -> Option<&mut dyn AxBackend> {

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """GTK3 menu fixture for the AT-SPI menu live tests.
 
-Usage: menu_fixture.py <title> <record-file>
+Usage: menu_fixture.py <title>
 
 Opens one window titled <title> with a menu bar:
-File > Open..., Save (Ctrl+S), Recent > a.txt; Edit > Undo (insensitive).
-Every activated command appends "<label>@<title>" to <record-file>.
+File > Open..., Save (Ctrl+S), Print, print, Recent > a.txt; Edit > Undo (insensitive).
+Prints READY once the window is shown, then one "<label>@<title>" line per
+activated item, submenu items included, on stdout.
 """
 
 import sys
@@ -13,17 +14,17 @@ import sys
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk  # noqa: E402
+from gi.repository import GLib, Gtk  # noqa: E402
 
-title, record = sys.argv[1], sys.argv[2]
+title = sys.argv[1]
+
+
+def report(line):
+    print(line, flush=True)
 
 
 def recorder(label):
-    def activate(_item):
-        with open(record, "a", encoding="utf-8") as out:
-            out.write(f"{label}@{title}\n")
-
-    return activate
+    return lambda _item: report(f"{label}@{title}")
 
 
 def command(label, accel_group=None, accel=None, sensitive=True):
@@ -37,7 +38,7 @@ def command(label, accel_group=None, accel=None, sensitive=True):
 
 
 def submenu(label, items):
-    top = Gtk.MenuItem(label=label)
+    top = command(label)
     menu = Gtk.Menu()
     for child in items:
         menu.append(child)
@@ -57,6 +58,8 @@ bar.append(
             command("Open..."),
             Gtk.SeparatorMenuItem(),
             command("Save", accels, "<Primary>s"),
+            command("Print"),
+            command("print"),
             submenu("Recent", [command("a.txt")]),
         ],
     )
@@ -68,4 +71,5 @@ box.pack_start(Gtk.Label(label="menu fixture"), True, True, 0)
 window.add(box)
 window.connect("destroy", Gtk.main_quit)
 window.show_all()
+GLib.idle_add(lambda: report("READY") and False)
 Gtk.main()

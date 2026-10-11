@@ -5,11 +5,12 @@
 //! -p senpi-desktop-backend-atspi --lib -- --ignored --exact --nocapture <name>`
 //!
 //! The fixture (`tests/fixtures/menu_fixture.py`, `python3-gi` + GTK 3)
-//! appends `<label>@<title>` to its record file for every command it runs.
+//! prints `READY`, then `<label>@<title>` for every item it activates.
 
-use std::path::{Path, PathBuf};
+use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::sync::mpsc::{channel, Receiver};
+use std::time::Duration;
 
 use senpi_desktop_core::error::CoreResult;
 use senpi_desktop_core::types::DesktopWindow;
@@ -18,10 +19,11 @@ use crate::{AtSpiAx, WindowIds};
 
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/menu_fixture.py");
 const DEADLINE: Duration = Duration::from_secs(30);
+const REGISTRY_READS: usize = 200;
 
 struct Fixture {
     child: Child,
-    record: PathBuf,
+    lines: Receiver<String>,
 }
 
 impl Drop for Fixture {
@@ -29,41 +31,44 @@ impl Drop for Fixture {
         if let Err(err) = self.child.kill().and_then(|()| self.child.wait().map(drop)) {
             eprintln!("fixture cleanup failed: {err}");
         }
-        drop(std::fs::remove_file(&self.record));
     }
 }
 
-fn spawn_fixture(title: &str) -> Fixture {
-    let record = std::env::temp_dir().join(format!("{title}.record"));
-    std::fs::write(&record, "").unwrap();
-    let child = Command::new("python3")
-        .args([FIXTURE, title, record.to_str().unwrap()])
-        .env("GTK_MODULES", "gail:atk-bridge")
-        .env("NO_AT_BRIDGE", "0")
-        .stdout(Stdio::null())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .unwrap();
-    Fixture { child, record }
-}
+impl Fixture {
+    fn spawn(title: &str) -> Self {
+        let mut child = Command::new("python3")
+            .args([FIXTURE, title])
+            .env("GTK_MODULES", "gail:atk-bridge")
+            .env("NO_AT_BRIDGE", "0")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let (send, lines) = channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if send.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let fixture = Self { child, lines };
+        assert_eq!(fixture.next("READY"), "READY");
+        fixture
+    }
 
-fn until<T>(what: &str, mut probe: impl FnMut() -> Option<T>) -> T {
-    let started = Instant::now();
-    loop {
-        if let Some(found) = probe() {
-            return found;
-        }
-        assert!(started.elapsed() < DEADLINE, "{what} never happened");
-        std::thread::sleep(Duration::from_millis(50));
+    fn next(&self, what: &str) -> String {
+        self.lines
+            .recv_timeout(DEADLINE)
+            .unwrap_or_else(|err| panic!("{what} never arrived: {err}"))
     }
 }
 
-fn find_window(ax: &mut AtSpiAx, title: &str) -> Option<DesktopWindow> {
-    ax.windows().ok()?.into_iter().find(|window| window.title == title)
-}
-
-fn recorded(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_default()
+fn find_window(ax: &mut AtSpiAx, title: &str) -> DesktopWindow {
+    (0..REGISTRY_READS)
+        .find_map(|_| ax.windows().ok()?.into_iter().find(|window| window.title == title))
+        .unwrap_or_else(|| panic!("the fixture window never reached the registry"))
 }
 
 fn labels(path: &[&str]) -> Vec<String> {
@@ -78,48 +83,45 @@ fn no_stop() -> CoreResult<()> {
 #[ignore = "live: needs an AT-SPI bus (dbus-run-session), an X display, and python3-gi with GTK 3"]
 fn menu_listing_and_select_against_a_real_gtk_menu_bar() {
     let title = format!("senpi-atspi-menu-{}", std::process::id());
-    let fixture = spawn_fixture(&title);
+    let fixture = Fixture::spawn(&title);
     let mut ax = AtSpiAx::new(WindowIds::AtSpiFrames).unwrap();
-    let window = until("the fixture window", || find_window(&mut ax, &title));
+    let window = find_window(&mut ax, &title);
     println!("window_id={} pid={:?}", window.id, window.pid);
 
-    let bar = ax.menu_items(&window, &[]).unwrap();
+    let bar = ax.menu_items(&window, &[], &[]).unwrap();
     let bar_titles: Vec<&str> = bar.iter().map(|item| item.title.as_str()).collect();
     println!("menu_bar={bar_titles:?}");
     assert_eq!(bar_titles, ["File", "Edit"]);
 
-    let file = ax.menu_items(&window, &labels(&["File"])).unwrap();
+    let file = ax.menu_items(&window, &[], &labels(&["File"])).unwrap();
     let file_titles: Vec<&str> = file.iter().map(|item| item.title.as_str()).collect();
     println!("file_menu={file_titles:?} save_shortcut={:?}", file[1].shortcut);
-    assert_eq!(file_titles, ["Open...", "Save", "Recent"]);
+    assert_eq!(file_titles, ["Open...", "Save", "Print", "print", "Recent"]);
     assert_eq!(file[1].shortcut.as_deref(), Some("<Primary>s"));
-    assert!(file[2].has_submenu);
+    assert!(file[4].has_submenu);
 
-    ax.menu_select(&window, &labels(&["file", "save"]), &no_stop).unwrap();
-    until("Save to be recorded", || {
-        Some(recorded(&fixture.record)).filter(|text| text.contains("Save@"))
-    });
-    ax.menu_select(&window, &labels(&["File", "Open"]), &no_stop).unwrap();
-    ax.menu_select(&window, &labels(&["File", "Recent", "a.txt"]), &no_stop).unwrap();
-    let after = until("all three commands to be recorded", || {
-        Some(recorded(&fixture.record)).filter(|text| text.lines().count() == 3)
-    });
-    println!("recorded={after:?}");
-    assert_eq!(
-        after,
-        format!("Save@{title}\nOpen...@{title}\na.txt@{title}\n")
+    for (path, expected) in [
+        (&["file", "save"][..], "Save"),
+        (&["File", "Open"][..], "Open..."),
+        (&["File", "Recent", "a.txt"][..], "a.txt"),
+    ] {
+        ax.menu_select(&window, &[], &labels(path), &no_stop).unwrap();
+        assert_eq!(fixture.next(expected), format!("{expected}@{title}"));
+    }
+
+    let ambiguous = ax.menu_select(&window, &[], &labels(&["File", "Print"]), &no_stop).unwrap_err();
+    let disabled = ax.menu_select(&window, &[], &labels(&["Edit", "Undo"]), &no_stop).unwrap_err();
+    let submenu = ax.menu_select(&window, &[], &labels(&["File", "Recent"]), &no_stop).unwrap_err();
+    println!(
+        "ambiguous_error={} disabled_error={} submenu_error={}",
+        ambiguous.message, disabled.message, submenu.message
     );
-
-    let disabled = ax.menu_select(&window, &labels(&["Edit", "Undo"]), &no_stop).unwrap_err();
-    let submenu = ax.menu_select(&window, &labels(&["File", "Recent"]), &no_stop).unwrap_err();
-    println!("disabled_error={} submenu_error={}", disabled.message, submenu.message);
+    assert!(ambiguous.message.contains("ambiguous"), "{}", ambiguous.message);
     assert!(disabled.message.contains("disabled"), "{}", disabled.message);
     assert!(submenu.message.contains("leaf menu command"), "{}", submenu.message);
-    // The app runs actions in order, so once a later sentinel command is recorded,
-    // anything a refused path had dispatched would already be in the file.
-    ax.menu_select(&window, &labels(&["File", "Save"]), &no_stop).unwrap();
-    let last = until("the sentinel Save", || {
-        Some(recorded(&fixture.record)).filter(|text| text.lines().count() >= 4)
-    });
-    assert_eq!(last, format!("{after}Save@{title}\n"), "a refused path ran a command");
+    // The app reports activations in order, so the sentinel arriving next
+    // proves none of the refused paths (sensitive ambiguous items and a
+    // submenu that reports its own activation) dispatched anything.
+    ax.menu_select(&window, &[], &labels(&["File", "Save"]), &no_stop).unwrap();
+    assert_eq!(fixture.next("the sentinel Save"), format!("Save@{title}"), "a refused path ran a command");
 }

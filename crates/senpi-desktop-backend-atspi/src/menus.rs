@@ -9,10 +9,10 @@
 use atspi::{Role, State};
 use senpi_desktop_core::error::{CoreResult, DesktopError};
 use senpi_desktop_core::menus::{match_index, require_command, require_enabled, validate_path, MenuItem};
-use senpi_desktop_core::types::DesktopWindow;
 
-use crate::apps::{frame_of, window_root};
+use crate::apps::frame_of;
 use crate::bus::AtSpiBus;
+use crate::menu_target::{bound_root, require_bound, MenuTarget};
 
 /// Most objects one menu walk reads.
 const NODE_LIMIT: usize = 2048;
@@ -210,11 +210,11 @@ fn resolve<B: AtSpiBus>(
     Err(failure("a menu path is required"))
 }
 
-/// The items of `window`'s menu bar (empty `path`) or of the submenu `path`
+/// The items of the target window's menu bar (empty `path`) or of the submenu `path`
 /// names.
-pub(crate) fn items<B: AtSpiBus>(bus: &mut B, window: &DesktopWindow, path: &[String]) -> CoreResult<Vec<MenuItem>> {
+pub(crate) fn items<B: AtSpiBus>(bus: &mut B, target: MenuTarget<'_>, path: &[String]) -> CoreResult<Vec<MenuItem>> {
     validate_path(path, true)?;
-    let root = window_root(bus, window)?;
+    let root = bound_root(bus, target)?;
     let (containers, canonical) = if path.is_empty() {
         (menu_bars(bus, &root)?, Vec::new())
     } else {
@@ -227,23 +227,24 @@ pub(crate) fn items<B: AtSpiBus>(bus: &mut B, window: &DesktopWindow, path: &[St
     menu_level(bus, &containers, &canonical).map(|(items, _)| items)
 }
 
-/// Runs the command `path` names in `window`'s menu. The frame, the command's
+/// Runs the command `path` names in the target window's menu. The frame, the command's
 /// ownership, and the path are proven again after discovery, and the stop
 /// check runs immediately before the action.
 pub(crate) fn select<B: AtSpiBus>(
     bus: &mut B,
-    window: &DesktopWindow,
+    target: MenuTarget<'_>,
     path: &[String],
     check_stop: &dyn Fn() -> CoreResult<()>,
 ) -> CoreResult<()> {
     validate_path(path, false)?;
-    let root = window_root(bus, window)?;
+    let root = bound_root(bus, target)?;
     let (item, object) = resolve(bus, &root, path, check_stop)?;
     require_command(&item)?;
-    let current_root = window_root(bus, window)?;
+    let current_root = bound_root(bus, target)?;
     if !same(bus, &current_root, &root) {
         return Err(failure("target frame changed during menu discovery"));
     }
+    require_bound(bus, &root, target)?;
     if !frame_of(bus, &object)?.is_some_and(|frame| same(bus, &frame, &root)) {
         return Err(failure("command no longer belongs to the target frame"));
     }

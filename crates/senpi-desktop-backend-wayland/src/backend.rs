@@ -216,7 +216,7 @@ impl Backend for WaylandBackend {
 
     fn menu_items(&mut self, window: &DesktopWindow, path: &[String]) -> CoreResult<Vec<MenuItem>> {
         match &mut self.ax {
-            Ok(ax) => ax.menu_items(window, path),
+            Ok(ax) => ax.menu_items(window, &[], path),
             Err(error) => Err(error.clone()),
         }
     }
@@ -231,7 +231,7 @@ impl Backend for WaylandBackend {
         check_stop: &dyn Fn() -> CoreResult<()>,
     ) -> CoreResult<()> {
         match &mut self.ax {
-            Ok(ax) => ax.menu_select(window, path, check_stop),
+            Ok(ax) => ax.menu_select(window, &[], path, check_stop),
             Err(error) => Err(error.clone()),
         }
     }

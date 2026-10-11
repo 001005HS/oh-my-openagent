@@ -67,6 +67,9 @@ impl FakeNode {
     }
 }
 
+/// `(node, nth read of its children, change applied before that read)`.
+pub(crate) type ChildrenMutation = (u64, usize, fn(&mut FakeBus));
+
 #[derive(Debug, Default)]
 pub(crate) struct FakeBus {
     pub(crate) nodes: HashMap<u64, FakeNode>,
@@ -74,6 +77,10 @@ pub(crate) struct FakeBus {
     pub(crate) pids: HashMap<u64, u32>,
     pub(crate) registry_down: bool,
     pub(crate) calls: Vec<String>,
+    /// Changes the tree when `node`'s children are read for the `nth` time,
+    /// standing in for an application that changes mid-request.
+    pub(crate) mutate_on_children: Option<ChildrenMutation>,
+    pub(crate) children_reads: HashMap<u64, usize>,
 }
 
 impl FakeBus {
@@ -170,6 +177,14 @@ impl AtSpiBus for FakeBus {
     }
 
     fn children(&mut self, node: &u64) -> BusResult<Vec<u64>> {
+        let reads = self.children_reads.entry(*node).or_default();
+        *reads += 1;
+        let reads = *reads;
+        if let Some((target, nth, mutate)) = self.mutate_on_children {
+            if target == *node && nth == reads {
+                mutate(self);
+            }
+        }
         Ok(self.get(*node)?.children.clone())
     }
 
