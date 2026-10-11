@@ -107,11 +107,15 @@ describe("foreground-control grant boundaries (#9967)", HANG_GUARD, () => {
 		// Given: a revoke that fails with a programming bug (L3)
 		const reported: unknown[] = [];
 		const bug = new TypeError("revoke bug");
-		const revoke = Promise.reject(bug);
+		let revoke: Promise<void> | undefined;
 		const service = {
 			call: () => Promise.resolve({}),
 			onAudit: () => () => undefined,
-			revokeControl: () => revoke,
+			// Created on the call, so the runtime attaches its handler before the rejection is observed.
+			revokeControl: () => {
+				revoke = Promise.reject(bug);
+				return revoke;
+			},
 			reportError: (error: unknown) => void reported.push(error),
 		};
 
@@ -124,7 +128,7 @@ describe("foreground-control grant boundaries (#9967)", HANG_GUARD, () => {
 		);
 
 		// The runtime attached its handler to the same rejection first, so it has run once ours runs.
-		await revoke.catch(() => undefined);
+		await revoke?.catch(() => undefined);
 
 		// Then
 		expect(reported).toEqual([bug]);
