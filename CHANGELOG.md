@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Computer use can list and choose menu commands on Linux.** On X11 and Wayland, `menus.items` and `menus.select` walk a window's menu bar through AT-SPI and run the chosen item's own activation action, without focusing or raising the window. The request is bound to the exact window you named, so a same-titled sibling window of the same app is refused rather than used, and ambiguous, disabled or submenu labels are refused before anything runs. Selecting a menu command also no longer crashes GTK apps on Ubuntu 22.04. ([#9651](https://github.com/code-yeongyu/oh-my-openagent/issues/9651), [#9994](https://github.com/code-yeongyu/oh-my-openagent/pull/9994))
+
 **`background_task.taskCleanupDelayMs` now also sets how long finished background tasks stay retrievable.** A delay longer than 30 minutes is no longer cut short; leaving it unset keeps the existing timing. Thanks to @imadal1n. ([#9984](https://github.com/code-yeongyu/oh-my-openagent/pull/9984))
 
 **The MCP OAuth callback server answers errors in plain text.** Its not-found, provider-error and missing-parameter responses are now sent as `text/plain; charset=utf-8` with `X-Content-Type-Options: nosniff`, so an `error_description` in the callback URL is shown as text and never rendered as HTML. MCP sign-in currently runs through a second callback server that never echoed that text, so nothing you see changes; consolidating the two is tracked separately. Thanks to @niStee. ([#6464](https://github.com/code-yeongyu/oh-my-openagent/pull/6464), [#9979](https://github.com/code-yeongyu/oh-my-openagent/issues/9979))
