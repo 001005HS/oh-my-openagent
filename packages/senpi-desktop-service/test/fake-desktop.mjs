@@ -67,7 +67,8 @@ const error = (rpcCode, code, message, hint = null) => ({ error: { code: rpcCode
 
 function capture(target, frameId) {
 	const window = WINDOWS.find((candidate) => candidate.id === target);
-	const common = { target, frameId, scale: 1, note: null };
+	const common = { target, frameId, scale: 1, note: null, region: null,
+		coordinateWidth: window?.width ?? 1280, coordinateHeight: window?.height ?? 800 };
 	if (target === "desktop" || target.startsWith("display:")) {
 		const size = { width: 1280, height: 800, sourceWidth: 2880, sourceHeight: 1800 };
 		return { ...common, ...size, mode: "inline-png", data: PNG_1X1, mimeType: "image/png", artifactPath: null };
@@ -130,6 +131,21 @@ export function createDesktop() {
 				const frameId = `${target}-${frames.size + 1}`;
 				frames.set(target, frameId);
 				return { result: capture(target, frameId) };
+			}
+			case "captureRegion": {
+				const frameId = frames.get(target);
+				if (frameId === undefined || (params.frameId !== undefined && params.frameId !== frameId)) {
+					return error(-32007, "InvalidCoordinateFrame", "zoom needs the latest full screenshot");
+				}
+				const base = capture(target, frameId);
+				const region = params.region;
+				if (![region?.x, region?.y, region?.width, region?.height].every(Number.isFinite) ||
+					region.x < 0 || region.y < 0 || region.width <= 0 || region.height <= 0 ||
+					region.x + region.width > base.width || region.y + region.height > base.height) {
+					return error(-32007, "InvalidCoordinateFrame", "invalid zoom rectangle");
+				}
+				return { result: { ...base, region, width: region.width * 2, height: region.height * 2,
+					sourceWidth: region.width * 2, sourceHeight: region.height * 2 } };
 			}
 			case "clipboard.read":
 				return { result: { text: clipboard } };

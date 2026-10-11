@@ -2,7 +2,7 @@
 
 <!-- GENERATED from `src/methods.rs` by the `protocol_doc_is_fresh` test. Do not edit; regenerate with `SENPI_DESKTOP_UPDATE_SCHEMA=1 cargo test -p senpi-desktop-core`. -->
 
-Protocol version `1`, ABI `senpi-desktop/1`. JSON-RPC 2.0, one JSON message per line (NDJSON) on stdio or a local socket. Requests carry a number or string `id` that the reply echoes verbatim; replies may arrive out of order. `$/cancel` is sent as a notification (no `id`). The machine-readable contract is [`schema/engine.schema.json`](../schema/engine.schema.json).
+Protocol version `1`, ABI `senpi-desktop/2`. JSON-RPC 2.0, one JSON message per line (NDJSON) on stdio or a local socket. Requests carry a number or string `id` that the reply echoes verbatim; replies may arrive out of order. `$/cancel` is sent as a notification (no `id`). The machine-readable contract is [`schema/engine.schema.json`](../schema/engine.schema.json).
 
 ## Methods
 
@@ -20,6 +20,7 @@ Protocol version `1`, ABI `senpi-desktop/1`. JSON-RPC 2.0, one JSON message per 
 | `displays` | read | no | no | `EmptyParams` | `Vec<DesktopDisplay>` | `ErrorCode` |
 | `windows` | read | no | no | `EmptyParams` | `Vec<DesktopWindow>` | `ErrorCode` |
 | `capture` | read | no | no | `CaptureParams` | `CaptureResult` | `ErrorCode` |
+| `captureRegion` | read | no | no | `CaptureRegionParams` | `CaptureResult` | `ErrorCode` |
 | `click` | exec | no | no | `PointParams` | `null` | `ErrorCode` |
 | `moveMouse` | exec | no | no | `PointParams` | `null` | `ErrorCode` |
 | `drag` | exec | no | no | `DragParams` | `null` | `ErrorCode` |

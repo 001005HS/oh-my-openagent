@@ -5,7 +5,7 @@
 import { createInterface } from "node:readline";
 
 const mode = process.env.FAKE_ENGINE_MODE ?? "hello";
-const abi = process.env.FAKE_ENGINE_ABI ?? "senpi-desktop/1";
+const abi = process.env.FAKE_ENGINE_ABI ?? "senpi-desktop/2";
 const protocolVersion = process.env.FAKE_ENGINE_PROTOCOL ?? "1";
 
 if (!process.argv.includes("--stdio")) {
