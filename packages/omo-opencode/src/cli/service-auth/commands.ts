@@ -96,7 +96,7 @@ export function configureServiceAuthCommands(program: Command): void {
     .option("--device", "Use a device code instead of a browser callback")
     .option("--no-browser", "Sign in by device code without opening a browser")
     .option("--api <url>", "OmO API origin (or OMO_SERVICE_API_URL)")
-    .option("--accounts <url>", "OmO accounts origin (or OMO_SERVICE_ACCOUNTS_URL)")
+    .option("--accounts <url>", "OmO sign-in page origin (or OMO_SERVICE_ACCOUNTS_URL)")
     .action((options: Options) => run("login", options))
   for (const action of ["logout", "whoami"] as const) {
     program.command(action)
