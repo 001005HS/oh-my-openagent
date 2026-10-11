@@ -2935,6 +2935,36 @@ describe("BackgroundManager.resume concurrency key", () => {
     manager.shutdown()
   })
 
+  test("returns pending without waiting for a saturated concurrency group", async () => {
+    manager.shutdown()
+    manager = createBackgroundManagerWithOptions({ config: { defaultConcurrency: 1 } })
+    stubNotifyParentSession(manager)
+    const concurrency = getConcurrencyManager(manager)
+    await concurrency.acquire("explore")
+    const task: BackgroundTask = {
+      id: "queued-resume", sessionId: "queued-session", status: "completed",
+      agent: "explore", description: "continuation", prompt: "original",
+      parentSessionId: "parent", parentMessageId: "message", completedAt: new Date(),
+    }
+    getTaskMap(manager).set(task.id, task)
+    const resumed = manager.resume({ sessionId: "queued-session", prompt: "latest", parentSessionId: "parent", parentMessageId: "message" })
+    resumed.catch(() => {})
+    const result = await Promise.race([resumed, Bun.sleep(500).then(() => undefined)])
+    expect(result?.status).toBe("pending")
+    expect(task.queuedAt).toBeInstanceOf(Date)
+  })
+
+  test("preserves the latest continuation for retry", async () => {
+    const task: BackgroundTask = {
+      id: "latest-resume", sessionId: "latest-session", status: "completed",
+      agent: "explore", description: "continuation", prompt: "original",
+      parentSessionId: "parent", parentMessageId: "message", completedAt: new Date(),
+    }
+    getTaskMap(manager).set(task.id, task)
+    await manager.resume({ sessionId: "latest-session", prompt: "latest", parentSessionId: "parent", parentMessageId: "message" })
+    expect(task.prompt).toBe("latest")
+  })
+
   test("should re-acquire using external task concurrency key", async () => {
     // given
     const task = await manager.trackTask({

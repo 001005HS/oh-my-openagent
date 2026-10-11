@@ -54,6 +54,7 @@ export interface BackgroundTask {
   spawnDepth?: number
   status: BackgroundTaskStatus
   queuedAt?: Date
+  pendingResume?: object
   startedAt?: Date
   completedAt?: Date
   result?: string

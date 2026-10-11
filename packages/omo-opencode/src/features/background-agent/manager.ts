@@ -1342,6 +1342,11 @@ The fallback retry session is now created and can be inspected directly.
       )
     }
 
+    if (existingTask.status === "pending" && existingTask.pendingResume) {
+      throw new Error(`Task ${existingTask.id} already has a continuation queued for admission and cannot accept another one. ` +
+        "Wait for it to start and complete before resuming it with task_id.")
+    }
+
     const resumeSnapshot = this.captureResumeTaskSnapshot(existingTask)
     const completionTimer = this.completionTimers.get(existingTask.id)
     if (completionTimer) {
@@ -1353,7 +1358,51 @@ The fallback retry session is now created and can be inspected directly.
     const concurrencyKey = this.concurrencyManager.getConcurrencyKey(
       existingTask.concurrencyGroup ?? existingTask.agent,
     )
-    await this.concurrencyManager.acquire(concurrencyKey)
+    const queuedBefore = this.concurrencyManager.getQueueLength(concurrencyKey)
+    const admission = this.concurrencyManager.acquire(concurrencyKey, existingTask.id)
+    const mustWait = this.concurrencyManager.getQueueLength(concurrencyKey) > queuedBefore
+    if (!mustWait) {
+      await admission
+      return this.startResumedTask(existingTask, input, resumeSnapshot, concurrencyKey)
+    }
+    const resumeToken = {}
+    existingTask.pendingResume = resumeToken
+    existingTask.status = "pending"
+    existingTask.queuedAt = new Date()
+    existingTask.completedAt = undefined
+    existingTask.error = undefined
+    this.updateTaskParent(existingTask, input.parentSessionId)
+    existingTask.parentMessageId = input.parentMessageId
+    existingTask.parentModel = input.parentModel
+    existingTask.parentAgent = input.parentAgent
+    if (input.parentTools) existingTask.parentTools = input.parentTools
+    if (input.parentSessionId) {
+      const pending = this.pendingByParent.get(input.parentSessionId) ?? new Set<string>()
+      pending.add(existingTask.id)
+      this.pendingByParent.set(input.parentSessionId, pending)
+    }
+    this.taskHistory.record(input.parentSessionId, { id: existingTask.id, sessionID: existingTask.sessionId, agent: existingTask.agent, description: existingTask.description, status: "pending", category: existingTask.category })
+    getTaskToastManager()?.addTask({ id: existingTask.id, description: existingTask.description, agent: existingTask.agent, isBackground: true, status: "queued" })
+    this.updateBackgroundTaskMarker(existingTask.parentSessionId)
+    admission.then(async () => {
+      if (existingTask.status !== "pending" || existingTask.pendingResume !== resumeToken) {
+        this.concurrencyManager.release(concurrencyKey)
+        return
+      }
+      await this.startResumedTask(existingTask, input, resumeSnapshot, concurrencyKey)
+    }).catch((error: unknown) => {
+      if (existingTask.status !== "pending" || existingTask.pendingResume !== resumeToken) return
+      log("[background-agent] Queued resume was not admitted:", { taskId: existingTask.id, error: error instanceof Error ? error.message : String(error) })
+      existingTask.pendingResume = undefined
+      this.restoreTaskAfterSkippedResume(existingTask, resumeSnapshot, "unavailable")
+    })
+    return existingTask
+  }
+
+  private async startResumedTask(existingTask: BackgroundTask, input: ResumeInput, resumeSnapshot: ResumeTaskSnapshot, concurrencyKey: string): Promise<BackgroundTask> {
+    if (!existingTask.sessionId) throw new Error(`Task has no sessionID: ${existingTask.id}`)
+    existingTask.pendingResume = undefined
+    existingTask.prompt = input.prompt
     existingTask.concurrencyKey = concurrencyKey
     existingTask.concurrencyGroup = concurrencyKey
 

@@ -227,7 +227,7 @@ export async function tryFallbackRetry(args: {
   const queue = queuesByKey.get(key) ?? []
   const retryInput: LaunchInput = {
     description: task.description,
-    prompt: task.prompt,
+    prompt: `${task.prompt}\n\n[Note: this is a retry in a new session after the previous session failed; the earlier session's context is not available. Work from this prompt, which is the latest instruction sent to the task.]`,
     agent: task.agent,
     parentSessionId: task.parentSessionId,
     parentMessageId: task.parentMessageId,
