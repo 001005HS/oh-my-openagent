@@ -1,3 +1,7 @@
+## 2026-10-11 - The control confirm drops its redundant time floor (#9967)
+
+`control-confirm.ts` no longer refuses a confirm under 3 s of budget: the service facade already throws before asking when under 8 s of run time is left, so the component check never fired in production. The near-duplicate "RPC-mode confirm frame never answered" test is removed; "a client that never answers" keeps that contract.
+
 ## 2026-10-11 - The browser skill rides on every ulw-research invocation (#9958)
 
 The skill-pointers companion list for `ulw-research` was `ultimate-browsing` alone, and its instruction asked to arm "every browsing lane or member" with `load_skills` - a team member carries no `load_skills`, and `ultimate-browsing` routes plain page reading to headless extraction, so a research run that loaded the companion still read its sources through fetch. `browser` is now the first companion: its pointer tells the orchestrator to read the `browser` skill in the same turn as `ulw-research`, arm every web lane with `load_skills: ["browser"]`, and name that `SKILL.md` in every web member brief. The `ultimate-browsing` companion stays for the hosts the user's browser cannot open and no longer mentions members. The companion rides behind the keyword, `/skill:ulw-research`, expanded-block and queued paths like the existing one, is skipped only when the input already carries the `browser` skill, and the `skill-pointers-e2e` scenarios assert the hidden `omo-browser:skill-pointer` message on the live engine.
