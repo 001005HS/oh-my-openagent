@@ -112,10 +112,10 @@ function outcome(event: Json): ToolOutcome {
   }
 }
 
-/** The real Senpi RPC process loads the packaged OmO extension and the scripted provider. */
 /** The only confirm this QA approves: the foreground-control grant's (#9651 B5). */
 const CONTROL_CONFIRM_TITLE = "Allow foreground computer control?"
 
+/** The real Senpi RPC process loads the packaged OmO extension and the scripted provider. */
 export class AgentSession {
   readonly #sandbox: Sandbox
   readonly #child

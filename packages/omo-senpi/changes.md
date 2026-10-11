@@ -1,3 +1,7 @@
+## 2026-10-11 - The control confirm drops its redundant time floor (#9967)
+
+`control-confirm.ts` no longer refuses a confirm under 3 s of budget: the service facade already throws before asking when under 8 s of run time is left, so the component check never fired in production. The near-duplicate "RPC-mode confirm frame never answered" test is removed; "a client that never answers" keeps that contract.
+
 ## 2026-10-11 - The computer-use component confirms and revokes the foreground-control grant (#9651 B5b)
 
 `components/computer-use/control-confirm.ts` is the human confirm behind `desktop.control.acquire`. It shows upstream's title "Allow foreground computer control?" with the model's reason and the revocation rules. A headless context (`hasUI === false` or no `ui.confirm`) never prompts, and a refusal, an abort or a client that never answers means no grant.

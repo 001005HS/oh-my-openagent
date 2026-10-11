@@ -7,9 +7,6 @@ import { type ControlConfirmRequest, DEFAULT_TIMEOUT_SECONDS } from "@oh-my-open
  */
 export const CONTROL_CONFIRM_TIMEOUT_MS = (DEFAULT_TIMEOUT_SECONDS - 15) * 1000
 
-/** Below this, a confirm could not be read and answered before the run ends. */
-const MIN_CONFIRM_MS = 3_000
-
 /** Title of the foreground-control confirm, upstream oh-my-pi's wording. */
 export const CONTROL_CONFIRM_TITLE = "Allow foreground computer control?"
 
@@ -43,9 +40,8 @@ export async function confirmComputerControl(
 ): Promise<boolean> {
   const confirm = request.context.ui?.confirm
   if (request.context.hasUI === false || confirm === undefined || request.signal.aborted) return false
+  // The facade refuses `acquire` before asking when too little run time is left to answer (#9967 M2).
   const timeoutMs = Math.min(options.timeoutMs ?? CONTROL_CONFIRM_TIMEOUT_MS, request.budgetMs ?? Number.POSITIVE_INFINITY)
-  // Too little run time left for a human to read and answer: no prompt, no grant.
-  if (timeoutMs < MIN_CONFIRM_MS) return false
   const scheduleTimeout = options.scheduleTimeout ?? realScheduler
   return await new Promise<boolean>((resolve) => {
     let settled = false

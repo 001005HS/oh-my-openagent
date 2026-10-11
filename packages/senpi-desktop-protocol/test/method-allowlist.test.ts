@@ -42,7 +42,9 @@ const CHAIN_METHOD_SNAPSHOT = [
 
 /**
  * Engine controls only the host process may reach: stop-path lifecycle, resume, session ownership, and
- * the foreground grant itself (a chain reaches it only through `control.acquire`, behind the human confirm).
+ * the foreground grant itself. A call chain reaches the grant only through `control.acquire`, behind the
+ * human confirm; run code has no handle-level path to it either (#9967). The grant is a consent guard for
+ * a cooperating model, not a sandbox boundary: the run vm is not one.
  */
 const HOST_CONTROL = /resume|stop|start|heartbeat|session\.open|control\.(grant|revoke)/i;
 
