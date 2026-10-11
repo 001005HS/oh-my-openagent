@@ -1,3 +1,7 @@
+## 2026-10-11 - The browser skill rides on every ulw-research invocation (#9958)
+
+The skill-pointers companion list for `ulw-research` was `ultimate-browsing` alone, and its instruction asked to arm "every browsing lane or member" with `load_skills` - a team member carries no `load_skills`, and `ultimate-browsing` routes plain page reading to headless extraction, so a research run that loaded the companion still read its sources through fetch. `browser` is now the first companion: its pointer tells the orchestrator to read the `browser` skill in the same turn as `ulw-research`, arm every web lane with `load_skills: ["browser"]`, and name that `SKILL.md` in every web member brief. The `ultimate-browsing` companion stays for the hosts the user's browser cannot open and no longer mentions members. The companion rides behind the keyword, `/skill:ulw-research`, expanded-block and queued paths like the existing one, is skipped only when the input already carries the `browser` skill, and the `skill-pointers-e2e` scenarios assert the hidden `omo-browser:skill-pointer` message on the live engine.
+
 ## 2026-10-11 - The computer-use component confirms and revokes the foreground-control grant (#9651 B5b)
 
 `components/computer-use/control-confirm.ts` is the human confirm behind `desktop.control.acquire`. It shows upstream's title "Allow foreground computer control?" with the model's reason and the revocation rules. A headless context (`hasUI === false` or no `ui.confirm`) never prompts, and a refusal, an abort or a client that never answers means no grant.
