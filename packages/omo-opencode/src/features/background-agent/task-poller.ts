@@ -32,10 +32,12 @@ export function pruneStaleTasksAndNotifications(args: {
   notifications: Map<string, BackgroundTask[]>
   onTaskPruned: (taskId: string, task: BackgroundTask, errorMessage: string) => void
   taskTtlMs?: number
+  taskCleanupDelayMs?: number
   sessionStatuses?: SessionStatusMap
 }): void {
   const { tasks, notifications, onTaskPruned } = args
   const effectiveTtl = args.taskTtlMs ?? TASK_TTL_MS
+  const terminalTtl = args.taskCleanupDelayMs ?? TERMINAL_TASK_TTL_MS
   const now = Date.now()
   const tasksWithPendingNotifications = new Set<string>()
 
@@ -53,7 +55,7 @@ export function pruneStaleTasksAndNotifications(args: {
       if (!completedAt) continue
 
       const age = now - completedAt
-      if (age <= TERMINAL_TASK_TTL_MS) continue
+      if (age <= terminalTtl) continue
 
       removeTaskToastTracking(taskId)
       tasks.delete(taskId)
