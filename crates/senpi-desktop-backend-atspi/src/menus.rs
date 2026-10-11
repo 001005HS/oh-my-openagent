@@ -12,7 +12,7 @@ use senpi_desktop_core::menus::{match_index, require_command, require_enabled, v
 
 use crate::apps::frame_of;
 use crate::bus::AtSpiBus;
-use crate::menu_target::{bound_root, require_bound, MenuTarget};
+use crate::menu_target::{bound_root, MenuTarget};
 
 /// Most objects one menu walk reads.
 const NODE_LIMIT: usize = 2048;
@@ -244,7 +244,6 @@ pub(crate) fn select<B: AtSpiBus>(
     if !same(bus, &current_root, &root) {
         return Err(failure("target frame changed during menu discovery"));
     }
-    require_bound(bus, &root, target)?;
     if !frame_of(bus, &object)?.is_some_and(|frame| same(bus, &frame, &root)) {
         return Err(failure("command no longer belongs to the target frame"));
     }

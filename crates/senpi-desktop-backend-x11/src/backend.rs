@@ -205,18 +205,16 @@ impl<S: XServer + Send, I: InputServer + Send> Backend for X11Backend<S, I> {
             .menu_items(window, &windows, path)
     }
 
-    /// The command runs through its own AT-SPI action, which needs no focus;
-    /// foreground delivery raises the window first.
+    /// The command runs through its own AT-SPI action, which needs neither
+    /// focus nor a raised window, so both delivery modes dispatch the same way
+    /// and a refused request never moves focus.
     fn menu_select(
         &mut self,
         window: &DesktopWindow,
         path: &[String],
-        delivery: DeliveryMode,
+        _delivery: DeliveryMode,
         check_stop: &dyn Fn() -> CoreResult<()>,
     ) -> CoreResult<()> {
-        if delivery == DeliveryMode::Foreground {
-            self.raise_window(&window.id)?;
-        }
         let windows = self.capture.windows()?;
         self.ax
             .as_mut()

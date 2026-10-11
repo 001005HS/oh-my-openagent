@@ -49,8 +49,42 @@ fn a_window_id_no_frame_carries_is_refused() {
     assert!(error.message.contains("provably window"), "{}", error.message);
 }
 
+fn native(id: &str) -> DesktopWindow {
+    DesktopWindow {
+        id: id.into(),
+        ..window()
+    }
+}
+
 #[test]
-fn a_native_window_that_two_frames_could_be_is_refused() {
+fn a_native_window_one_frame_correlates_to_runs_its_command() {
+    let mut bus = menus();
+    let listed = [native("0x800001")];
+    let target = MenuTarget {
+        window: &listed[0],
+        ids: WindowIds::Native,
+        windows: &listed,
+    };
+    select(&mut bus, target, &path(&["File", "Save"]), &no_stop).unwrap();
+    assert_eq!(actions(&bus), ["action 43 #0"]);
+}
+
+#[test]
+fn a_native_window_a_minimized_unlisted_sibling_also_correlates_to_is_refused() {
+    let mut bus = twin();
+    let listed = [native("0x800001")];
+    let target = MenuTarget {
+        window: &listed[0],
+        ids: WindowIds::Native,
+        windows: &listed,
+    };
+    let error = select(&mut bus, target, &path(&["File", "Save"]), &no_stop).unwrap_err();
+    assert!(error.message.contains("provably window"), "{}", error.message);
+    assert!(actions(&bus).is_empty());
+}
+
+#[test]
+fn a_native_window_its_frames_cannot_be_told_apart_from_is_refused() {
     let mut bus = twin();
     let native = DesktopWindow {
         id: "0x800001".into(),
