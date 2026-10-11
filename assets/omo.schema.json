@@ -1700,6 +1700,10 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
             }
           },
           "additionalProperties": false
@@ -2042,6 +2046,10 @@
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 9007199254740991
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "additionalProperties": false
@@ -4014,6 +4022,10 @@
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 9007199254740991
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "additionalProperties": false
@@ -4278,6 +4290,10 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 9007199254740991
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
                       }
                     },
                     "additionalProperties": false
@@ -6226,6 +6242,10 @@
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 9007199254740991
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "additionalProperties": false
@@ -6490,6 +6510,10 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 9007199254740991
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
                       }
                     },
                     "additionalProperties": false
@@ -8438,6 +8462,10 @@
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 9007199254740991
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "additionalProperties": false
@@ -8702,6 +8730,10 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 9007199254740991
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
                       }
                     },
                     "additionalProperties": false
@@ -10648,6 +10680,10 @@
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 9007199254740991
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "additionalProperties": false
@@ -10912,6 +10948,10 @@
                           "type": "integer",
                           "minimum": 1,
                           "maximum": 9007199254740991
+                        },
+                        "model": {
+                          "type": "string",
+                          "minLength": 1
                         }
                       },
                       "additionalProperties": false
@@ -12860,6 +12900,10 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 9007199254740991
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
                       }
                     },
                     "additionalProperties": false
@@ -13124,6 +13168,10 @@
                               "type": "integer",
                               "minimum": 1,
                               "maximum": 9007199254740991
+                            },
+                            "model": {
+                              "type": "string",
+                              "minLength": 1
                             }
                           },
                           "additionalProperties": false
@@ -15072,6 +15120,10 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 9007199254740991
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
                       }
                     },
                     "additionalProperties": false
@@ -15336,6 +15388,10 @@
                               "type": "integer",
                               "minimum": 1,
                               "maximum": 9007199254740991
+                            },
+                            "model": {
+                              "type": "string",
+                              "minLength": 1
                             }
                           },
                           "additionalProperties": false
@@ -17284,6 +17340,10 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 9007199254740991
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1
                       }
                     },
                     "additionalProperties": false
@@ -17548,6 +17608,10 @@
                               "type": "integer",
                               "minimum": 1,
                               "maximum": 9007199254740991
+                            },
+                            "model": {
+                              "type": "string",
+                              "minLength": 1
                             }
                           },
                           "additionalProperties": false
