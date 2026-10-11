@@ -13,9 +13,6 @@ use senpi_desktop_core::types::DesktopWindow;
 use super::Win32Ax;
 use crate::integrity::IntegrityRid;
 
-/// Raises the proven target window for foreground delivery.
-pub(crate) type RaiseWindow<'a> = &'a dyn Fn(&str) -> CoreResult<()>;
-
 impl Win32Ax {
     pub(crate) fn menu_items(
         &mut self,
@@ -39,13 +36,13 @@ impl Win32Ax {
         path: &[String],
         integrity: IntegrityRid,
         check_stop: &dyn Fn() -> CoreResult<()>,
-        raise: Option<RaiseWindow<'_>>,
+        foreground: bool,
     ) -> CoreResult<()> {
         validate_path(path, false)?;
         check_stop()?;
         let target = target::Target::new(window, integrity)?;
-        if let Some(raise) = raise {
-            raise(&window.id)?;
+        if foreground {
+            crate::input::raise_window(&window.id)?;
         }
         let root = target.menu();
         if root == 0 {

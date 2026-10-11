@@ -174,9 +174,8 @@ impl Backend for Win32Backend {
         delivery: DeliveryMode,
         check_stop: &dyn Fn() -> CoreResult<()>,
     ) -> CoreResult<()> {
-        let raise: crate::ax::menus::RaiseWindow<'_> = &input::raise_window;
-        let raise = (delivery == DeliveryMode::Foreground).then_some(raise);
-        self.ax.menu_select(window, path, self.integrity, check_stop, raise)
+        let foreground = delivery == DeliveryMode::Foreground;
+        self.ax.menu_select(window, path, self.integrity, check_stop, foreground)
     }
 
     /// Without input nothing was ever pressed, so nothing is held.
