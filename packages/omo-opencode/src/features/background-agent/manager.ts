@@ -2914,6 +2914,7 @@ The task was re-queued on a fallback model after a retryable failure.
       tasks: this.tasks,
       notifications: this.notifications,
       taskTtlMs: this.config?.taskTtlMs,
+      taskCleanupDelayMs: this.config?.taskCleanupDelayMs,
       sessionStatuses: allStatuses,
       onTaskPruned: (taskId, task, errorMessage) => {
         const wasPending = task.status === "pending"
