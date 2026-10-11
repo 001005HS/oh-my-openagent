@@ -86,11 +86,13 @@ sync_latest_source() {
 sync_latest_source code-yeongyu/lazycodex "$LAZYCODEX_SOURCE_ROOT/lazycodex-source"
 sync_latest_source openai/codex "$LAZYCODEX_SOURCE_ROOT/chatgpt-subscription-source"
 ```
-4. Create a fresh temporary clone and branch under `${TMPDIR:-/tmp}`. Do not modify the user's current repository for the target fix unless the current repository is itself the requested target and the user explicitly asked for local edits.
+4. Create a fresh temporary clone and branch under `${TMPDIR:-/tmp}`. Do not modify the user's current repository for the target fix unless the current repository is itself the requested target and the user explicitly asked for local edits. ALWAYS add path-specific cleanup todos at creation for each worktree and run-scoped dir (caches included); complete them only after a read-back receipt. Pass the cache environment below to every task command and child.
 
 ```bash
 TARGET_REPO="code-yeongyu/lazycodex" # or openai/codex
 WORK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/lazycodex-fix-XXXXXX")"
+mkdir -p "$WORK_ROOT/tmp"
+export TMPDIR="$WORK_ROOT/tmp" NODE_COMPILE_CACHE="$WORK_ROOT/tmp/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$WORK_ROOT/tmp/bun-transpiler"
 gh repo clone "$TARGET_REPO" "$WORK_ROOT/repo" -- --depth=1
 cd "$WORK_ROOT/repo"
 BASE_BRANCH="$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')"
@@ -159,6 +161,7 @@ cd /
 git -C "$WORK_ROOT/repo" worktree remove "$WORK_ROOT/worktree"
 find "$WORK_ROOT" -mindepth 1 -maxdepth 1 -exec rm -r -- {} +
 rmdir "$WORK_ROOT"
+test ! -e "$WORK_ROOT" && printf 'cleanup: worktree and caches REMOVED\n'
 ```
 
 Return the PR or issue URL, the reproduction command, the verification command, and the cleanup receipt.
