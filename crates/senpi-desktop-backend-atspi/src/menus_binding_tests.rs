@@ -84,6 +84,33 @@ fn a_native_window_a_minimized_unlisted_sibling_also_correlates_to_is_refused() 
 }
 
 #[test]
+fn a_native_window_whose_frame_vanished_never_falls_to_a_hidden_sibling() {
+    let mut bus = twin();
+    bus.nodes.remove(&10);
+    let listed = [native("0x800001")];
+    let target = MenuTarget {
+        window: &listed[0],
+        ids: WindowIds::Native,
+        windows: &listed,
+    };
+    assert!(select(&mut bus, target, &path(&["File", "Save"]), &no_stop).is_err());
+    assert!(actions(&bus).is_empty());
+}
+
+#[test]
+fn a_native_window_missing_from_the_list_is_refused() {
+    let mut bus = menus();
+    let listed: [DesktopWindow; 0] = [];
+    let target = MenuTarget {
+        window: &native("0x800001"),
+        ids: WindowIds::Native,
+        windows: &listed,
+    };
+    let error = items(&mut bus, target, &[]).unwrap_err();
+    assert!(error.message.contains("provably window"), "{}", error.message);
+}
+
+#[test]
 fn a_native_window_its_frames_cannot_be_told_apart_from_is_refused() {
     let mut bus = twin();
     let native = DesktopWindow {
