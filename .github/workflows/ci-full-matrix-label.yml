@@ -1,0 +1,22 @@
+name: CI Full Matrix Label
+
+on:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  # Distinct from both normal CI and the called CI's workflow/ref group.
+  group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number }}-full-matrix
+  cancel-in-progress: true
+
+# Reusable workflows cannot elevate the caller's token permissions.
+# ci.yml's PR guard and push-only jobs declare these write permissions.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  full-matrix:
+    if: github.event.label.name == 'ci:full-matrix'
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
