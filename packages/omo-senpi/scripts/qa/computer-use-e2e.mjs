@@ -132,7 +132,42 @@ const screenshotChain = { action: "call", chain: [{ method: "screenshot" }] }
 // multi-step sequence is `run` code (a `chain` is one fluent call on a window or element).
 const clickChain = { action: "run", code: "await desktop.screenshot(); await desktop.click(5, 5); return 'clicked'" }
 
+// A per-call display handle: its screenshot and input target display:<id>, never the session default.
+const displayRun = {
+  action: "run",
+  code: "const all = await desktop.display('all'); const two = await desktop.display('2'); const a = await all.screenshot({ silent: true }); const b = await two.screenshot({ silent: true }); await two.click(20, 10); return JSON.stringify({ all: [a.width, a.height], two: [b.width, b.height] })",
+}
+const displayShots = {
+  action: "run",
+  code: "const two = await desktop.display('2'); const shot = await two.screenshot({ silent: true }); await two.click(20, 10); return 'clicked'",
+}
+
 const scenarios = [
+  {
+    name: "display-handles-capture-and-click",
+    permission: undefined,
+    steps: [
+      { type: "tool_call", name: "computer", arguments: displayRun },
+      { type: "text", text: "done" },
+    ],
+    verify: ({ results, methods }) => [
+      ["the display run succeeded", results.find((r) => r.toolName === "computer")?.isError === false],
+      ["display 2 is narrower than the all-display composite", /\"all\":\[(\d+),\d+\],\"two\":\[(\d+),/.exec(resultText(results.find((r) => r.toolName === "computer")))?.slice(1).map(Number).reduce((all, two) => all > two) === true],
+      ["the click on display 2 reached the engine", methods.includes("click")],
+    ],
+  },
+  {
+    name: "display-input-denied-under-exec-deny",
+    permission: "computer:exec=deny",
+    steps: [
+      { type: "tool_call", name: "computer", arguments: displayShots },
+      { type: "text", text: "done" },
+    ],
+    verify: ({ results, methods }) => [
+      ["the display click run was refused", results.find((r) => r.toolName === "computer")?.isError === true],
+      ["no click reached the engine", !methods.includes("click")],
+    ],
+  },
   {
     name: "read-allowed-under-exec-deny",
     permission: "computer:exec=deny",
