@@ -225,9 +225,12 @@ export async function tryFallbackRetry(args: {
   const rawKey = task.model ? `${task.model.providerID}/${task.model.modelID}` : task.agent
   const key = concurrencyManager.getConcurrencyKey(rawKey)
   const queue = queuesByKey.get(key) ?? []
+  const retryPrompt = task.originalPrompt && task.originalPrompt !== task.prompt
+    ? `${task.originalPrompt}\n\n[Latest continuation instruction]\n${task.prompt}`
+    : task.prompt
   const retryInput: LaunchInput = {
     description: task.description,
-    prompt: `${task.prompt}\n\n[Note: this is a retry in a new session after the previous session failed; the earlier session's context is not available. Work from this prompt, which is the latest instruction sent to the task.]`,
+    prompt: `${retryPrompt}\n\n[Note: this is a retry in a new session after the previous session failed; the earlier session's context is not available. Work from the original task and latest continuation instruction above.]`,
     agent: task.agent,
     parentSessionId: task.parentSessionId,
     parentMessageId: task.parentMessageId,

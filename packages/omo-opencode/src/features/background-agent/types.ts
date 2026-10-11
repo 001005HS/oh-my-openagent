@@ -50,6 +50,7 @@ export interface BackgroundTask {
   teamRunId?: string
   description: string
   prompt: string
+  originalPrompt?: string
   agent: string
   spawnDepth?: number
   status: BackgroundTaskStatus

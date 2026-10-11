@@ -125,6 +125,17 @@ describe("tryFallbackRetry", () => {
   })
 
   describe("#given retryable error with fallback chain", () => {
+    test("includes the original task and latest continuation in a fresh-session retry", async () => {
+      // given
+      const args = createDefaultArgs({ prompt: "latest-continuation", originalPrompt: "original-task" })
+      // when
+      await tryFallbackRetry(args)
+      // then
+      const retry = [...args.queuesByKey.values()].flat()[0]
+      expect(retry.input.prompt).toContain("original-task")
+      expect(retry.input.prompt).toContain("latest-continuation")
+    })
+
     test("returns true and enqueues retry", async () => {
       const args = createDefaultArgs()
 
