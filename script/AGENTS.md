@@ -50,6 +50,8 @@ Build, publish, QA, and repo-invariant automation. Run via `bun run <script>` fr
 
 ## TESTS (61 `*.test.ts`)
 
+The `ci:full-matrix` label launches the separate `ci-full-matrix-label.yml` caller; normal `ci.yml` does not trigger on labels. `ci-label-workflow-policy.test.ts` guards the trigger, exact label gate, reusable call, permissions, and independent concurrency. The classifier still receives the caller's PR labels.
+
 Co-located per script (`build-binaries.test.ts`, `stats.test.ts`, `sync-lazycodex-marketplace.test.ts`, `package-layout.test.ts`, `lazycodex-marketplace-validation.pin.test.ts`, `web-terminal-visual-qa.test.ts`, ...). Repo-wide meta-audits also live here and run in root `bun test`:
 
 | File | Invariant |

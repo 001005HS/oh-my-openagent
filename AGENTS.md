@@ -401,6 +401,8 @@ Cross-harness, one-command dev setup. The **single source of truth** is [`script
 
 ## CI/CD
 
+Adding `ci:full-matrix` launches `ci-full-matrix-label.yml`, which calls `ci.yml` with the caller's pull-request payload. Normal CI ignores label events. The label workflow has separate concurrency and `full-matrix / <ci job>` check names, so bot labels cannot cancel required CI or replace a required failure with skipped checks.
+
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `ci.yml` | push/PR to master/dev | `block-master-pr` guard, root `bun test` (fast-path matrix via `script/ci-fast-path.mjs`; full OS matrix on runtime-touching or platform-sensitive paths or the `ci:full-matrix` label; a leg that skipped its tests never reports a plain pass), typecheck, codex-compatibility (full `bun run test:codex` plus per-component `npm run check` on ubuntu; platform smoke on macos/windows), senpi-compatibility (bundle `--check` + `bun test packages/omo-senpi`), lazycodex-published-smoke, build, omo-ai-payload-check (npm dry-run payload), auto-commit schema on master push, draft "next" release on dev push |
