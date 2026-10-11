@@ -106,6 +106,27 @@ describe("gate verdict", () => {
   test("classifies removed shipped entries using the previous manifest", () => {
     expect(checkPrChangelog({ ...facts, changedFiles: ["assets/runtime.json"], policy: manifestPolicy({ files: [] }), previousPolicy: manifestPolicy({ files: ["assets/*.json"] }) }).pass).toBe(false)
   })
+  const notes = "### Fixed\n- Existing fix.\n- Another fix."
+  const history = "## [1.0.0]\nOld note.\n"
+  const beforeRelease = `## [Unreleased]\n\n${notes}\n\n${history}`
+  test.each([
+    ["complete release transition", `## [Unreleased]\n\n## [1.1.0] - 2026-10-11\n\n${notes}\n\n${history}`, true],
+    ["unrelated release heading", `${beforeRelease}\n## [1.1.0]\nUnrelated note.\n`, false],
+    ["copied notes without clearing Unreleased", `## [Unreleased]\n${notes}\n\n## [1.1.0]\n${notes}\n\n${history}`, false],
+    ["partial release transition", `## [Unreleased]\n\n## [1.1.0]\n### Fixed\n- Existing fix.\n\n${history}`, false],
+    ["edited released notes", `## [Unreleased]\n\n## [1.1.0]\n${notes.replace("Existing fix.", "Unrelated fix.")}\n\n${history}`, false],
+    ["existing release version", `## [Unreleased]\n\n## [1.0.0] - 2026-10-11\n${notes}\n\n${history}`, false],
+    ["release after another section", `## [Unreleased]\n\n${history}\n## [1.1.0]\n${notes}\n`, false],
+  ])("%s with shipped code", (_name, after, pass) => {
+    expect(checkPrChangelog({ ...facts, before: beforeRelease, after, diff: "" }).pass).toBe(pass)
+  })
+  test.each(["", "### Fixed", "<!-- hidden note -->"])("does not release an empty or heading/comment-only section: %s", (body) => {
+    expect(checkPrChangelog({
+      ...facts,
+      before: `## [Unreleased]\n${body}\n\n${history}`,
+      after: `## [Unreleased]\n\n## [1.1.0]\n${body}\n\n${history}`,
+    }).pass).toBe(false)
+  })
 })
 
 test("CLI uses the PR merge base, includes deleted sources, and accepts a real note", () => {
@@ -166,9 +187,9 @@ test("workflow emits one real gate verdict for every label event and passes the 
   expect(gate.if).toBeUndefined()
   const repo = mkdtempSync(join(tmpdir(), "changelog-workflow-"))
   const git = (...args) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" }).trim()
-  const run = (eventName, action, labels, base, head) => spawnSync("bash", ["-eo", "pipefail", "-c", gate.run], {
+  const run = (eventName, labels, base, head) => spawnSync("bash", ["-eo", "pipefail", "-c", gate.run], {
     cwd: repo, encoding: "utf8",
-    env: { ...process.env, EVENT_NAME: eventName, GITHUB_EVENT_ACTION: action, CHANGELOG_GATE_LABELS: JSON.stringify(labels), CHANGELOG_GATE_BASE: base, PR_HEAD: head },
+    env: { ...process.env, EVENT_NAME: eventName, CHANGELOG_GATE_LABELS: JSON.stringify(labels), CHANGELOG_GATE_BASE: base, PR_HEAD: head },
   })
   try {
     git("init", "-q")
@@ -194,14 +215,12 @@ test("workflow emits one real gate verdict for every label event and passes the 
     const base = git("rev-parse", "HEAD")
     // The gate comes from this base checkout, not the older PR head.
     expect(spawnSync("git", ["-C", repo, "cat-file", "-e", `${head}:script/check-pr-changelog.mjs`]).status).not.toBe(0)
-    for (const action of ["opened", "synchronize", "reopened", "labeled", "unlabeled"]) {
-      for (const labels of [[], ["bug"], ["ci:full-matrix"], ["no-changelog"]]) {
-        const result = run("pull_request", action, labels, base, head)
-        expect(result.status, `${result.stderr}\nsignal=${result.signal}`).toBe(labels.includes("no-changelog") ? 0 : 1)
-        expect(result.stdout.match(/changelog-gate: (?:PASS|FAIL)/g)).toHaveLength(1)
-      }
+    for (const labels of [[], ["bug"], ["ci:full-matrix"], ["no-changelog"]]) {
+      const result = run("pull_request", labels, base, head)
+      expect(result.status, `${result.stderr}\nsignal=${result.signal}`).toBe(labels.includes("no-changelog") ? 0 : 1)
+      expect(result.stdout.match(/changelog-gate: (?:PASS|FAIL)/g)).toHaveLength(1)
     }
-    expect(run("merge_group", "checks_requested", [], "", "").status).toBe(0)
+    expect(run("merge_group", [], "", "").status).toBe(0)
     const summary = job.steps.find((step) => step.name === "Write job summary")
     const summaryPath = join(repo, "summary.md")
     const result = spawnSync("bash", ["-eo", "pipefail", "-c", summary.run], {

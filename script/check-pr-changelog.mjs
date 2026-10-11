@@ -36,12 +36,33 @@ export function hasAddedUnreleasedLine(before, after, diff) {
   return false
 }
 
+function hasReleaseTransition(before, after) {
+  const sections = (text) => text.split(/(?=^##\s)/m).map((part) => {
+    const [heading, ...body] = part.split("\n")
+    return { heading, body: body.join("\n").trim() }
+  })
+  const previous = sections(before)
+  const current = sections(after)
+  const unreleased = (section) => /^## \[Unreleased\](?:\s.*)?$/.test(section.heading)
+  const old = previous.find(unreleased)
+  const index = current.findIndex(unreleased)
+  if (!old || index < 0 || current[index].body) return false
+  const released = current[index + 1]
+  const version = /^## \[(\d+\.\d+\.\d+)\](?:[ \t].*)?$/.exec(released?.heading ?? "")
+  if (!version || previous.some((section) => section.heading.startsWith(`## [${version[1]}]`))) return false
+  // A heading alone is not a release: move the complete existing notes, unchanged.
+  const visible = old.body.replace(/<!--[\s\S]*?-->/g, "")
+  return visible.split("\n").some((line) => line.trim() && !/^#{1,6}\s/.test(line.trim()))
+    && released.body === old.body
+}
+
 export function checkPrChangelog({ changedFiles, policy, previousPolicy = policy, before, after, diff, labels = [] }) {
   const userFacingFiles = changedFiles.filter((path) => isUserFacingPath(path, policy) || isUserFacingPath(path, previousPolicy))
   if (labels.includes(noChangelogLabel)) return { pass: true, reason: "no-changelog label present", userFacingFiles }
   if (userFacingFiles.length === 0) return { pass: true, reason: "no user-facing changes", userFacingFiles }
-  const pass = hasAddedUnreleasedLine(before, after, diff)
-  return { pass, reason: pass ? "added an Unreleased content line" : "user-facing changes without an added Unreleased content line", userFacingFiles }
+  if (hasAddedUnreleasedLine(before, after, diff)) return { pass: true, reason: "added an Unreleased content line", userFacingFiles }
+  if (hasReleaseTransition(before, after)) return { pass: true, reason: "moved Unreleased content into a new release section", userFacingFiles }
+  return { pass: false, reason: "user-facing changes without an added Unreleased content line", userFacingFiles }
 }
 
 export function main(argv) {
