@@ -8,7 +8,8 @@ import {
 	type StopPathStatus,
 } from "@oh-my-opencode/senpi-desktop-protocol";
 import { type ChildFactory, engineChildFactory } from "./child";
-import { ControlGrantLedger } from "./control-grants";
+import { ControlGrants } from "./control-grants";
+import { deadline } from "./deadline";
 import { type Listener, NotificationHub, type Unsubscribe } from "./notifications";
 import { isDesktopCapabilities, isStopPathStatus, parseHello, parseSessionOpened } from "./parse";
 import { type CallOptions, DesktopEngineRpcError, DesktopServiceError, RpcClient } from "./rpc-client";
@@ -16,6 +17,7 @@ import {
 	CAPABILITIES_TIMEOUT_MS,
 	CLOSE_TIMEOUT_MS,
 	HEARTBEAT_MS,
+	REVOKE_TIMEOUT_MS,
 	START_TIMEOUT_MESSAGE,
 	START_TIMEOUT_MS,
 } from "./timeouts";
@@ -36,7 +38,7 @@ export class DesktopService {
 	#connection: Connection | undefined;
 	#desired: DesiredSession | undefined;
 	#lastStopPath: StopPathStatus | undefined;
-	readonly #controlGrants = new ControlGrantLedger();
+	readonly #grants = new ControlGrants();
 
 	constructor(options: DesktopServiceOptions = {}) {
 		this.#createChild = options.createChild ?? engineChildFactory();
@@ -53,6 +55,10 @@ export class DesktopService {
 		return this.#hub.onStopPathChange(listener);
 	}
 
+	/**
+	 * Failures no caller awaits: a malformed notification, a failed heartbeat or best-effort revoke, and
+	 * anything passed to `reportError`. A host must subscribe, or these are lost.
+	 */
 	onError(listener: Listener<Error>): Unsubscribe {
 		return this.#hub.onError(listener);
 	}
@@ -83,10 +89,15 @@ export class DesktopService {
 
 	async call(method: EngineMethod, params: unknown, options: CallOptions = {}): Promise<unknown> {
 		const connection = await this.#live();
-		const covers = this.#controlGrants.beforeRequest(method);
-		const result = await connection.rpc.request(method, params, options);
-		this.#controlGrants.afterSuccess(method, covers);
-		return result;
+		const request = () => connection.rpc.request(method, params, options);
+		if (method === "control.grant") return this.#grants.grant(request, options.signal?.aborted === true);
+		if (method === "control.revoke") return this.#grants.revoke(request);
+		return request();
+	}
+
+	/** Reports a failure nobody awaits (a best-effort revoke) to `onError` listeners instead of dropping it. */
+	reportError(error: unknown): void {
+		this.#hub.emitError(error instanceof Error ? error : new Error(String(error)));
 	}
 
 	/**
@@ -98,7 +109,18 @@ export class DesktopService {
 	 * `session.close` stays the backstop that always releases the grant.
 	 */
 	revokeControl(): Promise<void> {
-		return this.#controlGrants.revoke(this.#connection, (error) => this.#hub.emitError(error));
+		const connection = this.#connection;
+		if (connection === undefined || !connection.rpc.alive || !this.#grants.possiblyLive) return Promise.resolve();
+		return this.#grants.revoke(() => connection.rpc.request("control.revoke", {}, { timeoutMs: REVOKE_TIMEOUT_MS })).then(
+			() => undefined,
+			(error: unknown) => {
+				if (error instanceof DesktopServiceError || error instanceof DesktopEngineRpcError) {
+					this.#hub.emitError(error);
+					return;
+				}
+				throw error;
+			},
+		);
 	}
 
 	async capabilities(): Promise<DesktopCapabilities> {
@@ -246,20 +268,4 @@ export class DesktopService {
 
 function malformed(method: string): DesktopServiceError {
 	return new DesktopServiceError("Internal", `desktop engine sent a malformed ${method} result`);
-}
-
-function deadline<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
-	return new Promise((resolve, reject) => {
-		const timer = setTimeout(() => reject(new DesktopServiceError("Timeout", message)), ms);
-		work.then(
-			(value) => {
-				clearTimeout(timer);
-				resolve(value);
-			},
-			(error: unknown) => {
-				clearTimeout(timer);
-				reject(error);
-			},
-		);
-	});
 }

@@ -16,6 +16,7 @@ export type ComputerService = Pick<
 	| "resume"
 	| "close"
 	| "revokeControl"
+	| "reportError"
 >;
 
 export interface ComputerHandleOptions {

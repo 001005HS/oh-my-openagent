@@ -37,7 +37,7 @@ export interface ComputerRunRequest {
 
 /** `DesktopService` surface used by the run facade; `control.grant`/`revoke` stay host-only. */
 export interface ComputerRunHost {
-	readonly service: Pick<DesktopService, "call" | "onAudit" | "revokeControl">;
+	readonly service: Pick<DesktopService, "call" | "onAudit" | "revokeControl" | "reportError">;
 	readonly executeTool: ExecuteTool;
 	/** Human confirmation behind `desktop.control.acquire`; absent: headless, never grants (#9651 B5b). */
 	readonly confirmControl?: ConfirmControl;
@@ -194,8 +194,9 @@ export async function runComputerCode(request: ComputerRunRequest, host: Compute
 		// A failed run revokes the control grant (lead add (a) of #9651), so the next foreground action
 		// asks the human again; an interrupted (aborted) run lands here too. The revoke is written to the
 		// engine's serial queue before the run settles, so the run still settles at its own deadline, and
-		// nothing sent afterwards can overtake it. Its failure goes to the service's error hub.
-		void host.service.revokeControl().catch(() => undefined);
+		// nothing sent afterwards can overtake it. Engine failures reach the error hub inside revokeControl;
+		// anything else it rethrows is a bug and is reported there too, never dropped (#9967).
+		void host.service.revokeControl().catch((error: unknown) => host.service.reportError(error));
 		throw failure;
 	} finally {
 		clearTimeout(timer);
