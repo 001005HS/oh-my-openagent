@@ -15,7 +15,7 @@ import { FACTS_RECORD_TOOL_NAME } from "./facts-record-tool"
 import { sessionIdFrom } from "./wiring-context"
 
 async function engineFixture() {
-  const { root, identity, queue } = await fixture()
+  const { root, identity, queue, cleanup } = await fixture(undefined, { registerCleanup: false })
   const repo = new GitMemoryRepo({ dir: identity.paths.repo, agentId: identity.id })
   await repo.init({ seedFiles: buildDefaultSeedFiles() })
   const headBefore = await repo.head()
@@ -46,7 +46,12 @@ async function engineFixture() {
       ].join("\n\n") + "\n\n", { headers: { "content-type": "text/event-stream" } })
     },
   })
-  onTestFinished(() => server.stop(true))
+  const activeClosers = new Set<() => Promise<void>>()
+  onTestFinished(async () => {
+    for (const close of [...activeClosers]) await close()
+    server.stop(true)
+    await cleanup()
+  })
   const modelRuntime = ModelRuntime.createSync({ modelsPath: null })
   const registry = new ModelRegistry(modelRuntime)
   registry.registerProvider("openai", {
@@ -133,10 +138,14 @@ async function engineFixture() {
     const close = async () => {
       if (closed) return
       closed = true
-      await runtime.dispose()
-      await drain()
+      try {
+        await runtime.dispose()
+        await drain()
+      } finally {
+        activeClosers.delete(close)
+      }
     }
-    onTestFinished(close)
+    activeClosers.add(close)
     await drain()
     return { runtime, get session() { return runtime.session }, drain, close }
   }
