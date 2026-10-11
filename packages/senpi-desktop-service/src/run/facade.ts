@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { DESKTOP_METHODS, type DesktopCapabilities } from "@oh-my-opencode/senpi-desktop-protocol";
-import { isDesktopCapabilities } from "../service/parse";
+import { isDesktopCapabilities, isRecord } from "../service/parse";
 import { ComputerRunError, facadeMethod, type RunScope } from "./context";
 import {
 	type DesktopDisplay,
@@ -116,10 +116,6 @@ export interface ControlState {
 	readonly active: boolean;
 	readonly reason?: string | null;
 	readonly grantedAt?: string | null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isControlState(value: unknown): value is ControlState {
