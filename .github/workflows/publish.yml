@@ -1466,7 +1466,8 @@ jobs:
       inputs.lazycodex_only != true &&
       inputs.prepared_release_sha != '' &&
       (cancelled() || needs.release-announce.result == 'skipped')
-    runs-on: ubuntu-latest
+    # Pin until this release/deploy path is proven on Ubuntu 26.04: #9983.
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
     steps:
