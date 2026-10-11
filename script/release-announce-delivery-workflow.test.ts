@@ -40,7 +40,10 @@ globalThis.fetch = async (url, init) => {
 };
 `)
     try {
-      const run = step.run.replace("bun script/", `bun --preload "${preload}" script/`)
+      // The job runs on ubuntu-latest, which has GNU timeout; macOS test runners don't, so drop only that wrapper there.
+      const hasTimeout = spawnSync("bash", ["-c", "command -v timeout"]).status === 0
+      const command = hasTimeout ? step.run : step.run.replace(/^timeout -k \d+ \d+ /, "")
+      const run = command.replace("bun script/", `bun --preload "${preload}" script/`)
       const delivery = spawnSync("bash", ["-c", run], {
         encoding: "utf8", timeout: 5000,
         env: { ...process.env, ANNOUNCEMENT_EVENT: automatic ? "workflow_call" : "workflow_dispatch",
