@@ -45,6 +45,14 @@ const chooseDevice: ChooseDevice = async devices => {
   return agreed === true ? chosen : null
 }
 
+/** The OmO sign-in page. `accounts.omo.dev` is the identity provider's own account portal (#9965). */
+export const DEFAULT_ACCOUNTS_ORIGIN = "https://signin.omo.dev"
+
+/** The sign-in origin: the `--accounts` flag, then `OMO_SERVICE_ACCOUNTS_URL`, then the default. */
+export function accountsOrigin(options: Pick<Options, "accounts">, env: Record<string, string | undefined>): string {
+  return serviceOrigin(options.accounts ?? env.OMO_SERVICE_ACCOUNTS_URL ?? DEFAULT_ACCOUNTS_ORIGIN)
+}
+
 async function run(action: "login" | "logout" | "whoami", options: Options): Promise<void> {
   const controller = new AbortController()
   const cancel = () => controller.abort()
@@ -72,7 +80,7 @@ async function run(action: "login" | "logout" | "whoami", options: Options): Pro
     if (!options.device && options.browser !== false) {
       try {
         await loginLoopback(session, {
-          accounts: serviceOrigin(options.accounts ?? process.env.OMO_SERVICE_ACCOUNTS_URL ?? "https://accounts.omo.dev"),
+          accounts: accountsOrigin(options, process.env),
           name, platform, open: openSignInBrowser, chooseDevice,
         })
         console.log("Signed in to OmO.")
@@ -105,7 +113,7 @@ export function configureServiceAuthCommands(program: Command): void {
     .option("--device", "Use a device code instead of a browser callback")
     .option("--no-browser", "Sign in by device code without opening a browser")
     .option("--api <url>", "OmO API origin (or OMO_SERVICE_API_URL)")
-    .option("--accounts <url>", "OmO accounts origin (or OMO_SERVICE_ACCOUNTS_URL)")
+    .option("--accounts <url>", "OmO sign-in page origin (or OMO_SERVICE_ACCOUNTS_URL)")
     .action((options: Options) => run("login", options))
   for (const action of ["logout", "whoami"] as const) {
     program.command(action)

@@ -54,6 +54,6 @@ export function clock() {
 
 export const minted = {
   deviceCode: `dc.${"a".repeat(43)}`, userCode: "BCDF-GHJK", matchingCode: "482 913",
-  verificationUri: "https://accounts.omo.dev/device?code=BCDF-GHJK",
+  verificationUri: "https://signin.omo.dev/device?code=BCDF-GHJK",
   expiresAt: "2030-01-01T00:05:00.000Z", intervalSeconds: 5,
 }
