@@ -401,7 +401,7 @@ Cross-harness, one-command dev setup. The **single source of truth** is [`script
 
 ## CI/CD
 
-Adding `ci:full-matrix` launches `ci-full-matrix-label.yml`, which calls `ci.yml` with the caller's pull-request payload. Normal CI ignores label events. The label workflow has separate concurrency and `full-matrix / <ci job>` check names, so bot labels cannot cancel required CI or replace a required failure with skipped checks.
+Adding `ci:full-matrix` launches `ci-full-matrix-label.yml`, which calls `ci.yml` with the caller's pull-request payload. Its `full-matrix / <ci job>` checks are optional and do not gate merge. To run the full matrix in the required checks, keep the label and push a commit or reopen the PR. Normal CI ignores label events. The label job has separate concurrency behind its exact label gate, so bot labels cannot cancel either the active full-matrix job or required CI, or replace a required failure with skipped checks.
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
