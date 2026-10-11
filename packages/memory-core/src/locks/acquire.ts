@@ -1,129 +1,23 @@
-import { randomUUID } from "node:crypto"
-import { link, mkdir, open, readFile, stat, unlink } from "node:fs/promises"
-import { hostname } from "node:os"
+import { stat } from "../fs/resilient"
 import path from "node:path"
 
+import { acquireWithoutDirectorySweep, type AcquireLockOptions } from "./acquire-core"
+import { sweepStaleLockCandidates } from "./candidate-sweep"
+import { sweepDeadOwnerLocks } from "./dead-owner-sweep"
 import type { LockRecord } from "./lock-record"
-import { parseLockRecord } from "./lock-record"
-import { getPidLiveness, getProcessStartIdentity } from "./process-identity"
+import { releaseLock } from "./lock-owner"
+import { currentCandidateFs } from "./publish"
+import { claimDirectorySweep, rearmCandidateSweep } from "./sweep-memo"
 
-export type AcquireLockOptions = {
-  readonly waitTimeoutMs?: number
-  readonly retryDelayMs?: number
-  readonly signal?: AbortSignal
-}
-
-type OwnerSnapshot = {
-  readonly raw: string
-  readonly record: LockRecord | null
-}
-
-export class LockContentionError extends Error {
-  readonly retriable = true
-
-  constructor(
-    readonly lockPath: string,
-    readonly owner: LockRecord | null,
-  ) {
-    super(`Lock is held: ${lockPath}`)
-    this.name = "LockContentionError"
-  }
-}
+export { LockContentionError, acquireWithoutDirectorySweep, type AcquireLockOptions } from "./acquire-core"
+export { releaseLock } from "./lock-owner"
+export { isCandidatePublishRace, setLockCandidateFsForTests, type LockCandidateFs } from "./publish"
+export { isLockOwnerProvenDead } from "./stale-owner"
+export { LOCK_DIRECTORY_SWEEP_INTERVAL_MS } from "./sweep-memo"
 
 function errorCode(error: unknown): string | undefined {
   if (!(error instanceof Error) || !("code" in error)) return undefined
   return typeof error.code === "string" ? error.code : undefined
-}
-
-function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {
-  signal?.throwIfAborted()
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(finish, milliseconds)
-    const onAbort = () => finish(signal?.reason ?? new DOMException("The operation was aborted", "AbortError"))
-    signal?.addEventListener("abort", onAbort, { once: true })
-    function finish(error?: unknown) {
-      clearTimeout(timer)
-      signal?.removeEventListener("abort", onAbort)
-      error === undefined ? resolve() : reject(error)
-    }
-  })
-}
-
-async function readOwner(lockPath: string): Promise<OwnerSnapshot | null> {
-  try {
-    const raw = await readFile(lockPath, "utf8")
-    return { raw, record: parseLockRecord(raw) }
-  } catch (error) {
-    const code = errorCode(error)
-    if (code === "ENOENT") return null
-    if (path.sep === "\\" && code === "EPERM") return { raw: "", record: null }
-    throw error
-  }
-}
-
-async function publishExclusive(lockPath: string, record: LockRecord): Promise<boolean> {
-  await mkdir(path.dirname(lockPath), { recursive: true, mode: 0o700 })
-  const candidatePath = `${lockPath}.candidate-${randomUUID()}`
-  try {
-    const handle = await open(candidatePath, "wx", 0o600)
-    try {
-      await handle.writeFile(`${JSON.stringify(record)}\n`, "utf8")
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
-
-    try {
-      await link(candidatePath, lockPath)
-      return true
-    } catch (error) {
-      if (errorCode(error) === "EEXIST") return false
-      throw error
-    }
-  } finally {
-    await unlink(candidatePath).catch((error: unknown) => {
-      if (errorCode(error) !== "ENOENT") throw error
-    })
-  }
-}
-
-async function isProvenDead(owner: LockRecord): Promise<boolean> {
-  if (owner.hostname !== hostname()) return false
-  const liveness = getPidLiveness(owner.pid)
-  if (liveness === "dead") return true
-  if (liveness === "unknown") return false
-
-  const actualStart = await getProcessStartIdentity(owner.pid)
-  if (actualStart === null || owner.process_start === "unavailable") return false
-  return actualStart !== owner.process_start
-}
-
-async function recoverDeadOwner(
-  lockPath: string,
-  snapshot: OwnerSnapshot,
-  contender: LockRecord,
-): Promise<boolean> {
-  if (snapshot.record === null || !(await isProvenDead(snapshot.record))) return false
-
-  const recoveryPath = `${lockPath}.recovery`
-  const recoveryRecord: LockRecord = {
-    ...contender,
-    nonce: randomUUID(),
-    created_at: new Date().toISOString(),
-    purpose: `${contender.purpose}:recovery`,
-  }
-  if (!(await publishExclusive(recoveryPath, recoveryRecord))) return false
-
-  try {
-    const current = await readOwner(lockPath)
-    if (current === null) return true
-    if (current.raw !== snapshot.raw || current.record === null) return false
-    if (!(await isProvenDead(current.record))) return false
-    await unlink(lockPath)
-    return true
-  } finally {
-    await releaseLock(recoveryPath, recoveryRecord)
-  }
 }
 
 export async function acquireLock(
@@ -131,34 +25,23 @@ export async function acquireLock(
   record: LockRecord,
   options: AcquireLockOptions = {},
 ): Promise<void> {
-  const waitTimeoutMs = options.waitTimeoutMs ?? 0
-  const retryDelayMs = options.retryDelayMs ?? 25
-  if (waitTimeoutMs < 0 || retryDelayMs <= 0) throw new Error("lock wait options must be positive")
-  const deadline = Date.now() + waitTimeoutMs
-
-  for (;;) {
-    options.signal?.throwIfAborted()
-    if (await publishExclusive(lockPath, record)) return
-    options.signal?.throwIfAborted()
-    const owner = await readOwner(lockPath)
-    if (owner === null) continue
-    if (await recoverDeadOwner(lockPath, owner, record)) continue
-    options.signal?.throwIfAborted()
-    if (Date.now() >= deadline) throw new LockContentionError(lockPath, owner.record)
-    await delay(Math.min(retryDelayMs, Math.max(1, deadline - Date.now())), options.signal)
+  const lockDirectory = path.dirname(lockPath)
+  if (claimDirectorySweep(lockDirectory, (options.now ?? Date.now)())) {
+    // Opportunistic hygiene: a failed sweep must never block or fail the acquisition it rides on.
+    // A candidate it could not remove re-arms the sweep; a dead-owner lock it could not read or
+    // reclaim is skipped until the next interval (never re-armed, so one bad file cannot make every
+    // acquisition rescan the directory), and `memory doctor`'s lock check reports what is left.
+    const candidateFs = currentCandidateFs()
+    await sweepStaleLockCandidates(lockDirectory, Date.now, {
+      ...(candidateFs.unlink === undefined ? {} : { unlink: candidateFs.unlink }),
+      ...(candidateFs.isSharingError === undefined ? {} : { isSharingError: candidateFs.isSharingError }),
+      onFailure: () => rearmCandidateSweep(lockDirectory),
+    }).catch(() => {
+      rearmCandidateSweep(lockDirectory)
+    })
+    await sweepDeadOwnerLocks(lockDirectory)
   }
-}
-
-export async function releaseLock(lockPath: string, record: Pick<LockRecord, "nonce">): Promise<boolean> {
-  const owner = await readOwner(lockPath)
-  if (owner === null || owner.record?.nonce !== record.nonce) return false
-  try {
-    await unlink(lockPath)
-    return true
-  } catch (error) {
-    if (errorCode(error) === "ENOENT") return false
-    throw error
-  }
+  return acquireWithoutDirectorySweep(lockPath, record, options)
 }
 
 export async function withLock<T>(

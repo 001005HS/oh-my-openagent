@@ -1,8 +1,9 @@
-import { MemoryBlockCache } from "@oh-my-opencode/memory-core"
+import { MemoryBlockCache, RecallCorpusCache } from "@oh-my-opencode/memory-core"
 
 import type { ComponentContext, SenpiExtensionAPI } from "../../extension/types"
 import { createDreamTriggerWiring, resolveDreamTriggerSettings } from "./dream-trigger"
 import { resolveMemorySettings } from "./identity-runtime"
+import { createMemoryMaintenance } from "./memory-maintenance"
 import { createMemoryNudgeWiring } from "./nudge-wiring"
 import type { PalacePeopleOptions } from "./palace/people"
 import { registerMemoryFilesystemPolicy } from "./policy-guard"
@@ -10,6 +11,7 @@ import { createShutdownDrain, type ShutdownDrainInput, type ShutdownEvaluator } 
 import { type SkillsUsageTracker } from "./skills-usage"
 import { type MemoryUsageTracker } from "./memory-usage"
 import { createMemoryNoticeWiring } from "./memory-notice-wiring"
+import { createKibitzerComposition, type KibitzerComposition } from "./kibitzer"
 import { createMemoryRecallWiring } from "./recall-wiring"
 import { branchEntryCount } from "./wiring-context"
 import {
@@ -59,23 +61,26 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
       const override = settings.agents[identity]?.soul
       return override?.edit_notice ?? settings.soul.edit_notice
     },
-    resolveWriteNotice: (identity) => {
-      // Presentation must never depend on config health, matching the direct surface's gate:
-      // an unreadable config keeps the default on.
-      try {
-        const settings = resolveMemorySettings(options.loadConfig({ cwd: options.cwd() }).config.memory)
-        const override = settings.agents[identity]?.write_notice
-        return override?.enabled ?? settings.write_notice.enabled
-      } catch {
-        return true
-      }
-    },
   })
+
+  // Late-bound because the two wirings are mutually dependent by design: recall's drain injects the
+  // nudges the Kibitzer composition holds, and the composition wakes its sidecars from recall's
+  // collection. The composition is built in registerStatic, before any hook can fire.
+  const deliveryRef: { current?: KibitzerComposition["delivery"] } = {}
+  // One corpus cache for both: the sidecar's read-only memory tool reads the corpus the candidates came from.
+  const corpusCache = new RecallCorpusCache()
 
   const recallWiring = createMemoryRecallWiring({
     resolveContext,
     resolveSettings: () => resolveMemorySettings(options.loadConfig({ cwd: options.cwd() }).config.memory),
     env: options.env,
+    corpusCache,
+    drainQueued: (sessionId, context) => deliveryRef.current?.drainForPrompt(sessionId, context) ?? [],
+    ...(options.logger === undefined ? {} : { logger: options.logger }),
+  })
+  const kibitzerRef: { current?: KibitzerComposition } = {}
+  const maintenance = createMemoryMaintenance({
+    isLiveSession: (sessionId) => options.sessions.has(sessionId),
     ...(options.logger === undefined ? {} : { logger: options.logger }),
   })
 
@@ -107,11 +112,6 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
         if (signal.aborted) return
         await flushSkillsUsageTrackers(signal)
       },
-      launchFacts: async (sessionId, signal) => {
-        const identity = resolveContext(sessionId)
-        if (identity === undefined || signal.aborted) return
-        await factsWiringFor(identity).launchIfThresholdMet(signal)
-      },
     },
   })
 
@@ -134,6 +134,21 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
   return {
     registerStatic(pi: SenpiExtensionAPI, ctx: ComponentContext): void {
       reflectionLive.registerRpc(pi, resolveContext)
+      const kibitzer = createKibitzerComposition({
+        env: options.env,
+        cwd: options.cwd,
+        loadConfig: options.loadConfig,
+        resolveContext,
+        recall: recallWiring,
+        corpusCache,
+        ...(ctx.idleCoordinator === undefined ? {} : { coordinator: ctx.idleCoordinator }),
+        sendMessage: (message, sendOptions) => pi.sendMessage(message, sendOptions),
+        appendEntry: (customType, data) => pi.appendEntry?.(customType, data),
+        ...(options.kibitzerChildStarter === undefined ? {} : { childStarter: options.kibitzerChildStarter }),
+        ...(options.logger === undefined ? {} : { logger: options.logger }),
+      })
+      kibitzerRef.current = kibitzer
+      deliveryRef.current = kibitzer.delivery
       registerMemoryStatic({
         pi,
         ctx,
@@ -142,6 +157,7 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
         nudgeWiring,
         noticeWiring,
         recallWiring,
+        kibitzer,
         dreamTriggerWiring,
         completionApi: createReflectionCompletionApi,
         resolveContext,
@@ -166,11 +182,18 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
       lastEventCtx.current = eventCtx
       reflectionLive.attach(sessionId)
       registerMemoryFilesystemPolicy(pi, identity)
+      maintenance.schedule(identity)
       await runtimeFor(identity).reconcile()
       if (branchEntryCount(eventCtx) > 0) {
         await journalWiringFor(identity).reconcileSession(eventCtx)
       }
       factsWiringFor(identity).reconcileExtractor()
+      const dreamSession = runtimeWiring.dreamSessionById(sessionId)
+      if (dreamSession !== undefined) {
+        void dreamTriggerWiring.reconcileSessionStart(dreamSession).catch((error: unknown) => {
+          options.logger?.warn("omo-senpi memory dream session_start reconcile failed", { error: describe(error) })
+        })
+      }
       await reflectionLive.bind(
         pi,
         sessionId,
@@ -189,8 +212,28 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
     },
 
     async onSessionShutdown(input: ShutdownDrainInput): Promise<void> {
+      // Background packing is never worth holding an exit for: stop it before the drain.
+      maintenance.dispose()
+      // The journal flush runs FIRST, before the pre-drain awaits can consume the fixed budget:
+      // the transcript bytes are already on disk (append writes immediately, flush is fsync), so
+      // one first-position flush captures everything and the drain must never re-run it.
+      const journalFlushed = await shutdownDrain.flushJournal(input)
       reflectionLive.shutdown(options.sessions.get(input.sessionId)?.context?.identity)
-      await shutdownDrain.run(input)
+      // senpi awaits this handler with no host cap, so neither cleanup may be awaited past the
+      // drain deadline: both are started and raced against it, and whichever loses keeps running
+      // detached (the Kibitzer wake lease and the sidecar directory lock are still released).
+      const kibitzer = kibitzerRef.current
+      if (kibitzer !== undefined) {
+        await shutdownDrain.raceDetached(input, "kibitzer-shutdown", () => kibitzer.onSessionShutdown(input.sessionId))
+      }
+      const identity = resolveContext(input.sessionId)
+      if (identity !== undefined) {
+        const facts = factsWiringFor(identity)
+        if (facts.cancelActive !== undefined) {
+          await shutdownDrain.raceDetached(input, "facts-cancel", async () => { await facts.cancelActive?.() })
+        }
+      }
+      await shutdownDrain.run(input, { journalFlushed })
     },
 
     registerShutdownEvaluator(evaluator: ShutdownEvaluator): void {
@@ -199,6 +242,10 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
 
     clearStatus(eventCtx: unknown): void {
       reflectionLive.clearStatus(eventCtx)
+    },
+
+    async whenIdle(): Promise<void> {
+      await kibitzerRef.current?.whenIdle()
     },
   }
 }

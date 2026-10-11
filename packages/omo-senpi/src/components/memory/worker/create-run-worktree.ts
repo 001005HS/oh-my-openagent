@@ -1,8 +1,9 @@
-import { mkdir, rm } from "node:fs/promises"
+import { mkdir, rm } from "@oh-my-opencode/memory-core/fs"
 import { join } from "node:path"
 
 import {
   createReflectionWorktree,
+  maybeKillAt,
   type GitMemoryRepo,
   type MemoryIdentityPaths,
   type ReflectionWorktree,
@@ -25,6 +26,7 @@ export async function createRunWorktree(
         worktreeDir: identity.dir,
         worktreeBranch: identity.branch,
       })
+      maybeKillAt("after-prelaunch")
     })
   } catch (error) {
     await rm(runDir, { recursive: true, force: true })

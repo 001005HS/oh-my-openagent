@@ -3,12 +3,13 @@
 // through the ordered terminal writes. Every failure branch names its own reason - the reason
 // is the run's diagnosis, never a guess re-derived from a message string.
 
-import { readFile } from "node:fs/promises"
+import { readFile } from "@oh-my-opencode/memory-core/fs"
 import { join } from "node:path"
 
 import {
   findFactsBatchReceipt,
   parseFactsExtractionJsonl,
+  MemorySecretError,
   type FactsFailureReason,
   type FactsPayload,
   type GitMemoryRepo,
@@ -77,6 +78,10 @@ export async function finalizeClaimedFactsRun(input: FinalizeClaimedFactsRunInpu
   try {
     applied = await applyWithRetries(input, records)
   } catch (error) {
+    if (error instanceof MemorySecretError) {
+      await fail("secret_like_content", error.message)
+      return { status: "failed", runId }
+    }
     await fail("invalid_extraction", describe(error))
     return { status: "failed", runId }
   }

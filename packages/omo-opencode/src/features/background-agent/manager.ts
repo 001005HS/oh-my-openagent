@@ -87,6 +87,7 @@ import {
   MIN_SESSION_GONE_POLLS,
   verifySessionExists as verifySessionStillExists,
 } from "./session-existence"
+import { getStoppedSessionError, MIN_ERRORED_IDLE_POLLS } from "./session-stopped-on-error"
 import { handleSessionIdleBackgroundEvent } from "./session-idle-event-handler"
 import {
   hasOutputSignalFromPart,
@@ -267,6 +268,7 @@ export class BackgroundManager {
   private queuesByKey: Map<string, QueueItem[]> = new Map()
   private processingKeys: Set<string> = new Set()
   private completionTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
+  private readonly syncAttachedSessions = new Set<string>()
   private completedTaskArchive: Map<string, BackgroundTask> = new Map()
   private completedTaskSummaries: Map<string, BackgroundTaskNotificationTask[]> = new Map()
   private idleDeferralTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
@@ -628,6 +630,7 @@ export class BackgroundManager {
         sessionPermission: input.sessionPermission,
         attemptCount: 0,
         category: input.category,
+        cwd: input.cwd,
         onSessionCreated: input.onSessionCreated,
       }
       const firstAttempt = startAttempt(task, input.model)
@@ -775,12 +778,13 @@ export class BackgroundManager {
       return null
     })
     const parentDirectory = parentSession?.data?.directory ?? this.directory
-    log(`[background-agent] Parent dir: ${parentSession?.data?.directory}, using: ${parentDirectory}`)
+    const childDirectory = input.cwd ?? parentDirectory
+    log(`[background-agent] Parent dir: ${parentSession?.data?.directory}, using: ${childDirectory}`)
 
     const createResult = await this.client.session.create({
       body: {
         parentID: input.parentSessionId,
-        title: `${input.description} (@${input.agent} subagent)`,
+        title: `${input.category ? `[${input.category}] ` : ""}${input.description} (@${input.agent} subagent)`,
         ...(input.sessionPermission ? { permission: input.sessionPermission } : {}),
         ...(input.model
           ? {
@@ -793,7 +797,7 @@ export class BackgroundManager {
           : {}),
       } as Record<string, unknown>,
       query: {
-        directory: parentDirectory,
+        directory: childDirectory,
       },
     })
 
@@ -853,7 +857,7 @@ export class BackgroundManager {
 
     if (task.retryNotification) {
       const attemptNumber = boundAttempt.attemptNumber
-      const retrySessionUrl = buildLocalSessionUrl(parentDirectory, sessionID)
+      const retrySessionUrl = buildLocalSessionUrl(childDirectory, sessionID)
       const previousAttempt = getPreviousAttempt(task, boundAttempt.attemptId)
       const failedSessionID = previousAttempt?.sessionId ?? task.retryNotification.previousSessionID
       const failedSessionLine = failedSessionID
@@ -960,7 +964,7 @@ The fallback retry session is now created and can be inspected directly.
     promptWithRetryInDirectory(this.client, {
       path: { id: sessionID },
       body: promptBody,
-    }, parentDirectory).catch(async (error) => {
+    }, childDirectory).catch(async (error) => {
       // Retry with fallback agent if the original agent was unregistered (e.g., after a model switch)
       if (isAgentNotFoundError(error) && input.agent !== FALLBACK_AGENT) {
         log("[background-agent] Agent not found, retrying with fallback agent", {
@@ -987,7 +991,7 @@ The fallback retry session is now created and can be inspected directly.
           await promptWithRetryInDirectory(this.client, {
             path: { id: sessionID },
             body: fallbackBody,
-          }, parentDirectory)
+          }, childDirectory)
           task.agent = FALLBACK_AGENT
           return
         } catch (retryError) {
@@ -1167,6 +1171,22 @@ The fallback retry session is now created and can be inspected directly.
       }
     }
     return undefined
+  }
+
+  /**
+   * Marks a session as being polled by a run_in_background=false continuation so the
+   * completion cleanup timer neither drops the task nor deletes the session underneath it.
+   * The returned detach restarts the cleanup grace window once the waiter leaves.
+   */
+  attachSyncContinuation(sessionID: string): () => void {
+    this.syncAttachedSessions.add(sessionID)
+    return () => {
+      if (!this.syncAttachedSessions.delete(sessionID)) return
+      const task = this.findBySession(sessionID)
+      if (!task || !TERMINAL_BACKGROUND_TASK_STATUSES.has(task.status)) return
+      if (this.completionTimers.has(task.id)) return
+      this.scheduleTaskRemoval(task.id)
+    }
   }
 
   private resolveTaskAttemptBySession(sessionID: string): { task: BackgroundTask; attemptID?: string; isCurrent: boolean } | undefined {
@@ -1430,7 +1450,7 @@ The fallback retry session is now created and can be inspected directly.
           })(),
           parts: [createInternalAgentTextPart(input.prompt)],
         },
-        query: { directory: this.directory },
+        query: { directory: existingTask.cwd ?? this.directory },
       },
     }).then((promptResult) => {
       if (promptResult.status === "failed") {
@@ -2296,6 +2316,19 @@ The task was re-queued on a fallback model after a retryable failure.
     }
   }
 
+  private async readStoppedSessionError(sessionID: string): Promise<string | undefined> {
+    try {
+      const response = await messagesInDirectory(this.client, {
+        path: { id: sessionID },
+      }, this.directory)
+      const messages = normalizeSDKResponse(response, [] as Array<{ info?: { role?: string; error?: unknown } }>, { preferResponseOnMissingData: true })
+      return getStoppedSessionError(messages)
+    } catch (error) {
+      log("[background-agent] Error reading session messages for stopped-session check:", error)
+      return undefined
+    }
+  }
+
   private clearNotificationsForTask(taskId: string): void {
     for (const [sessionID, tasks] of this.notifications.entries()) {
       const filtered = tasks.filter((t) => t.id !== taskId)
@@ -2340,6 +2373,9 @@ The task was re-queued on a fallback model after a retryable failure.
       this.completionTimers.delete(taskId)
       const task = this.tasks.get(taskId)
       if (!task) return
+
+      // A sync waiter is still polling this session; its detach re-arms removal.
+      if (task.sessionId && this.syncAttachedSessions.has(task.sessionId)) return
 
       if (task.parentSessionId) {
         const siblings = this.getTasksByParentSession(task.parentSessionId)
@@ -3047,6 +3083,7 @@ The task was re-queued on a fallback model after a retryable failure.
           // Only skip completion when session status is actively running.
           // Unknown or terminal statuses (like "interrupted") fall through to completion.
           if (sessionStatus && isActiveSessionStatus(sessionStatus.type)) {
+            task.consecutiveErroredIdlePolls = 0
             log("[background-agent] Session still running, relying on event-based progress:", {
               taskId: task.id,
               sessionID,
@@ -3091,6 +3128,21 @@ The task was re-queued on a fallback model after a retryable failure.
               }
 
               task.consecutiveMissedPolls = 0
+            }
+            const stoppedError = await this.readStoppedSessionError(sessionID)
+            if (stoppedError) {
+              task.consecutiveErroredIdlePolls = (task.consecutiveErroredIdlePolls ?? 0) + 1
+              if (task.consecutiveErroredIdlePolls >= MIN_ERRORED_IDLE_POLLS) {
+                log("[background-agent] Session stopped on an error with no output and was not resumed, marking task as error:", {
+                  taskId: task.id,
+                  sessionID,
+                  error: stoppedError.slice(0, 200),
+                })
+                await this.failCrashedTask(task, `Subagent session stopped on an error without producing output: ${stoppedError}`)
+                continue
+              }
+            } else {
+              task.consecutiveErroredIdlePolls = 0
             }
             log("[background-agent] Polling idle/gone but no valid output yet, waiting:", task.id)
             continue
@@ -3185,6 +3237,7 @@ The task was re-queued on a fallback model after a retryable failure.
       clearTimeout(timer)
     }
     this.completionTimers.clear()
+    this.syncAttachedSessions.clear()
 
     for (const timer of this.idleDeferralTimers.values()) {
       clearTimeout(timer)
