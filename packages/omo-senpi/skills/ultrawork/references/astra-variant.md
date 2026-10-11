@@ -35,9 +35,9 @@ are named in its prompt and read there, not here.
    the notepad.
 
 ## cleanup-step
-5. CLEANUP: before you report, tear down every process, session, port,
-   container, and temp path the QA in step 4 started, and note it in
-   the notepad beside the artifact.
+5. CLEANUP: Before task commands, create `RUN_TMP=$(mktemp -d)` once per task and pass `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` to every command and child. ALWAYS add path-specific cleanup todos at creation for each worktree and run-scoped dir (caches included); complete them only after a read-back receipt. After owned processes exit, remove run-scoped dirs (caches included) and no-longer-needed worktrees; retain worktrees needed by unfinished PRs, and never wipe shared caches.
+   Before reporting, tear down QA processes, sessions, ports, containers
+   and temp paths; note their read-back receipts beside the artifact.
 
 ## evidence-step
 8. Evidence captured on the same commit and environment stays valid;

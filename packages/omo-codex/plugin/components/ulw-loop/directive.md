@@ -273,19 +273,15 @@ Until every success criterion PASSES with its evidence captured:
    above; auxiliary surface for CLI- or data-shaped criteria), end to
    end, yourself, plus the step-2 tests; a reproduction now passes.
    Paste the artifact path into the notepad.
-5. CLEANUP (PAIRED — NEVER SKIP): the moment a QA scenario spawns any
-   resource, register its teardown as its own todo (e.g.
-   `cleanup: kill server pid for criterion 2 — verify kill -0 fails`).
-   Every runtime artifact the QA spawned in step 4 MUST be torn down
-   before this step completes:
-   server PIDs (`kill <pid>`; verify `kill -0` fails), `tmux` sessions
-   (`tmux kill-session -t ulw-qa-<criterion>`; verify with `tmux ls`),
-   browsers / sessions (`browser.close()` / `session.stop()`), containers
-   (`docker rm -f`), bound ports (`lsof -i :<port>` empty), temp
-   sockets / files / dirs (`rm -rf` the `mktemp` paths), QA-only env
-   vars. Append a one-line cleanup receipt to the notepad next to the
-   artifact, e.g. `cleanup: killed 12345; tmux kill-session ulw-qa-foo;
-   rm -rf /tmp/ulw.aB12cD`. No receipt → criterion stays in_progress.
+5. CLEANUP (PAIRED — NEVER SKIP): Before task commands, create `RUN_TMP=$(mktemp -d)` once per task and pass `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` to every command and child.
+   ALWAYS add path-specific cleanup todos at creation for each worktree and run-scoped dir (caches included); complete them only after a read-back receipt.
+   Before recording QA, tear down owned server PIDs (`kill <pid>`; verify
+   `kill -0` fails), tmux sessions (`tmux kill-session -t ulw-qa-<criterion>`; confirm `tmux ls`),
+   browsers / sessions (`browser.close()` / `session.stop()`), containers (`docker rm -f`), ports
+   (`lsof -i :<port>` empty), QA scripts, temp paths and QA-only env vars.
+   After owned processes exit, remove run-scoped dirs (caches included) and no-longer-needed worktrees; retain worktrees needed by unfinished PRs, and never wipe shared caches.
+   Append the read-back receipt beside the artifact in the notepad.
+   No receipt → criterion stays in_progress.
 6. Verify: LSP diagnostics clean on changed files; no test skipped or
    xfail-ed this turn.
 7. Mark completed. Append non-obvious findings / learnings.

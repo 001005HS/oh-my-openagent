@@ -286,7 +286,7 @@ Trigger if user said "엄밀"/"strictly"/"rigorously"/"properly review", or task
 | Adds a new tool/hook/feature | Test it end-to-end in a real scenario. |
 | Modifies config handling | Load the config. Verify it parses correctly. |
 
-**NAME THE EXACT TOOL + EXACT INVOCATION** per scenario — the literal `curl` / `send-keys` / `page.click` with inputs and the binary observable. **REGISTER EVERY QA-SPAWNED RESOURCE TEARDOWN AS ITS OWN TODO** (scripts, tmux assets, browser contexts, PIDs, ports, temp dirs), execute it, capture the receipt. A leftover process / tmux session / browser context = NOT done.
+**NAME THE EXACT TOOL + INVOCATION** per scenario. Before task commands, create `RUN_TMP=$(mktemp -d)` once per task and pass `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` to every command and child. ALWAYS add path-specific cleanup todos at creation for each worktree and run-scoped dir (caches included); complete them only after a read-back receipt. After owned processes exit, remove run-scoped dirs (caches included) and no-longer-needed worktrees; retain worktrees needed by unfinished PRs, and never wipe shared caches. Tear down QA scripts, tmux assets, browser contexts, PIDs, ports and containers before recording QA; leftover QA resources mean NOT done.
 
 **UNACCEPTABLE (WILL BE REJECTED):**
 - "This should work" - DID YOU RUN IT? NO? THEN RUN IT.

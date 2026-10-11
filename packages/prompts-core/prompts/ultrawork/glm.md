@@ -194,7 +194,7 @@ Tests are necessary and insufficient. Exercise the real surface.
 | Prompt or mode | Verify the prompt loads or the registry resolves it. |
 | Build output | Run build and verify exit code 0. |
 
-If QA starts a server, browser, tmux session, port, temp dir, or background process, clean it up and record the cleanup.
+Before task commands, create `RUN_TMP=$(mktemp -d)` once per task and pass `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` to every command and child. ALWAYS add path-specific cleanup todos at creation for each worktree and run-scoped dir (caches included); complete them only after a read-back receipt. After owned processes exit, remove run-scoped dirs (caches included) and no-longer-needed worktrees; retain worktrees needed by unfinished PRs, and never wipe shared caches. Tear down QA scripts, tmux assets, browser contexts, PIDs, ports and containers before recording QA; leftover QA resources mean NOT done.
 
 ## REVIEWER GATE
 

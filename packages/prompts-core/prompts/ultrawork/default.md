@@ -271,7 +271,7 @@ The real-surface artifact is always required. A new test only where the reposito
 
 **NAME THE EXACT TOOL + EXACT INVOCATION** for every scenario — the literal `curl ...`, `tmux send-keys ...`, `page.click(...)` with concrete inputs and the binary observable. "run it" / "open the page" is not a scenario.
 
-**CLEANUP IS PART OF QA — TRACK IT AS TODOS.** The moment a QA scenario spawns any resource, add a teardown todo for it (QA scripts, tmux assets, browser contexts, PIDs, ports, containers, temp dirs). Execute every teardown todo and capture the receipt before declaring done. A leftover process / tmux session / browser context / bound port / temp dir = NOT done.
+**CLEANUP IS PART OF THE TASK — TRACK IT AS TODOS.** Before task commands, create `RUN_TMP=$(mktemp -d)` once per task and pass `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` to every command and child. ALWAYS add path-specific cleanup todos at creation for each worktree and run-scoped dir (caches included); complete them only after a read-back receipt. After owned processes exit, remove run-scoped dirs (caches included) and no-longer-needed worktrees; retain worktrees needed by unfinished PRs, and never wipe shared caches. Tear down QA scripts, tmux assets, browser contexts, PIDs, ports and containers before recording QA; leftover QA resources mean NOT done.
 </MANUAL_QA_MANDATE>
 
 ### Test Decision (every production code change)
