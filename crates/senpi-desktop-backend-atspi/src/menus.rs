@@ -8,6 +8,7 @@
 
 use atspi::{Role, State};
 use senpi_desktop_core::error::{CoreResult, DesktopError};
+use senpi_desktop_core::types::DesktopWindow;
 use senpi_desktop_core::menus::{match_index, require_command, require_enabled, validate_path, MenuItem};
 
 use crate::apps::frame_of;
@@ -228,11 +229,13 @@ pub(crate) fn items<B: AtSpiBus>(bus: &mut B, target: MenuTarget<'_>, path: &[St
 }
 
 /// Runs the command `path` names in the target window's menu. The frame, the command's
-/// ownership, and the path are proven again after discovery, and the stop
-/// check runs immediately before the action.
+/// ownership, and the path are proven again after discovery, against a window
+/// list read again by `relist` so a target that closed meanwhile is refused,
+/// and the stop check runs immediately before the action.
 pub(crate) fn select<B: AtSpiBus>(
     bus: &mut B,
     target: MenuTarget<'_>,
+    relist: &dyn Fn() -> CoreResult<Vec<DesktopWindow>>,
     path: &[String],
     check_stop: &dyn Fn() -> CoreResult<()>,
 ) -> CoreResult<()> {
@@ -240,7 +243,8 @@ pub(crate) fn select<B: AtSpiBus>(
     let root = bound_root(bus, target)?;
     let (item, object) = resolve(bus, &root, path, check_stop)?;
     require_command(&item)?;
-    let current_root = bound_root(bus, target)?;
+    let windows = relist()?;
+    let current_root = bound_root(bus, MenuTarget { windows: &windows, ..target })?;
     if !same(bus, &current_root, &root) {
         return Err(failure("target frame changed during menu discovery"));
     }

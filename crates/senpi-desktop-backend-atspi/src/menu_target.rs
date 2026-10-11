@@ -3,11 +3,10 @@
 //! exactly one accessible frame must provably be the requested window,
 //! before any discovery and again before the action.
 
-use atspi::Role;
 use senpi_desktop_core::error::{CoreResult, DesktopError};
 use senpi_desktop_core::types::DesktopWindow;
 
-use crate::apps::frames;
+use crate::apps::{frames, is_top_level};
 use crate::bus::AtSpiBus;
 use crate::owner::native_owner;
 use crate::WindowIds;
@@ -55,11 +54,17 @@ fn by_object_id<B: AtSpiBus>(bus: &mut B, window: &DesktopWindow) -> CoreResult<
     Ok(matches)
 }
 
+fn unreadable(error: impl std::fmt::Display) -> DesktopError {
+    DesktopError::ax_failed(format!(
+        "AT-SPI menu: a frame of the target's process cannot be read ({error}); no command was dispatched"
+    ))
+}
+
 /// The frames of `app`, refusing when any child's role cannot be read.
 fn frames_strictly<B: AtSpiBus>(bus: &mut B, app: &B::Node) -> CoreResult<Vec<B::Node>> {
     let mut found = Vec::new();
-    for child in bus.children(app).map_err(DesktopError::ax_failed)? {
-        if matches!(bus.role(&child).map_err(DesktopError::ax_failed)?, Role::Frame | Role::Dialog | Role::Window) {
+    for child in bus.children(app).map_err(unreadable)? {
+        if is_top_level(bus.role(&child).map_err(unreadable)?) {
             found.push(child);
         }
     }
@@ -67,9 +72,10 @@ fn frames_strictly<B: AtSpiBus>(bus: &mut B, app: &B::Node) -> CoreResult<Vec<B:
 }
 
 /// Frames of the listed window's process whose correlated owner is the window.
-/// Every frame of that process is read and any read error refuses: a frame
-/// that cannot be read might be the window, which would leave a same-titled
-/// sibling (a minimized one included) as a false sole match.
+/// Every frame of that process is read and any read error refuses: an
+/// unreadable frame might be the window, which would leave a same-titled
+/// sibling (a minimized one included) as a false sole match. A target frame
+/// that is already gone is caught by the caller re-reading the window list.
 fn by_native_owner<B: AtSpiBus>(bus: &mut B, target: MenuTarget<'_>) -> CoreResult<Vec<B::Node>> {
     let pid = target
         .windows
@@ -83,7 +89,7 @@ fn by_native_owner<B: AtSpiBus>(bus: &mut B, target: MenuTarget<'_>) -> CoreResu
             continue;
         }
         for frame in frames_strictly(bus, &app)? {
-            if native_owner(bus, &frame, target.windows)?.as_deref() == Some(target.window.id.as_str()) {
+            if native_owner(bus, &frame, target.windows).map_err(unreadable)?.as_deref() == Some(target.window.id.as_str()) {
                 matches.push(frame);
             }
         }

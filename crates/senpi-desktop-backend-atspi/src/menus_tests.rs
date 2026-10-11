@@ -75,6 +75,11 @@ pub(crate) fn path(labels: &[&str]) -> Vec<String> {
     labels.iter().map(|label| (*label).to_string()).collect()
 }
 
+/// A window list that reads the same again, as when nothing closed.
+pub(crate) fn unchanged() -> CoreResult<Vec<DesktopWindow>> {
+    Ok(Vec::new())
+}
+
 pub(crate) fn no_stop() -> CoreResult<()> {
     Ok(())
 }
@@ -115,14 +120,14 @@ fn a_submenu_wrapped_in_an_unnamed_menu_lists_through_the_wrapper() {
 #[test]
 fn selecting_a_command_runs_its_declared_action_once() {
     let mut bus = menus();
-    select(&mut bus, on(&window()), &path(&["File", "Save"]), &no_stop).unwrap();
+    select(&mut bus, on(&window()), &unchanged, &path(&["File", "Save"]), &no_stop).unwrap();
     assert_eq!(actions(&bus), ["action 43 #0"]);
 }
 
 #[test]
 fn a_label_without_its_trailing_ellipsis_selects_the_item() {
     let mut bus = menus();
-    select(&mut bus, on(&window()), &path(&["File", "Open"]), &no_stop).unwrap();
+    select(&mut bus, on(&window()), &unchanged, &path(&["File", "Open"]), &no_stop).unwrap();
     assert_eq!(actions(&bus), ["action 41 #0"]);
 }
 
@@ -130,7 +135,7 @@ fn a_label_without_its_trailing_ellipsis_selects_the_item() {
 fn an_ambiguous_label_is_refused_and_runs_nothing() {
     let mut bus = menus();
     bus.add(47, 40, command("save"));
-    let error = select(&mut bus, on(&window()), &path(&["File", "Save"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &unchanged, &path(&["File", "Save"]), &no_stop).unwrap_err();
     assert!(error.message.contains("ambiguous"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -138,7 +143,7 @@ fn an_ambiguous_label_is_refused_and_runs_nothing() {
 #[test]
 fn a_disabled_command_is_refused_and_runs_nothing() {
     let mut bus = menus();
-    let error = select(&mut bus, on(&window()), &path(&["Edit", "Undo"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &unchanged, &path(&["Edit", "Undo"]), &no_stop).unwrap_err();
     assert!(error.message.contains("disabled"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -146,7 +151,7 @@ fn a_disabled_command_is_refused_and_runs_nothing() {
 #[test]
 fn a_submenu_is_not_a_command() {
     let mut bus = menus();
-    let error = select(&mut bus, on(&window()), &path(&["File", "Recent"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &unchanged, &path(&["File", "Recent"]), &no_stop).unwrap_err();
     assert!(error.message.contains("leaf menu command"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -155,7 +160,7 @@ fn a_submenu_is_not_a_command() {
 fn a_child_whose_parent_link_disagrees_is_refused_before_any_action() {
     let mut bus = menus();
     bus.nodes.get_mut(&43).unwrap().parent = 50;
-    let error = select(&mut bus, on(&window()), &path(&["File", "Save"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &unchanged, &path(&["File", "Save"]), &no_stop).unwrap_err();
     assert!(error.message.contains("parent ownership"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -167,7 +172,7 @@ fn a_child_from_another_application_is_refused_before_any_action() {
     let mut foreign = command("Quit");
     foreign.application = 2;
     bus.add(60, 40, foreign);
-    let error = select(&mut bus, on(&window()), &path(&["File", "Save"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &unchanged, &path(&["File", "Save"]), &no_stop).unwrap_err();
     assert!(error.message.contains("cross-application"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -176,7 +181,7 @@ fn a_child_from_another_application_is_refused_before_any_action() {
 fn a_command_without_one_activation_action_is_refused() {
     let mut bus = menus();
     bus.nodes.get_mut(&43).unwrap().actions = vec!["click".into(), "activate".into()];
-    let error = select(&mut bus, on(&window()), &path(&["File", "Save"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &unchanged, &path(&["File", "Save"]), &no_stop).unwrap_err();
     assert!(error.message.contains("activation action"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -193,7 +198,7 @@ fn a_stop_before_the_action_runs_nothing() {
             Ok(())
         }
     };
-    let error = select(&mut bus, on(&window()), &path(&["File", "Save"]), &stop_at_last_check).unwrap_err();
+    let error = select(&mut bus, on(&window()), &unchanged, &path(&["File", "Save"]), &stop_at_last_check).unwrap_err();
     assert_eq!(error.code, ErrorCode::Suspended);
     assert_eq!(calls.get(), 5, "the stop check before the action must be the one that refused");
     assert!(actions(&bus).is_empty());

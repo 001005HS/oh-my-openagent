@@ -7,7 +7,7 @@ use senpi_desktop_core::types::DesktopWindow;
 use crate::fake::{FakeBus, FakeNode, EDITOR_RECT};
 use crate::menu_target::MenuTarget;
 use crate::menus::{items, select};
-use crate::menus_tests::{actions, command, menus, no_stop, on, path, submenu, window};
+use crate::menus_tests::{actions, command, menus, no_stop, on, path, submenu, unchanged, window};
 use crate::WindowIds;
 
 /// A second frame of the same application with the same title and size,
@@ -32,9 +32,9 @@ fn second_window() -> DesktopWindow {
 #[test]
 fn a_command_runs_in_the_exact_window_named_not_a_same_titled_sibling() {
     let mut bus = twin();
-    select(&mut bus, on(&second_window()), &path(&["File", "Save"]), &no_stop).unwrap();
+    select(&mut bus, on(&second_window()), &unchanged, &path(&["File", "Save"]), &no_stop).unwrap();
     assert_eq!(actions(&bus), ["action 71 #0"]);
-    select(&mut bus, on(&window()), &path(&["File", "Save"]), &no_stop).unwrap();
+    select(&mut bus, on(&window()), &unchanged, &path(&["File", "Save"]), &no_stop).unwrap();
     assert_eq!(actions(&bus), ["action 71 #0", "action 43 #0"]);
 }
 
@@ -65,7 +65,7 @@ fn a_native_window_one_frame_correlates_to_runs_its_command() {
         ids: WindowIds::Native,
         windows: &listed,
     };
-    select(&mut bus, target, &path(&["File", "Save"]), &no_stop).unwrap();
+    select(&mut bus, target, &|| Ok(listed.to_vec()), &path(&["File", "Save"]), &no_stop).unwrap();
     assert_eq!(actions(&bus), ["action 43 #0"]);
 }
 
@@ -78,13 +78,13 @@ fn a_native_window_a_minimized_unlisted_sibling_also_correlates_to_is_refused() 
         ids: WindowIds::Native,
         windows: &listed,
     };
-    let error = select(&mut bus, target, &path(&["File", "Save"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, target, &|| Ok(listed.to_vec()), &path(&["File", "Save"]), &no_stop).unwrap_err();
     assert!(error.message.contains("provably window"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
 
 #[test]
-fn a_native_window_whose_frame_vanished_never_falls_to_a_hidden_sibling() {
+fn a_native_window_whose_frame_cannot_be_read_never_falls_to_a_hidden_sibling() {
     let mut bus = twin();
     bus.nodes.remove(&10);
     let listed = [native("0x800001")];
@@ -93,21 +93,46 @@ fn a_native_window_whose_frame_vanished_never_falls_to_a_hidden_sibling() {
         ids: WindowIds::Native,
         windows: &listed,
     };
-    assert!(select(&mut bus, target, &path(&["File", "Save"]), &no_stop).is_err());
+    assert!(select(&mut bus, target, &|| Ok(listed.to_vec()), &path(&["File", "Save"]), &no_stop).is_err());
     assert!(actions(&bus).is_empty());
 }
 
 #[test]
-fn a_native_window_missing_from_the_list_is_refused() {
-    let mut bus = menus();
-    let listed: [DesktopWindow; 0] = [];
+fn a_native_window_that_closes_during_discovery_never_falls_to_a_hidden_sibling() {
+    // Given: the target closed after the window list was read, so the stale
+    // list still names it while only its hidden twin's frame remains.
+    let mut bus = twin();
+    bus.nodes.get_mut(&1).unwrap().children.retain(|child| *child != 10);
+    let listed = [native("0x800001")];
     let target = MenuTarget {
-        window: &native("0x800001"),
+        window: &listed[0],
         ids: WindowIds::Native,
         windows: &listed,
     };
-    let error = items(&mut bus, target, &[]).unwrap_err();
+    let closed = || Ok(Vec::new());
+    // When / Then: the list read again before the action no longer names it.
+    let error = select(&mut bus, target, &closed, &path(&["File", "Save"]), &no_stop).unwrap_err();
     assert!(error.message.contains("provably window"), "{}", error.message);
+    assert!(actions(&bus).is_empty());
+}
+
+#[test]
+fn a_native_window_missing_from_the_list_or_without_a_pid_is_refused_before_any_read() {
+    let without_pid = DesktopWindow {
+        pid: None,
+        ..native("0x800001")
+    };
+    for listed in [vec![], vec![without_pid.clone()]] {
+        let mut bus = menus();
+        let target = MenuTarget {
+            window: &without_pid,
+            ids: WindowIds::Native,
+            windows: &listed,
+        };
+        let error = items(&mut bus, target, &[]).unwrap_err();
+        assert!(error.message.contains("provably window"), "{}", error.message);
+        assert!(bus.children_reads.is_empty());
+    }
 }
 
 #[test]
@@ -129,7 +154,7 @@ fn a_native_window_its_frames_cannot_be_told_apart_from_is_refused() {
         ids: WindowIds::Native,
         windows: &listed,
     };
-    let error = select(&mut bus, target, &path(&["File", "Save"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, target, &unchanged, &path(&["File", "Save"]), &no_stop).unwrap_err();
     assert!(error.message.contains("provably window"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -145,7 +170,7 @@ fn a_command_replaced_during_discovery_is_refused() {
         bus.nodes.get_mut(&40).unwrap().children.retain(|child| *child != 43);
         bus.add(48, 40, command("Save"));
     }));
-    let error = select(&mut bus, on(&window()), &path(&["File", "Save"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &unchanged, &path(&["File", "Save"]), &no_stop).unwrap_err();
     assert!(error.message.contains("command changed"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -157,7 +182,7 @@ fn a_command_moved_to_another_frame_during_discovery_is_refused() {
         bus.add(13, 1, FakeNode::frame("other", EDITOR_RECT));
         bus.nodes.get_mut(&20).unwrap().parent = 13;
     }));
-    let error = select(&mut bus, on(&window()), &path(&["File", "Save"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &unchanged, &path(&["File", "Save"]), &no_stop).unwrap_err();
     assert!(error.message.contains("no longer belongs"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }
@@ -168,7 +193,7 @@ fn a_frame_that_disappears_during_discovery_is_refused() {
     bus.mutate_on_children = Some((40, 2, |bus| {
         bus.nodes.get_mut(&1).unwrap().children.retain(|child| *child != 10);
     }));
-    let error = select(&mut bus, on(&window()), &path(&["File", "Save"]), &no_stop).unwrap_err();
+    let error = select(&mut bus, on(&window()), &unchanged, &path(&["File", "Save"]), &no_stop).unwrap_err();
     assert!(error.message.contains("provably window"), "{}", error.message);
     assert!(actions(&bus).is_empty());
 }

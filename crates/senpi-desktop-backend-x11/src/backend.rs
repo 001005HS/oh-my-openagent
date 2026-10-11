@@ -216,10 +216,11 @@ impl<S: XServer + Send, I: InputServer + Send> Backend for X11Backend<S, I> {
         check_stop: &dyn Fn() -> CoreResult<()>,
     ) -> CoreResult<()> {
         let windows = self.capture.windows()?;
+        let capture = &self.capture;
         self.ax
             .as_mut()
             .ok_or_else(DesktopError::ax_unsupported)?
-            .menu_select(window, &windows, path, check_stop)
+            .menu_select(window, &windows, &|| capture.windows(), path, check_stop)
     }
 
     fn ax(&mut self) -> Option<&mut dyn AxBackend> {

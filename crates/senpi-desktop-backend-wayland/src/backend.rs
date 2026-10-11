@@ -231,7 +231,7 @@ impl Backend for WaylandBackend {
         check_stop: &dyn Fn() -> CoreResult<()>,
     ) -> CoreResult<()> {
         match &mut self.ax {
-            Ok(ax) => ax.menu_select(window, &[], path, check_stop),
+            Ok(ax) => ax.menu_select(window, &[], &|| Ok(Vec::new()), path, check_stop),
             Err(error) => Err(error.clone()),
         }
     }

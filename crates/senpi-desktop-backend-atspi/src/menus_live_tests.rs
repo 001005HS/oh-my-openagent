@@ -105,13 +105,13 @@ fn menu_listing_and_select_against_a_real_gtk_menu_bar() {
         (&["File", "Open"][..], "Open..."),
         (&["File", "Recent", "a.txt"][..], "a.txt"),
     ] {
-        ax.menu_select(&window, &[], &labels(path), &no_stop).unwrap();
+        ax.menu_select(&window, &[], &|| Ok(Vec::new()), &labels(path), &no_stop).unwrap();
         assert_eq!(fixture.next(expected), format!("{expected}@{title}"));
     }
 
-    let ambiguous = ax.menu_select(&window, &[], &labels(&["File", "Print"]), &no_stop).unwrap_err();
-    let disabled = ax.menu_select(&window, &[], &labels(&["Edit", "Undo"]), &no_stop).unwrap_err();
-    let submenu = ax.menu_select(&window, &[], &labels(&["File", "Recent"]), &no_stop).unwrap_err();
+    let ambiguous = ax.menu_select(&window, &[], &|| Ok(Vec::new()), &labels(&["File", "Print"]), &no_stop).unwrap_err();
+    let disabled = ax.menu_select(&window, &[], &|| Ok(Vec::new()), &labels(&["Edit", "Undo"]), &no_stop).unwrap_err();
+    let submenu = ax.menu_select(&window, &[], &|| Ok(Vec::new()), &labels(&["File", "Recent"]), &no_stop).unwrap_err();
     println!(
         "ambiguous_error={} disabled_error={} submenu_error={}",
         ambiguous.message, disabled.message, submenu.message
@@ -122,6 +122,6 @@ fn menu_listing_and_select_against_a_real_gtk_menu_bar() {
     // The app reports activations in order, so the sentinel arriving next
     // proves none of the refused paths (sensitive ambiguous items and a
     // submenu that reports its own activation) dispatched anything.
-    ax.menu_select(&window, &[], &labels(&["File", "Save"]), &no_stop).unwrap();
+    ax.menu_select(&window, &[], &|| Ok(Vec::new()), &labels(&["File", "Save"]), &no_stop).unwrap();
     assert_eq!(fixture.next("the sentinel Save"), format!("Save@{title}"), "a refused path ran a command");
 }

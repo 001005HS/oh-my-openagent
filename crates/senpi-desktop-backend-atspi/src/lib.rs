@@ -88,16 +88,18 @@ impl<B: AtSpiBus> AtSpiAx<B> {
     }
 
     /// Runs the menu command `path` names through its own declared action;
+    /// `relist` reads the host's window list again before the action, and
     /// `check_stop` runs at every level and immediately before the action.
     pub fn menu_select(
         &mut self,
         window: &DesktopWindow,
         windows: &[DesktopWindow],
+        relist: &dyn Fn() -> CoreResult<Vec<DesktopWindow>>,
         path: &[String],
         check_stop: &dyn Fn() -> CoreResult<()>,
     ) -> CoreResult<()> {
         let target = self.menu_target(window, windows);
-        menus::select(&mut self.bus, target, path, check_stop)
+        menus::select(&mut self.bus, target, relist, path, check_stop)
     }
 
     fn menu_target<'a>(&self, window: &'a DesktopWindow, windows: &'a [DesktopWindow]) -> MenuTarget<'a> {
