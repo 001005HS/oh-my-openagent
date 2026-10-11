@@ -137,10 +137,8 @@ const displayRun = {
   action: "run",
   code: "const all = await desktop.display('all'); const two = await desktop.display('2'); const a = await all.screenshot({ silent: true }); const b = await two.screenshot({ silent: true }); await two.click(20, 10); return JSON.stringify({ all: [a.width, a.height], two: [b.width, b.height] })",
 }
-const displayShots = {
-  action: "run",
-  code: "const two = await desktop.display('2'); const shot = await two.screenshot({ silent: true }); await two.click(20, 10); return 'clicked'",
-}
+const displayShotChain = { action: "call", chain: [{ method: "display", args: ["2"] }, { method: "screenshot" }] }
+const displayClickChain = { action: "call", chain: [{ method: "display", args: ["2"] }, { method: "click", args: [20, 10] }] }
 
 const scenarios = [
   {
@@ -152,21 +150,28 @@ const scenarios = [
     ],
     verify: ({ results, methods }) => [
       ["the display run succeeded", results.find((r) => r.toolName === "computer")?.isError === false],
-      ["display 2 is narrower than the all-display composite", /\"all\":\[(\d+),\d+\],\"two\":\[(\d+),/.exec(resultText(results.find((r) => r.toolName === "computer")))?.slice(1).map(Number).reduce((all, two) => all > two) === true],
+      ["display 2 alone is captured at its native 2880x1800", resultText(results.find((r) => r.toolName === "computer")).includes('"two":[2880,1800]')],
+      ["the composite spans both displays", resultText(results.find((r) => r.toolName === "computer")).includes('"all":[3840,1440]')],
       ["the click on display 2 reached the engine", methods.includes("click")],
     ],
   },
   {
-    name: "display-input-denied-under-exec-deny",
+    // Read and exec tiers apply per display call: under exec=deny a display screenshot runs, its click does not.
+    name: "display-chains-split-by-tier-under-exec-deny",
     permission: "computer:exec=deny",
     steps: [
-      { type: "tool_call", name: "computer", arguments: displayShots },
+      { type: "tool_call", name: "computer", arguments: displayShotChain },
+      { type: "tool_call", name: "computer", arguments: displayClickChain },
       { type: "text", text: "done" },
     ],
-    verify: ({ results, methods }) => [
-      ["the display click run was refused", results.find((r) => r.toolName === "computer")?.isError === true],
-      ["no click reached the engine", !methods.includes("click")],
-    ],
+    verify: ({ results, methods }) => {
+      const [shot, click] = results.filter((r) => r.toolName === "computer")
+      return [
+        ["the display 2 screenshot ran", shot?.isError === false && resultText(shot).includes('"frameId"')],
+        ["the display 2 click was refused", click?.isError === true],
+        ["no click reached the engine", !methods.includes("click")],
+      ]
+    },
   },
   {
     name: "read-allowed-under-exec-deny",

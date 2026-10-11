@@ -65,7 +65,6 @@ fn returns_none_when_no_normal_on_screen_window_matches() {
     assert_eq!(selected, None);
 }
 
-
 #[test]
 fn hand_back_reactivates_only_while_the_engine_activation_is_front() {
     // Given: Terminal (10) was front, the engine made TextEdit (20) key.

@@ -68,4 +68,3 @@ fn active_uses_primary_without_focused_geometry_and_all_keeps_composite() {
     let error = select_capture(&DisplaySelector::Id("missing".into()), image, displays).unwrap_err();
     assert_eq!(error.code, senpi_desktop_core::error::ErrorCode::InvalidTarget);
 }
-
