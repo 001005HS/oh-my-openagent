@@ -10,6 +10,7 @@ mod apps;
 mod bus;
 mod connection;
 mod live;
+mod menus;
 mod owner;
 mod permission;
 mod props;
@@ -17,6 +18,7 @@ mod text;
 
 use senpi_desktop_core::ax::{AxBackend, AxHandle, AxOwner, AxProps};
 use senpi_desktop_core::error::{CoreResult, DesktopError};
+use senpi_desktop_core::menus::MenuItem;
 use senpi_desktop_core::types::DesktopWindow;
 
 pub use bus::{AtSpiBus, BusResult, Extents, ScreenPoint};
@@ -67,6 +69,22 @@ impl<B: AtSpiBus> AtSpiAx<B> {
     /// compositor exposes none.
     pub fn windows(&mut self) -> CoreResult<Vec<DesktopWindow>> {
         apps::windows(&mut self.bus)
+    }
+
+    /// The items of `window`'s menu bar, or of the submenu `path` names.
+    pub fn menu_items(&mut self, window: &DesktopWindow, path: &[String]) -> CoreResult<Vec<MenuItem>> {
+        menus::items(&mut self.bus, window, path)
+    }
+
+    /// Runs the menu command `path` names through its own declared action;
+    /// `check_stop` runs at every level and immediately before the action.
+    pub fn menu_select(
+        &mut self,
+        window: &DesktopWindow,
+        path: &[String],
+        check_stop: &dyn Fn() -> CoreResult<()>,
+    ) -> CoreResult<()> {
+        menus::select(&mut self.bus, window, path, check_stop)
     }
 
     /// Re-reads the registry, so enabling a toolkit later turns `granted` on.
@@ -151,6 +169,10 @@ mod action_tests;
 mod fake;
 #[cfg(test)]
 mod live_tests;
+#[cfg(test)]
+mod menus_live_tests;
+#[cfg(test)]
+mod menus_tests;
 #[cfg(test)]
 mod owner_correlate_tests;
 #[cfg(test)]

@@ -9,6 +9,7 @@ use senpi_desktop_core::backend::{Backend, DeliveryMode, PointerEvent};
 use senpi_desktop_core::error::{CoreResult, DesktopError};
 use senpi_desktop_core::frame::FrameGeometry;
 use senpi_desktop_core::keys::KeyName;
+use senpi_desktop_core::menus::MenuItem;
 use senpi_desktop_core::types::{
     CaptureCaps, DesktopCapabilities, DesktopDisplay, DesktopPoint, DesktopWindow, DisplaySelector,
     FrontWindow, Target,
@@ -194,6 +195,25 @@ impl<S: XServer + Send, I: InputServer + Send> Backend for X11Backend<S, I> {
     fn raise_window(&mut self, id: &str) -> CoreResult<()> {
         self.window(id)?;
         self.input()?.raise_window(id)
+    }
+
+    fn menu_items(&mut self, window: &DesktopWindow, path: &[String]) -> CoreResult<Vec<MenuItem>> {
+        self.ax.as_mut().ok_or_else(DesktopError::ax_unsupported)?.menu_items(window, path)
+    }
+
+    /// The command runs through its own AT-SPI action, which needs neither
+    /// focus nor a raised window, so both delivery modes dispatch the same way.
+    fn menu_select(
+        &mut self,
+        window: &DesktopWindow,
+        path: &[String],
+        _delivery: DeliveryMode,
+        check_stop: &dyn Fn() -> CoreResult<()>,
+    ) -> CoreResult<()> {
+        self.ax
+            .as_mut()
+            .ok_or_else(DesktopError::ax_unsupported)?
+            .menu_select(window, path, check_stop)
     }
 
     fn ax(&mut self) -> Option<&mut dyn AxBackend> {

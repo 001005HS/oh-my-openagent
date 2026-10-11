@@ -143,6 +143,16 @@ impl AtSpiBus for LiveBus {
         })
     }
 
+    fn key_binding(&mut self, node: &ObjectRefOwned, index: i32) -> BusResult<String> {
+        self.with_proxy("key binding", node, |p: ActionProxy<'static>| async move {
+            p.get_key_binding(index).await
+        })
+    }
+
+    fn same_application(&self, a: &ObjectRefOwned, b: &ObjectRefOwned) -> bool {
+        a.name_as_str().is_some() && a.name_as_str() == b.name_as_str()
+    }
+
     fn text(&mut self, node: &ObjectRefOwned, max_chars: i32) -> BusResult<String> {
         self.with_proxy("text", node, |p: TextProxy<'static>| async move {
             let count = p.character_count().await?.min(max_chars);
