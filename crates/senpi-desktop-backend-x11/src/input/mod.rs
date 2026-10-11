@@ -244,7 +244,6 @@ impl<S: InputServer> X11Input<S> {
         }
         first_error.map_or(Ok(()), Err)
     }
-
 }
 
 /// X11 window ids are this backend's own decimal XIDs.

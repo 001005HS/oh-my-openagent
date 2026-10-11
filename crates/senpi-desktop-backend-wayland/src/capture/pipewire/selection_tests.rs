@@ -68,3 +68,12 @@ fn active_uses_primary_without_focused_geometry_and_all_keeps_composite() {
     let error = select_capture(&DisplaySelector::Id("missing".into()), image, displays).unwrap_err();
     assert_eq!(error.code, senpi_desktop_core::error::ErrorCode::InvalidTarget);
 }
+
+#[test]
+fn empty_capture_inventory_returns_a_typed_error() {
+    // Given: no monitor stream arrived.
+    // When
+    let error = select_capture(&DisplaySelector::Active, RgbaImage::new(1, 1), vec![]).unwrap_err();
+    // Then: no production panic escapes the capture boundary.
+    assert_eq!(error.code, senpi_desktop_core::error::ErrorCode::CaptureFailed);
+}

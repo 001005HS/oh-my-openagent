@@ -80,9 +80,20 @@ impl MacCapture {
     fn capture_desktop(&self, selector: &DisplaySelector) -> CoreResult<(RgbaImage, FrameGeometry)> {
         self.require_permission()?;
         let focused = if *selector == DisplaySelector::Active {
-            let front = crate::focus::front_window()?;
-            let id = front.and_then(|front| front.window_id);
-            windows::enumerate()?.into_iter().find(|window| Some(&window.id) == id.as_ref())
+            match crate::focus::front_window_id() {
+                Ok(Some(id)) => match windows::find(&id.to_string()) {
+                    Ok(window) => Some(window),
+                    Err(error) => {
+                        eprintln!("active capture cannot locate the front window; using primary: {error}");
+                        None
+                    }
+                },
+                Ok(None) => None,
+                Err(error) => {
+                    eprintln!("active capture cannot query focus; using primary: {error}");
+                    None
+                }
+            }
         } else {
             None
         };

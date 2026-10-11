@@ -1,13 +1,28 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use senpi_desktop_backend_fake::FakeScenario;
-use senpi_desktop_core::error::ErrorCode;
+use senpi_desktop_backend_fake::{FakeBackend, FakeScenario, RecordedPointer, RecordingSink, SinkOp};
+use senpi_desktop_core::backend::{Backend, DeliveryMode};
+use senpi_desktop_core::error::{CoreResult, ErrorCode};
 use senpi_desktop_core::protocol_params::{CaptureParams, PointParams};
-use senpi_desktop_core::types::{CaptureResult, DesktopSessionOptions};
+use senpi_desktop_core::types::{CaptureResult, DesktopPoint, DesktopSessionOptions, Target};
 use senpi_desktop_safety::{FakeClock, StopPathId, Supervisor};
 use senpi_desktop_session::{
-    BackendSelection, Op, Response, Session, SessionSafety, SessionTimeouts,
+    BackendFactory, Op, Response, Session, SessionSafety, SessionTimeouts,
 };
+
+#[derive(Clone)]
+struct RecordingFactory {
+    scenario: FakeScenario,
+    sink: Arc<Mutex<Option<RecordingSink>>>,
+}
+
+impl BackendFactory for RecordingFactory {
+    fn create(&self, _options: &DesktopSessionOptions) -> CoreResult<Box<dyn Backend>> {
+        let backend = FakeBackend::new(self.scenario.clone());
+        *self.sink.lock().unwrap() = Some(backend.sink());
+        Ok(Box::new(backend))
+    }
+}
 
 async fn capture(session: &Session, target: &str) -> CaptureResult {
     let response = session
@@ -37,8 +52,9 @@ async fn per_call_display_frames_survive_other_target_captures_without_reopening
         audit: Box::new(|_| {}),
         control_slot: senpi_desktop_session::ControlSlot::new(),
     };
+    let factory = RecordingFactory { scenario, sink: Arc::new(Mutex::new(None)) };
     let session = Session::start_supervised(
-        BackendSelection::FakeScenario(Box::new(scenario)),
+        factory.clone(),
         SessionTimeouts::default(),
         safety,
     )
@@ -75,6 +91,12 @@ async fn per_call_display_frames_survive_other_target_captures_without_reopening
             .await;
         assert_eq!(moved, Ok(Response::Unit));
     }
+    let ops = factory.sink.lock().unwrap().as_ref().unwrap().ops();
+    assert!(ops.contains(&SinkOp::Pointer {
+        target: Target::parse("display:2"),
+        event: RecordedPointer::Move { at: DesktopPoint { x: 1930.0, y: 5.0 } },
+        mode: DeliveryMode::Background,
+    }), "display:2 pixels must map through that display's origin and scale");
     let wrong_frame = session
         .submit(Op::MoveMouse(PointParams {
             target: "desktop".into(),
