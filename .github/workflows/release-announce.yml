@@ -19,7 +19,7 @@ on:
         default: true
     secrets:
       DISCORD_OMO_RELEASES_WEBHOOK_URL:
-        required: true
+        required: false
   workflow_dispatch:
     inputs:
       tag:
@@ -45,6 +45,8 @@ concurrency:
 jobs:
   announce:
     if: github.event_name != 'release' || (!github.event.release.draft && !github.event.release.prerelease && github.event.release.author.login != 'github-actions[bot]')
+    # Calling jobs with uses cannot set continue-on-error; isolate failure here.
+    continue-on-error: ${{ inputs.automatic == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -66,6 +68,14 @@ jobs:
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
           PROBE: ${{ github.event_name == 'workflow_dispatch' && inputs.probe }}
         run: timeout -k 10 120 bun script/release-announce.ts
+      - name: Warn about undelivered announcement
+        if: always() && (failure() || cancelled())
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          recovery="gh workflow run release-announce.yml -f tag=$RELEASE_TAG -f dry_run=false"
+          echo "::warning::Release announcement $RELEASE_TAG failed, was uncertain, or was cancelled. Confirm the post is missing before recovery: $recovery"
+          printf 'Release announcement `%s` was not confirmed. After fixing publication and confirming no post exists, recover with `%s`.\n' "$RELEASE_TAG" "$recovery" >> "$GITHUB_STEP_SUMMARY"
       - name: Write job summary
         if: always()
         env:
@@ -73,8 +83,8 @@ jobs:
           JOB_SUMMARY_STATUS: ${{ job.status }}
           JOB_SUMMARY_DETAILS: |
             - Stable published omo releases only; edited and bot-authored release events do not trigger posts.
-            - The publisher calls this workflow directly so delivery failure fails its release run.
+            - Automatic delivery failures do not fail the publish run; manual runs remain strict.
             - Dry runs compose only; probes post a test, delete it, and require GET 404.
-            - Every failed request or missing credential fails the job.
+            - Failed requests, missing credentials, and cancellation emit recovery warnings.
           JOB_SUMMARY_NEXT: Inspect the announcement step before rerunning; production reruns can duplicate a post.
         run: GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" bash .github/scripts/write-job-summary.sh

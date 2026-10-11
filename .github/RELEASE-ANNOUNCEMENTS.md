@@ -10,20 +10,29 @@ block. Mentions are disabled.
 The repository secret `DISCORD_OMO_RELEASES_WEBHOOK_URL` must exist, including for
 dry runs. It is passed only through the step environment and masked. Missing
 credentials, empty release notes, malformed responses, and failed HTTP requests
-fail the job with a tag-specific error.
+fail manual jobs with a tag-specific error. Automatic calls are non-fatal to the
+publish run and emit an Actions warning and a recovery command in the job summary.
 
 The publish workflow creates the omo GitHub release with `GITHUB_TOKEN` and then
 calls `release-announce.yml` as a reusable workflow with the required string
-input `tag`. The caller waits for `release` and `installer-mirror` to finish and
+input `tag`. The caller waits for `release`, `post-publish-verify`, and
+`installer-mirror` to finish and
 runs only when the release's `created` output is `true`: this run successfully
-created the release, rather than finding it already published. `always()` allows
-the announcement after a later release step fails or a platform ancestor is
-skipped. A failed or skipped installer mirror does not block the announcement;
-installer freshness still depends on the mirror succeeding.
+created the release, rather than finding it already published. The release job
+(including asset upload/check) and post-publish verification must succeed, and
+the installer mirror must succeed (or be skipped because `skip_platform=true`).
+A failed or skipped gating job prevents posting. Cancellation also prevents
+posting. A separate recovery job runs with `always()` to warn and write the exact
+re-announce command to the summary when these conditions drop a fresh stable post.
 It skips LazyCodex-only and preparation
 runs and passes only the Discord webhook secret. A failed
-announcement makes the publish run itself red; no PAT is needed for this path.
+announcement does not make an otherwise successful publish run red; no PAT is needed for this path.
 The reusable job has read-only contents permission.
+Its runner job uses `continue-on-error` only for automatic calls, because GitHub
+does not support that keyword on a calling job with `uses`. The webhook secret
+is optional at the reusable-workflow boundary so a missing value reaches the
+announcement step and its recovery warning. Manual dry-run, probe, and explicit
+announcement errors still fail red.
 
 The caller also requires the validated release-metadata `dist_tag` to be empty,
 which identifies a stable version; beta/other prerelease channels are excluded.

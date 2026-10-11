@@ -6,13 +6,13 @@ import { join } from "node:path"
 import { z } from "zod"
 
 // Evaluate the expression subset used by these repository-owned workflows.
-function evaluateExpression(expression: string, context: Readonly<Record<string, unknown>>, statuses: readonly string[] = ["success"]): unknown {
+function evaluateExpression(expression: string, context: Readonly<Record<string, unknown>>, statuses: readonly string[] = ["success"], runCancelled = statuses.includes("cancelled")): unknown {
   const code = expression.trim().replace(/^\$\{\{\s*|\s*\}\}$/g, "")
     .replace(/\b(?:inputs|needs|steps|github|secrets)(?:\.[\w-]+)+/g, (path) =>
       `context${path.split(".").map((key) => `[${JSON.stringify(key)}]`).join("")}`)
   const result: unknown = new Function("context", "always", "success", "failure", "cancelled", `return (${code})`)(
     context, () => true, () => statuses.every((status) => status === "success"),
-    () => statuses.includes("failure"), () => statuses.includes("cancelled"),
+    () => statuses.includes("failure"), () => runCancelled,
   )
   return result
 }
@@ -32,7 +32,7 @@ test("#given release automation #when parsed #then published events, safe dispat
           tag: z.object({ type: z.literal("string"), required: z.literal(true) }).passthrough(),
           automatic: z.object({ type: z.literal("boolean"), default: z.literal(true) }).passthrough(),
         }),
-        secrets: z.object({ DISCORD_OMO_RELEASES_WEBHOOK_URL: z.object({ required: z.literal(true) }) }),
+        secrets: z.object({ DISCORD_OMO_RELEASES_WEBHOOK_URL: z.object({ required: z.literal(false) }) }),
       }),
       workflow_dispatch: z.object({ inputs: z.record(z.string(), z.object({
         type: z.string(), required: z.boolean().optional(), default: z.boolean().optional(),
@@ -78,7 +78,7 @@ test("#given release automation #when parsed #then published events, safe dispat
     uses: z.string().optional(),
     with: z.record(z.string(), z.unknown()).optional(),
     secrets: z.union([z.literal("inherit"), z.record(z.string(), z.string())]).optional(),
-    permissions: z.object({ contents: z.string() }).optional(),
+    permissions: z.record(z.string(), z.string()).optional(),
     outputs: z.record(z.string(), z.string()).optional(),
   }).passthrough()) }).parse(Bun.YAML.parse(await Bun.file(".github/workflows/publish.yml").text()))
   const createRelease = Object.values(publisher.jobs).flatMap((job) => job.steps ?? [])
@@ -94,7 +94,8 @@ test("#given release automation #when parsed #then published events, safe dispat
       { steps: { [createId]: { outputs: { created } } } })).toBe(created)
   }
   const caller = publisher.jobs["release-announce"]
-  expect(new Set(caller?.needs)).toEqual(new Set(["release-metadata", "release", "installer-mirror"]))
+  expect(new Set(caller?.needs)).toEqual(new Set(["release-metadata", "release", "post-publish-verify", "installer-mirror"]))
+  expect(caller).not.toHaveProperty("continue-on-error")
   const versionStep = publisher.jobs["release-metadata"]?.steps?.find((item) => item.run?.includes("script/release-version.mjs"))
   const versionId = z.string().parse(versionStep?.id)
   for (const dist_tag of ["", "beta"]) {
@@ -113,35 +114,119 @@ test("#given release automation #when parsed #then published events, safe dispat
 })
 
 const published = {
-  created: "true", distTag: "", release: "success", mirror: "success", platform: "success",
-  skipPlatform: false, lazycodexOnly: false, prepared: "prepared-sha", expected: true,
+  created: "true", distTag: "", release: "success", verify: "success", mirror: "success", platform: "success",
+  skipPlatform: false, lazycodexOnly: false, prepared: "prepared-sha", runCancelled: false, expected: true,
 }
 test.each([
   { ...published, name: "fresh stable" },
-  { ...published, name: "later release failure", release: "failure" },
+  { ...published, name: "later release failure", release: "failure", expected: false },
+  { ...published, name: "skipped release", release: "skipped", expected: false },
   { ...published, name: "failed before creation", release: "failure", created: "", mirror: "skipped", expected: false },
-  { ...published, name: "cancelled after creation", release: "cancelled", mirror: "skipped", expected: false },
+  { ...published, name: "cancelled after creation", release: "cancelled", mirror: "skipped", runCancelled: true, expected: false },
+  { ...published, name: "run cancelled with successful needs", runCancelled: true, expected: false },
   { ...published, name: "skipped platform", platform: "skipped", mirror: "skipped", skipPlatform: true },
-  { ...published, name: "failed mirror", mirror: "failure" },
+  { ...published, name: "failed mirror", mirror: "failure", expected: false },
+  { ...published, name: "skipped mirror", mirror: "skipped", expected: false },
+  { ...published, name: "failed mirror despite skip platform", mirror: "failure", skipPlatform: true, expected: false },
+  { ...published, name: "failed verification", verify: "failure", expected: false },
+  { ...published, name: "skipped verification", verify: "skipped", expected: false },
+  { ...published, name: "cancelled verification", verify: "cancelled", expected: false },
+  { ...published, name: "cancelled mirror", mirror: "cancelled", expected: false },
   { ...published, name: "already existed", created: "false", expected: false },
   { ...published, name: "beta", distTag: "beta", expected: false },
   { ...published, name: "LazyCodex only", lazycodexOnly: true, expected: false },
   { ...published, name: "preparation", prepared: "", expected: false },
 ])("#given $name #when Actions evaluates the caller #then announcement eligibility follows creation", async (scenario) => {
-  const workflow = z.object({ jobs: z.object({ "release-announce": z.object({ if: z.string() }) }) })
+  const workflow = z.object({ jobs: z.object({
+    "release-announce": z.object({ if: z.string() }),
+    "release-announce-recovery": z.object({ if: z.string() }),
+  }) })
     .parse(Bun.YAML.parse(await Bun.file(".github/workflows/publish.yml").text()))
   const expression = workflow.jobs["release-announce"].if
   // Actions implicitly prepends success() unless a status-check function exists.
   const condition = /\b(?:always|success|failure|cancelled)\s*\(/.test(expression) ? expression : `success() && (${expression})`
-  expect(Boolean(evaluateExpression(condition, {
+  const context = {
     inputs: { lazycodex_only: scenario.lazycodexOnly, prepared_release_sha: scenario.prepared, skip_platform: scenario.skipPlatform },
     needs: {
       release: { result: scenario.release, outputs: { created: scenario.created } },
       "release-metadata": { result: "success", outputs: { dist_tag: scenario.distTag } },
       "installer-mirror": { result: scenario.mirror },
+      "post-publish-verify": { result: scenario.verify },
+      "release-announce": { result: scenario.expected ? "success" : "skipped" },
       "publish-platform": { result: scenario.platform },
     },
-  }, [scenario.release, scenario.mirror, scenario.platform]))).toBe(scenario.expected)
+  }
+  const statuses = [scenario.release, scenario.verify, scenario.mirror, scenario.platform]
+  expect(Boolean(evaluateExpression(condition, context, statuses, scenario.runCancelled))).toBe(scenario.expected)
+  const recoveryExpected = scenario.created === "true" && scenario.distTag === "" &&
+    !scenario.lazycodexOnly && scenario.prepared !== "" && !scenario.expected
+  expect(Boolean(evaluateExpression(workflow.jobs["release-announce-recovery"].if, context, statuses, scenario.runCancelled))).toBe(recoveryExpected)
+})
+
+test.each([
+  { automatic: true, failure: "missing secret", expected: "success" },
+  { automatic: true, failure: "failed or uncertain post", expected: "success" },
+  { automatic: false, failure: "missing secret", expected: "failure" },
+  { automatic: false, failure: "failed or uncertain post", expected: "failure" },
+])("#given $failure and automatic=$automatic #when delivery fails #then conclusion is $expected with recovery", ({ automatic, failure, expected }) => {
+  const workflow = z.object({ jobs: z.object({ announce: z.object({
+    "continue-on-error": z.string(),
+    steps: z.array(z.object({ name: z.string().optional(), if: z.string().optional(), run: z.string().optional() }).passthrough()),
+  }).passthrough() }) }).parse(Bun.YAML.parse(readFileSync(".github/workflows/release-announce.yml", "utf8")))
+  const job = workflow.jobs.announce
+  const step = job.steps.find((item) => item.name === "Announce release")
+  const warning = job.steps.find((item) => item.name === "Warn about undelivered announcement")
+  if (!step?.run || !warning?.run || !warning.if) throw new Error("Missing announcement or recovery step")
+  const directory = mkdtempSync(join(tmpdir(), "omo-announcement-failure-"))
+  const summary = join(directory, "summary")
+  writeFileSync(summary, "")
+  try {
+    // Execute the real CLI for absent credentials; simulate a transport exit for a failed POST.
+    const run = failure === "missing secret" ? step.run : "exit 1"
+    const delivery = spawnSync("bash", ["-c", run], {
+      encoding: "utf8", timeout: 5000,
+      env: { ...process.env, ANNOUNCEMENT_EVENT: automatic ? "workflow_call" : "workflow_dispatch",
+        RELEASE_TAG: "v5.1.29", DISCORD_OMO_RELEASES_WEBHOOK_URL: "", DRY_RUN: "false", PROBE: "false" },
+    })
+    expect(delivery.error).toBeUndefined()
+    expect(delivery.status).toBe(1)
+    const tolerated = evaluateExpression(job["continue-on-error"], { inputs: { automatic } })
+    expect(tolerated ? "success" : "failure").toBe(expected)
+    expect(evaluateExpression(warning.if, {}, ["failure"])).toBe(true)
+    const recovery = spawnSync("bash", ["-c", warning.run], {
+      encoding: "utf8", timeout: 5000,
+      env: { ...process.env, RELEASE_TAG: "v5.1.29", GITHUB_STEP_SUMMARY: summary },
+    })
+    expect(recovery.status).toBe(0)
+    const command = "gh workflow run release-announce.yml -f tag=v5.1.29 -f dry_run=false"
+    expect(recovery.stdout).toContain("::warning::")
+    expect(recovery.stdout).toContain(command)
+    expect(readFileSync(summary, "utf8")).toContain(command)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test("#given skipped or cancelled automatic announcement #when recovery runs #then warning and summary name the command", () => {
+  const workflow = z.object({ jobs: z.object({ "release-announce-recovery": z.object({
+    steps: z.array(z.object({ run: z.string() }).passthrough()),
+  }).passthrough() }) }).parse(Bun.YAML.parse(readFileSync(".github/workflows/publish.yml", "utf8")))
+  const directory = mkdtempSync(join(tmpdir(), "omo-announcement-recovery-"))
+  const summary = join(directory, "summary")
+  writeFileSync(summary, "")
+  try {
+    const result = spawnSync("bash", ["-c", workflow.jobs["release-announce-recovery"].steps[0].run], {
+      encoding: "utf8", timeout: 5000,
+      env: { ...process.env, RELEASE_TAG: "v5.1.29", GITHUB_STEP_SUMMARY: summary },
+    })
+    expect(result.status).toBe(0)
+    const command = "gh workflow run release-announce.yml -f tag=v5.1.29 -f dry_run=false"
+    expect(result.stdout).toContain("::warning::")
+    expect(result.stdout).toContain(command)
+    expect(readFileSync(summary, "utf8")).toContain(command)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 test.each([

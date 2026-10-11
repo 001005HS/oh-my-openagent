@@ -1431,10 +1431,13 @@ jobs:
         run: GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" bash .github/scripts/write-job-summary.sh
 
   release-announce:
-    needs: [release-metadata, release, installer-mirror]
+    needs: [release-metadata, release, post-publish-verify, installer-mirror]
     if: >-
       !cancelled() &&
       needs.release.outputs.created == 'true' &&
+      needs.release.result == 'success' &&
+      needs.post-publish-verify.result == 'success' &&
+      (needs.installer-mirror.result == 'success' || (inputs.skip_platform == true && needs.installer-mirror.result == 'skipped')) &&
       needs.release-metadata.outputs.dist_tag == '' &&
       inputs.lazycodex_only != true &&
       inputs.prepared_release_sha != ''
@@ -1445,6 +1448,27 @@ jobs:
       tag: v${{ needs.release-metadata.outputs.version }}
     secrets:
       DISCORD_OMO_RELEASES_WEBHOOK_URL: ${{ secrets.DISCORD_OMO_RELEASES_WEBHOOK_URL }}
+
+  release-announce-recovery:
+    needs: [release-metadata, release, post-publish-verify, installer-mirror, release-announce]
+    if: >-
+      always() &&
+      needs.release.outputs.created == 'true' &&
+      needs.release-metadata.outputs.dist_tag == '' &&
+      inputs.lazycodex_only != true &&
+      inputs.prepared_release_sha != '' &&
+      (cancelled() || needs.release-announce.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Warn about skipped announcement
+        env:
+          RELEASE_TAG: v${{ needs.release-metadata.outputs.version }}
+        run: |
+          recovery="gh workflow run release-announce.yml -f tag=$RELEASE_TAG -f dry_run=false"
+          echo "::warning::Release announcement $RELEASE_TAG was skipped or cancelled. Fix the release assets, verification, and installer mirror, then confirm the post is missing before recovery: $recovery"
+          printf 'Release announcement `%s` was skipped or cancelled. Once assets, verification, and the installer mirror are ready and no post exists, recover with `%s`.\n' "$RELEASE_TAG" "$recovery" >> "$GITHUB_STEP_SUMMARY"
 
   installer-mirror:
     needs: [release-metadata, release, post-publish-verify]
