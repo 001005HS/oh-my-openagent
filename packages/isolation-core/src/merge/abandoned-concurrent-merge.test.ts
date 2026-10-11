@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test"
+import { mkdtemp } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { removeTree } from "../../../../test-support/remove-tree"
+import { GitCommandError } from "../git/command"
 import { startConcurrentMerges } from "./merge-fixture"
 
 const repoRoot = join(import.meta.dir, "../../../..")
@@ -11,11 +15,20 @@ test("a concurrent-merge test that ends early leaves no running merge and no unh
   const output = stdout + stderr
   expect(output).toContain("(fail) abandoned:")
   expect(output).toContain("(pass) neighbor:")
+  expect(output).toMatch(/^ 1 pass$/m)
+  expect(output).toMatch(/^ 1 fail$/m)
   expect(output).not.toContain("Unhandled error")
+  expect(output).not.toContain("temp entr")
   expect(exitCode).toBe(1)
 })
 
 test("a merge that fails before taking the lock rejects the scenario instead of waiting for a lock signal", async () => {
-  const merges = startConcurrentMerges("branch", { repoRoot: join(repoRoot, "does-not-exist-9846") })
-  await expect(merges.ready).rejects.toThrow()
+  const notARepo = await mkdtemp(join(tmpdir(), "isolation-core-not-a-repo-"))
+  try {
+    const merges = startConcurrentMerges("branch", { repoRoot: notARepo })
+    const failure = await merges.ready.then(() => undefined, (error: unknown) => error)
+    expect(failure).toBeInstanceOf(GitCommandError)
+  } finally {
+    await removeTree(notARepo)
+  }
 })
