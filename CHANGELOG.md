@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**OpenCode runtime fallback can switch models after a provider content-filter error.** When fallback is enabled and alternate models are configured, a blocked response advances to a different model; the existing attempt limit and chain exhaustion still stop retries. ([#6796](https://github.com/code-yeongyu/oh-my-openagent/issues/6796), [#7257](https://github.com/code-yeongyu/oh-my-openagent/pull/7257))
+
 ## [5.1.30] - 2026-10-11
 
 **`ulw-research` reads sources in your own browser instead of fetching them.** The Phase 0 brief now decides `Collection: search-only | browser` by one rule (search-only only when a result snippet settles every axis), and the web workers read every candidate through the `browser` skill's attached engine: one named session per worker, one tab per source, several tabs side by side while comparing, with a full-page screenshot per top source. `webfetch` is reserved for raw files, hosts the browser cannot open go to `ultimate-browsing` with their provenance, and a team member's brief names the `browser` skill to read since members cannot carry `load_skills`. `ultimate-browsing` no longer presents itself as the research browsing lane, and the `browser` skill no longer sends plain page reading elsewhere. ([#9958](https://github.com/code-yeongyu/oh-my-openagent/issues/9958), [#9959](https://github.com/code-yeongyu/oh-my-openagent/pull/9959))

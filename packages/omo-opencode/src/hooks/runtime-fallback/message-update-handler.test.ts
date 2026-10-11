@@ -5,6 +5,7 @@ import type { HookDeps, RuntimeFallbackPluginInput } from "./types"
 import { hasVisibleAssistantResponse } from "./visible-assistant-response"
 import { extractAutoRetrySignal } from "./error-classifier"
 import { SessionCategoryRegistry } from "../../shared/session-category-registry"
+import { createFallbackState } from "./fallback-state"
 
 function createContext(messagesResponse: unknown): RuntimeFallbackPluginInput {
   return {
@@ -155,6 +156,49 @@ function createRuntimeFallbackHelpers(deps: HookDeps, operations: string[]): Aut
 describe("createMessageUpdateHandler runtime fallback dispatch", () => {
   afterEach(() => {
     SessionCategoryRegistry.clear()
+  })
+
+  it("interrupts an active content-filter retry signal before dispatching the next model", async () => {
+    const sessionID = "session-content-filter-signal"
+    const operations: string[] = []
+    const deps = createRuntimeFallbackDeps(operations)
+    deps.pluginConfig = {
+      categories: {
+        test: {
+          fallback_models: ["openai/primary", "openai/current", "openai/next"],
+        },
+      },
+    }
+    SessionCategoryRegistry.register(sessionID, "test")
+    const state = createFallbackState("openai/primary")
+    state.currentModel = "openai/current"
+    state.pendingFallbackModel = "openai/current"
+    state.fallbackIndex = 1
+    state.attemptCount = 1
+    deps.sessionStates.set(sessionID, state)
+    deps.sessionRetryInFlight.add(sessionID)
+    deps.sessionAwaitingFallbackResult.add(sessionID)
+    const handler = createMessageUpdateHandler(deps, createRuntimeFallbackHelpers(deps, operations))
+
+    await handler({
+      sessionID,
+      info: {
+        role: "assistant",
+        model: "openai/current",
+        message: "The response was blocked by the provider's content filter",
+      },
+    })
+
+    expect(operations).toEqual([
+      "abort:message.updated.retry-signal",
+      "retry:openai/next",
+      "toast",
+    ])
+    expect(deps.sessionRetryInFlight.has(sessionID)).toBe(false)
+    expect(deps.sessionAwaitingFallbackResult.has(sessionID)).toBe(false)
+    expect(state.currentModel).toBe("openai/next")
+    expect(state.pendingFallbackModel).toBe("openai/next")
+    expect(state.attemptCount).toBe(2)
   })
 
   it("#given quota-exceeded assistant error with a fallback #when message update is handled #then primary request is aborted before fallback dispatch and toast", async () => {
