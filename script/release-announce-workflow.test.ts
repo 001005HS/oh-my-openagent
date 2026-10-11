@@ -4,18 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { z } from "zod"
-
-// Evaluate the expression subset used by these repository-owned workflows.
-function evaluateExpression(expression: string, context: Readonly<Record<string, unknown>>, statuses: readonly string[] = ["success"], runCancelled = statuses.includes("cancelled")): unknown {
-  const code = expression.trim().replace(/^\$\{\{\s*|\s*\}\}$/g, "")
-    .replace(/\b(?:inputs|needs|steps|github|secrets)(?:\.[\w-]+)+/g, (path) =>
-      `context${path.split(".").map((key) => `[${JSON.stringify(key)}]`).join("")}`)
-  const result: unknown = new Function("context", "always", "success", "failure", "cancelled", `return (${code})`)(
-    context, () => true, () => statuses.every((status) => status === "success"),
-    () => statuses.includes("failure"), () => runCancelled,
-  )
-  return result
-}
+import { evaluateExpression } from "./release-announce-workflow-test-support"
 
 test("#given release automation #when parsed #then published events, safe dispatch defaults, and publisher provenance are wired", async () => {
   const step = z.object({
@@ -124,6 +113,7 @@ test.each([
   { ...published, name: "failed before creation", release: "failure", created: "", mirror: "skipped", expected: false },
   { ...published, name: "cancelled after creation", release: "cancelled", mirror: "skipped", runCancelled: true, expected: false },
   { ...published, name: "run cancelled with successful needs", runCancelled: true, expected: false },
+  { ...published, name: "cancelled during announcement", runCancelled: true, announce: "cancelled", expected: false },
   { ...published, name: "skipped platform", platform: "skipped", mirror: "skipped", skipPlatform: true },
   { ...published, name: "failed mirror", mirror: "failure", expected: false },
   { ...published, name: "skipped mirror", mirror: "skipped", expected: false },
@@ -152,7 +142,7 @@ test.each([
       "release-metadata": { result: "success", outputs: { dist_tag: scenario.distTag } },
       "installer-mirror": { result: scenario.mirror },
       "post-publish-verify": { result: scenario.verify },
-      "release-announce": { result: scenario.expected ? "success" : "skipped" },
+      "release-announce": { result: "announce" in scenario ? scenario.announce : scenario.expected ? "success" : "skipped" },
       "publish-platform": { result: scenario.platform },
     },
   }
@@ -161,72 +151,6 @@ test.each([
   const recoveryExpected = scenario.created === "true" && scenario.distTag === "" &&
     !scenario.lazycodexOnly && scenario.prepared !== "" && !scenario.expected
   expect(Boolean(evaluateExpression(workflow.jobs["release-announce-recovery"].if, context, statuses, scenario.runCancelled))).toBe(recoveryExpected)
-})
-
-test.each([
-  { automatic: true, failure: "missing secret", expected: "success" },
-  { automatic: true, failure: "failed or uncertain post", expected: "success" },
-  { automatic: false, failure: "missing secret", expected: "failure" },
-  { automatic: false, failure: "failed or uncertain post", expected: "failure" },
-])("#given $failure and automatic=$automatic #when delivery fails #then conclusion is $expected with recovery", ({ automatic, failure, expected }) => {
-  const workflow = z.object({ jobs: z.object({ announce: z.object({
-    "continue-on-error": z.string(),
-    steps: z.array(z.object({ name: z.string().optional(), if: z.string().optional(), run: z.string().optional() }).passthrough()),
-  }).passthrough() }) }).parse(Bun.YAML.parse(readFileSync(".github/workflows/release-announce.yml", "utf8")))
-  const job = workflow.jobs.announce
-  const step = job.steps.find((item) => item.name === "Announce release")
-  const warning = job.steps.find((item) => item.name === "Warn about undelivered announcement")
-  if (!step?.run || !warning?.run || !warning.if) throw new Error("Missing announcement or recovery step")
-  const directory = mkdtempSync(join(tmpdir(), "omo-announcement-failure-"))
-  const summary = join(directory, "summary")
-  writeFileSync(summary, "")
-  try {
-    // Execute the real CLI for absent credentials; simulate a transport exit for a failed POST.
-    const run = failure === "missing secret" ? step.run : "exit 1"
-    const delivery = spawnSync("bash", ["-c", run], {
-      encoding: "utf8", timeout: 5000,
-      env: { ...process.env, ANNOUNCEMENT_EVENT: automatic ? "workflow_call" : "workflow_dispatch",
-        RELEASE_TAG: "v5.1.29", DISCORD_OMO_RELEASES_WEBHOOK_URL: "", DRY_RUN: "false", PROBE: "false" },
-    })
-    expect(delivery.error).toBeUndefined()
-    expect(delivery.status).toBe(1)
-    const tolerated = evaluateExpression(job["continue-on-error"], { inputs: { automatic } })
-    expect(tolerated ? "success" : "failure").toBe(expected)
-    expect(evaluateExpression(warning.if, {}, ["failure"])).toBe(true)
-    const recovery = spawnSync("bash", ["-c", warning.run], {
-      encoding: "utf8", timeout: 5000,
-      env: { ...process.env, RELEASE_TAG: "v5.1.29", GITHUB_STEP_SUMMARY: summary },
-    })
-    expect(recovery.status).toBe(0)
-    const command = "gh workflow run release-announce.yml -f tag=v5.1.29 -f dry_run=false"
-    expect(recovery.stdout).toContain("::warning::")
-    expect(recovery.stdout).toContain(command)
-    expect(readFileSync(summary, "utf8")).toContain(command)
-  } finally {
-    rmSync(directory, { recursive: true, force: true })
-  }
-})
-
-test("#given skipped or cancelled automatic announcement #when recovery runs #then warning and summary name the command", () => {
-  const workflow = z.object({ jobs: z.object({ "release-announce-recovery": z.object({
-    steps: z.array(z.object({ run: z.string() }).passthrough()),
-  }).passthrough() }) }).parse(Bun.YAML.parse(readFileSync(".github/workflows/publish.yml", "utf8")))
-  const directory = mkdtempSync(join(tmpdir(), "omo-announcement-recovery-"))
-  const summary = join(directory, "summary")
-  writeFileSync(summary, "")
-  try {
-    const result = spawnSync("bash", ["-c", workflow.jobs["release-announce-recovery"].steps[0].run], {
-      encoding: "utf8", timeout: 5000,
-      env: { ...process.env, RELEASE_TAG: "v5.1.29", GITHUB_STEP_SUMMARY: summary },
-    })
-    expect(result.status).toBe(0)
-    const command = "gh workflow run release-announce.yml -f tag=v5.1.29 -f dry_run=false"
-    expect(result.stdout).toContain("::warning::")
-    expect(result.stdout).toContain(command)
-    expect(readFileSync(summary, "utf8")).toContain(command)
-  } finally {
-    rmSync(directory, { recursive: true, force: true })
-  }
 })
 
 test.each([

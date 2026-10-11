@@ -69,7 +69,7 @@ jobs:
           PROBE: ${{ github.event_name == 'workflow_dispatch' && inputs.probe }}
         run: timeout -k 10 120 bun script/release-announce.ts
       - name: Warn about undelivered announcement
-        if: always() && (failure() || cancelled())
+        if: always() && inputs.automatic == true && (failure() || cancelled())
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
@@ -85,6 +85,6 @@ jobs:
             - Stable published omo releases only; edited and bot-authored release events do not trigger posts.
             - Automatic delivery failures do not fail the publish run; manual runs remain strict.
             - Dry runs compose only; probes post a test, delete it, and require GET 404.
-            - Failed requests, missing credentials, and cancellation emit recovery warnings.
+            - Automatic failures and cancellation emit recovery warnings; manual errors require inspecting the selected mode.
           JOB_SUMMARY_NEXT: Inspect the announcement step before rerunning; production reruns can duplicate a post.
         run: GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" bash .github/scripts/write-job-summary.sh

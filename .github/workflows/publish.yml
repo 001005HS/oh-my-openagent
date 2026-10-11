@@ -1462,7 +1462,7 @@ jobs:
     timeout-minutes: 5
     permissions: {}
     steps:
-      - name: Warn about skipped announcement
+      - name: Write job summary
         env:
           RELEASE_TAG: v${{ needs.release-metadata.outputs.version }}
         run: |
