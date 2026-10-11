@@ -1,6 +1,6 @@
 ---
 name: ultimate-browsing
-description: "Renders, drives, and screenshots web pages: JS-rendered sources, clicks and forms, persistent logins, WAF-blocked hosts (platform-native readers, stealth Chrome), and the browsing lane of a research run, with screenshots as provenance. Not for plain search or unblocked static fetch."
+description: "Reaches web pages the user's browser cannot open: WAF-blocked and bot-scored hosts, platform-native readers (Chinese and social platforms), archive snapshots with provenance, and a browser you own for stealth or throwaway profiles. Not for plain search, an unblocked static fetch, or a page the user's browser can open."
 ---
 
 # Ultimate Browsing
