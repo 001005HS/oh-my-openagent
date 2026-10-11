@@ -21,7 +21,10 @@ impl UiaMenus<'_> {
         loop {
             let child = match next {
                 Ok(child) => child,
-                Err(error) if error.code() == E_POINTER => break,
+                // A walker reports "no further element" as a successful null
+                // interface, which windows-rs surfaces as an error whose code
+                // is S_OK (older releases: E_POINTER).
+                Err(error) if error.code() == 0 || error.code() == E_POINTER => break,
                 Err(error) => return Err(uia_error(error)),
             };
             if self.remaining == 0 || result.len() == MAX_ITEMS {
