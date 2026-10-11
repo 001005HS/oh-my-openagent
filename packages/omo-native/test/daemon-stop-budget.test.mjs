@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
 import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { runDaemonCommand } from "../bin/lib/daemon.js"
 import { hostStopBudgetMs } from "../bin/lib/daemon-stop-budget.js"
 
@@ -42,20 +42,19 @@ function stop({ releaseAt = Infinity, timeout = "30", env = {}, reachable = true
 describe("daemon stop respects the engine shutdown budget", () => {
   // Compatibility contract: a larger budget in an adopted engine must fail
   // here rather than leave the mirrored launcher budget silently too small.
-  test.each([undefined, "120000", "900000", "1", " 120000 ", "0", "-1", "1.5", "bad"])(
-    "the mirror covers installed Senpi with stalled stop override %s",
-    (value) => {
+  for (const value of [undefined, "120000", "900000", "1", " 120000 ", "0", "-1", "1.5", "bad"]) {
+    test(`the mirror covers installed Senpi with stalled stop override ${value === undefined ? "unset" : JSON.stringify(value)}`, () => {
       const env = { ...process.env }
       delete env.SENPI_RPC_CHILD_STALLED_STOP_MAX_MS
       if (value !== undefined) env.SENPI_RPC_CHILD_STALLED_STOP_MAX_MS = value
       const engineBudget = Number(execFileSync(process.execPath, [
         "--eval",
-        `import { STOP_WAIT_BUDGET_MS } from ${JSON.stringify(engineStopModule)}; console.log(STOP_WAIT_BUDGET_MS)`,
+        `import { STOP_WAIT_BUDGET_MS } from ${JSON.stringify(pathToFileURL(engineStopModule).href)}; console.log(STOP_WAIT_BUDGET_MS)`,
       ], { env, cwd: "/tmp", encoding: "utf8", timeout: 15_000 }))
       expect(Number.isFinite(engineBudget)).toBe(true)
       expect(hostStopBudgetMs(env)).toBe(engineBudget)
-    },
-  )
+    })
+  }
 
   test("a short explicit timeout cannot cut a valid slow stop short", () => {
     const result = stop({ releaseAt: 90_000 })

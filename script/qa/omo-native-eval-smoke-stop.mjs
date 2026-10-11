@@ -19,6 +19,11 @@ export async function stopSmokeHosts(binary, options) {
   const budgetMs = hostStopBudgetMs(options.env)
   const status = await exec(binary, ["daemon", "status", "--json"], {
     ...options, timeout: budgetMs + EXEC_MARGIN_MS,
+  }).catch((error) => {
+    // Exit 3 means no endpoint answers, not that inventory failed. A stalled
+    // generation still appears in its JSON and still needs the stop request.
+    if (error.code !== 3) throw error
+    return error
   })
   const { endpoints } = JSON.parse(status.stdout.trim())
   const hosts = endpoints.filter((endpoint) => endpoint.endpoint_kind !== "tui")
