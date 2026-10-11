@@ -1,3 +1,7 @@
+## 2026-10-11 - Preserve maintenance and error classification after first-input memory admission (#9922)
+
+Facts reconciliation still recovers terminal artifacts under a pre-aborted launch signal and reports an existing active run without starting a model child. First-user-settle runtime recovery catches and classifies failures, treats reflection lock contention as a harmless skip, and continues RPC state synchronization. Compaction and transient-run fixtures now follow accepted-input admission; the obsolete overdue startup-dream hook is removed. Adapter-level tests cover child/member process-environment forwarding, and both the Senpi and Codex installer artifacts are rebuilt against the current memory schema.
+
 ## 2026-10-11 - Drain inherited facts on the first real turn, not a task child's prompt (#9922)
 
 An inherited facts queue now drains after the first accepted top-level turn even with the default four-turn debounce; fresh-session accumulation keeps that debounce. Binding or rebinding resets first-turn admission without making a startup request. Automatic memory activity excludes task, DAG-child, member, and worker session roles through the existing session-role reader, including per-child process environments. Real-engine regressions use the default counter, drive explicit resume and fork APIs with pending work, and verify that accepted RPC task prompts never launch extraction on the task model.

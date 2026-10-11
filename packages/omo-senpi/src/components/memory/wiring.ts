@@ -15,6 +15,7 @@ import { createKibitzerComposition, type KibitzerComposition } from "./kibitzer"
 import { createMemoryRecallWiring } from "./recall-wiring"
 import { branchEntryCount, sessionIdFrom } from "./wiring-context"
 import { createMemoryUserActivity } from "./user-activity"
+import { logBindReconcileFailure } from "./bind-reconcile-log"
 import {
   createMemoryReflectionLiveWiring,
   createReflectionCompletionApi,
@@ -181,7 +182,15 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
         onReflectionLaunch: reflectionLive.onReflectionLaunched,
         onSettled: async (sessionId, eventCtx) => {
           const identity = resolveContext(sessionId)
-          if (identity !== undefined) await userActivity.reconcileOnce(sessionId, () => runtimeFor(identity).reconcile())
+          if (identity !== undefined) {
+            await userActivity.reconcileOnce(sessionId, async () => {
+              try {
+                await runtimeFor(identity).reconcile()
+              } catch (error) {
+                if (options.logger !== undefined) logBindReconcileFailure(options.logger, error)
+              }
+            })
+          }
           await reflectionLive.onSettled(sessionId, eventCtx)
         },
         onMemoryWrite: reflectionLive.syncRpc,

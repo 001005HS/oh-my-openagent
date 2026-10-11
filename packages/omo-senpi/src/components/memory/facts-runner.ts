@@ -98,9 +98,9 @@ export class FactsExtractorRunner {
   }
 
   private async reconcilePendingOnce(signal: AbortSignal): Promise<FactsLaunchResult> {
-    if (signal.aborted) return { status: "skipped" }
     const active = await this.maintenance.reconcile()
     if (active) return { status: "active" }
+    if (signal.aborted) return { status: "skipped" }
     return { status: "empty" }
   }
 
