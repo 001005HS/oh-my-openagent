@@ -29,6 +29,9 @@ export const DESKTOP_METHODS: MethodPolicies = {
 	ref: "read",
 	"clipboard.read": "read",
 	"clipboard.write": "exec",
+	"control.acquire": "exec",
+	"control.release": "exec",
+	"control.state": "read",
 };
 
 /** Helpers callable on a window handle resolved through `desktop.window(id)`. */
@@ -45,6 +48,8 @@ export const WINDOW_METHODS: MethodPolicies = {
 	ax: "read",
 	find: "read",
 	ref: "read",
+	"menu.items": "read",
+	"menu.select": "exec",
 };
 
 /** Helpers callable on an AX element handle resolved through `desktop.ref(ref)`. */

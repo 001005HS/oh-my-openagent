@@ -182,6 +182,24 @@ impl Backend for FakeBackend {
         Ok(())
     }
 
+    fn menu_items(
+        &mut self,
+        window: &DesktopWindow,
+        path: &[String],
+    ) -> CoreResult<Vec<senpi_desktop_core::menus::MenuItem>> {
+        self.menu_items_impl(window, path)
+    }
+
+    fn menu_select(
+        &mut self,
+        window: &DesktopWindow,
+        path: &[String],
+        delivery: DeliveryMode,
+        check_stop: &dyn Fn() -> CoreResult<()>,
+    ) -> CoreResult<()> {
+        self.menu_select_impl(window, path, delivery, check_stop)
+    }
+
     fn ax(&mut self) -> Option<&mut dyn AxBackend> {
         if self.capabilities.ax {
             Some(self)

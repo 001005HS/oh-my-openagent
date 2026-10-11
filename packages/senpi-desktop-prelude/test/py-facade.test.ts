@@ -105,4 +105,65 @@ describe("Python computer facade", () => {
 			calls: [],
 		});
 	});
+
+	it("forwards a win.menu.select delivery keyword as an options argument (#9888)", () => {
+		// When
+		const run = runPythonFacade("win = computer.window(app='Code')\nwin.menu.select(['File', 'Save'], delivery='foreground')");
+
+		// Then
+		expect(run.calls.at(-1)).toEqual({
+			action: "call",
+			chain: [
+				{ method: "window", args: ["w1"] },
+				{ method: "menu.select", args: [["File", "Save"], { delivery: "foreground" }] },
+			],
+		});
+	});
+
+	it("sends menu.items and menu.select as window-hopped chains with the path forwarded", () => {
+		// When
+		const run = runPythonFacade(
+			"win = computer.window(app='Code')\nwin.menu.items()\nwin.menu.items(['File'])\nwin.menu.select(['File', 'Export…', 'PDF'])",
+		);
+
+		// Then
+		expect(run.calls).toEqual([
+			{ action: "call", chain: [{ method: "window", args: [{ app: "Code" }] }] },
+			{
+				action: "call",
+				chain: [
+					{ method: "window", args: ["w1"] },
+					{ method: "menu.items", args: [] },
+				],
+			},
+			{
+				action: "call",
+				chain: [
+					{ method: "window", args: ["w1"] },
+					{ method: "menu.items", args: [["File"]] },
+				],
+			},
+			{
+				action: "call",
+				chain: [
+					{ method: "window", args: ["w1"] },
+					{ method: "menu.select", args: [["File", "Export…", "PDF"]] },
+				],
+			},
+		]);
+	});
+
+	it("sends control helpers as one-step call chains (#9651 B5b)", () => {
+		// When
+		const run = runPythonFacade(
+			"computer.control.acquire(reason='click Run')\nout = computer.control.state()\ncomputer.control.release()",
+		);
+
+		// Then
+		expect(run.calls).toEqual([
+			{ action: "call", chain: [{ method: "control.acquire", args: [{ reason: "click Run" }] }] },
+			{ action: "call", chain: [{ method: "control.state", args: [] }] },
+			{ action: "call", chain: [{ method: "control.release", args: [] }] },
+		]);
+	});
 });
