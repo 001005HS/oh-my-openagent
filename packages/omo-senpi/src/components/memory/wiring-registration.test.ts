@@ -93,6 +93,8 @@ async function fixture(): Promise<Fixture> {
     modelRegistry: registry,
   }
   wiring.registerStatic(pi, { ...componentContext(), idleCoordinator: new IdleInjectionCoordinator(() => {}) })
+  await pi.dispatch("input", { type: "input", source: "rpc", inputId: "real-prompt", text: "Drain nodes before rollout." }, eventCtx)
+  await pi.dispatch("input_disposition", { type: "input_disposition", inputId: "real-prompt", disposition: "started" }, eventCtx)
   return {
     pi,
     wiring,

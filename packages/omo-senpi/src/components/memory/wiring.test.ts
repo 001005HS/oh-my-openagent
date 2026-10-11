@@ -59,7 +59,7 @@ afterEach(async () => {
 })
 
 describe("memory pressure dream wiring", () => {
-  test("#given committed system memory at soft pressure #when bind refresh computes the advisory estimate #then it attempts one pressure reservation", async () => {
+  test("#given committed system memory above pressure #when bind refresh computes the advisory #then no dream reservation launches before user input", async () => {
     const root = realpathSync.native(await mkdtemp(join(tmpdir(), "omo-memory-pressure-dream-wiring-")))
     roots.push(root)
     const identityName = "pressure-dream-agent"
@@ -80,7 +80,6 @@ describe("memory pressure dream wiring", () => {
       store: {
         tryReserve: async (request: unknown) => {
           reservationAttempts.push(request)
-          reservationObserved()
           return {
             status: "pending",
             run: { runId: "run-pressure", request },
@@ -91,7 +90,7 @@ describe("memory pressure dream wiring", () => {
     } as unknown as MemoryIdentityRuntime
     const wiring = createMemoryWiring({
       sessions: new Map([[sessionId, { context: identity }]]),
-      loadConfig: () => loadedMemoryConfig(memorySettings({ compile_warn_tokens: 100 })),
+      loadConfig: () => loadedMemoryConfig(memorySettings({ compile_warn_tokens: 50 })),
       cwd: () => root,
       env: {},
       createRuntime: () => runtime,
@@ -99,13 +98,13 @@ describe("memory pressure dream wiring", () => {
     const pi = new MemoryFakeExtensionAPI()
     const eventCtx = {
       sessionManager: { getSessionId: () => sessionId, getEntries: () => [] },
-      ui: { setStatus: () => {}, notify: () => {} },
+      ui: { setStatus: () => {}, notify: () => { reservationObserved() } },
     }
     let timeout: ReturnType<typeof setTimeout> | undefined
     const boundedObservation = Promise.race([
       observed,
       new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => reject(new Error("pressure reservation was not observed")), 5_000)
+        timeout = setTimeout(() => reject(new Error("pressure advisory was not observed")), 5_000)
       }),
     ])
 
@@ -116,12 +115,7 @@ describe("memory pressure dream wiring", () => {
       if (timeout !== undefined) clearTimeout(timeout)
     }
 
-    expect(reservationAttempts).toEqual([{
-      trigger: "dream",
-      origin: "pressure",
-      conversationIds: [],
-      snapshots: [],
-    }])
+    expect(reservationAttempts).toEqual([])
   }, 30_000)
 })
 
@@ -438,6 +432,7 @@ async function reflectionFixture(settings: ReturnType<typeof memorySettings> | u
       },
     },
     launch: () => {},
+    reconcile: async () => {},
   } as unknown as MemoryIdentityRuntime
   const pi = new MemoryFakeExtensionAPI()
   createMemoryWiring({
@@ -449,6 +444,8 @@ async function reflectionFixture(settings: ReturnType<typeof memorySettings> | u
     env: {},
     createRuntime: () => runtime,
   }).registerStatic(pi, componentContext())
+  await pi.dispatch("input", { type: "input", source: "rpc", inputId: "first-real-input", text: "Work on this." }, eventCtx)
+  await pi.dispatch("input_disposition", { type: "input_disposition", inputId: "first-real-input", disposition: "started" }, eventCtx)
   return { pi, evaluations }
 }
 
@@ -615,6 +612,8 @@ async function liveFooterHarness(): Promise<{
       }
     },
     async startReflection() {
+      await pi.dispatch("input", { type: "input", source: "rpc", inputId: "first-real-input", text: "Work on this." }, eventCtx)
+      await pi.dispatch("input_disposition", { type: "input_disposition", inputId: "first-real-input", disposition: "started" }, eventCtx)
       await pi.dispatch("agent_end", { aborted: false, willRetry: false }, eventCtx)
       await pi.dispatch("agent_settled", {}, eventCtx)
     },
@@ -775,6 +774,8 @@ describe("session shutdown pre-drain bounds", () => {
         }),
       },
     })
+    await f.pi.dispatch("input", { type: "input", source: "rpc", inputId: "real-prompt", text: "Read the rollout guide." }, f.eventCtx)
+    await f.pi.dispatch("input_disposition", { type: "input_disposition", inputId: "real-prompt", disposition: "started" }, f.eventCtx)
     await f.pi.dispatch("tool_call", { toolName: "read", input: { path: ROLLOUTS } }, f.eventCtx)
     await withinMs(started.promise, "the resident child start", 10_000)
 

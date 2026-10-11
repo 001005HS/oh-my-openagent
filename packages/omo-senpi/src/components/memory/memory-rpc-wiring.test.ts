@@ -221,6 +221,8 @@ describe("memory rpc wiring", () => {
 
       wiring.registerStatic(pi, componentContext())
       await wiring.afterBind(pi, fixture.sessionId, fixture.context, eventCtx)
+      await pi.dispatch("input", { type: "input", source: "rpc", inputId: "real-prompt", text: "Work on this." }, eventCtx)
+      await pi.dispatch("input_disposition", { type: "input_disposition", inputId: "real-prompt", disposition: "started" }, eventCtx)
       await pi.dispatch("agent_end", { aborted: false, willRetry: false }, eventCtx)
       await pi.dispatch("agent_settled", {}, eventCtx)
 
@@ -297,6 +299,8 @@ describe("memory rpc wiring", () => {
 
       wiring.registerStatic(pi, componentContext())
       await wiring.afterBind(pi, fixture.sessionId, fixture.context, eventCtx)
+      await pi.dispatch("input", { type: "input", source: "rpc", inputId: "real-prompt", text: "Work on this." }, eventCtx)
+      await pi.dispatch("input_disposition", { type: "input_disposition", inputId: "real-prompt", disposition: "started" }, eventCtx)
       await pi.dispatch("agent_end", { aborted: false, willRetry: false }, eventCtx)
       await pi.dispatch("agent_settled", {}, eventCtx)
       expect(handles.size).toBe(1)
@@ -325,6 +329,8 @@ describe("memory rpc wiring", () => {
 
       wiring.registerStatic(pi, componentContext())
       await wiring.afterBind(pi, fixture.sessionId, fixture.context, eventCtx)
+      await pi.dispatch("input", { type: "input", source: "rpc", inputId: "real-prompt", text: "Work on this." }, eventCtx)
+      await pi.dispatch("input_disposition", { type: "input_disposition", inputId: "real-prompt", disposition: "started" }, eventCtx)
       await pi.dispatch("agent_end", { aborted: false, willRetry: false }, eventCtx)
       await pi.dispatch("agent_settled", {}, eventCtx)
       expect(pi.memoryEvents().at(-1)?.reflection.activeRun?.runId).toBe(run.runId)
