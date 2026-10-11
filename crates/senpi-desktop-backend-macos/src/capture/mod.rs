@@ -58,7 +58,10 @@ impl MacCapture {
 
     pub(crate) fn capture(&self, target: &Target) -> CoreResult<(RgbaImage, FrameGeometry)> {
         match target {
-            Target::Desktop => self.capture_desktop(),
+            Target::Desktop | Target::Display(_) => {
+                let selector = target.display_selector().unwrap_or_else(|| self.selector.clone());
+                self.capture_desktop(&selector)
+            }
             Target::Window(id) => self.capture_window(id),
         }
     }
@@ -74,8 +77,16 @@ impl MacCapture {
     /// One `screencapture -x -R<rect>` per display, composited. When the tool
     /// is absent or fails with permission granted, the primary display is
     /// captured through CoreGraphics instead.
-    fn capture_desktop(&self) -> CoreResult<(RgbaImage, FrameGeometry)> {
-        let displays = self.displays()?;
+    fn capture_desktop(&self, selector: &DisplaySelector) -> CoreResult<(RgbaImage, FrameGeometry)> {
+        self.require_permission()?;
+        let focused = if *selector == DisplaySelector::Active {
+            let front = crate::focus::front_window()?;
+            let id = front.and_then(|front| front.window_id);
+            windows::enumerate()?.into_iter().find(|window| Some(&window.id) == id.as_ref())
+        } else {
+            None
+        };
+        let displays = selector.select(displays::enumerate(selector)?, focused.as_ref())?;
         let mut regions = Vec::with_capacity(displays.len());
         for display in &displays {
             let image = match self.shooter.run(&display_args(display)) {

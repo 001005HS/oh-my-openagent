@@ -95,7 +95,7 @@ Put the `computer` block in `~/.omo/omo.jsonc` (or `~/.omo/omo.json`) for your a
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `enabled` | `true` on macOS, Linux and Windows | Register the `computer` tool and `/computer` controls |
-| `display` | `"all"` | `all` composites every display; otherwise one display id from `computer.displays()` |
+| `display` | `"active"` | `active` follows the focused window's monitor (primary fallback); `all` composites every display; otherwise one display id from `computer.displays()` |
 | `max_width` | `3840` | Largest screenshot width in pixels; bigger captures are scaled down |
 | `max_height` | `2400` | Largest screenshot height in pixels |
 | `screenshot_max_bytes` | `5000000` | Largest inline screenshot; a bigger one is returned only as a file path |
@@ -110,6 +110,8 @@ Put the `computer` block in `~/.omo/omo.jsonc` (or `~/.omo/omo.json`) for your a
 | `cua_adapter` | `false` | Also register `computer_actions`, OpenAI computer-use actions over the same permissions, audit and stop path |
 
 The schema is `packages/omo-config-core/src/schema/computer.ts`; the defaults are resolved in `packages/senpi-desktop-tool/src/settings.ts`. An invalid block is reported in the log and the component stays unregistered for that session. Start a new session after changing the file.
+
+The engine's `capture` request also accepts `target: "display:<id>"` for one call, or `display:active` and `display:all`. These targets have separate screenshot frames and do not reopen the session. Active capture chooses the monitor with the largest focused-window intersection; ties or missing focus use the primary display. Wayland has no focused-window geometry and uses the primary reported display; the Screenshot portal without a proven layout exposes only one whole-desktop image and refuses coordinate input.
 
 ## Safety model
 

@@ -2,27 +2,20 @@ use image::{imageops, RgbaImage};
 use senpi_desktop_core::error::{CoreResult, DesktopError};
 use senpi_desktop_core::types::{DesktopDisplay, DisplaySelector};
 
-use super::DISPLAY_PREFIX;
-
+/// Wayland exposes no focused-window geometry; Active uses the primary display.
 pub(crate) fn select_capture(
     selector: &DisplaySelector,
     image: RgbaImage,
     displays: Vec<DesktopDisplay>,
 ) -> CoreResult<(RgbaImage, Vec<DesktopDisplay>)> {
-    let DisplaySelector::Id(id) = selector else {
-        return Ok((image, displays));
-    };
-    if !id.starts_with(DISPLAY_PREFIX) {
-        return Ok((image, displays));
+    let selected = selector.select(displays, None)?;
+    if *selector == DisplaySelector::All {
+        return Ok((image, selected));
     }
-    let mut display = displays
+    let mut display = selected
         .into_iter()
-        .find(|display| display.id == *id)
-        .ok_or_else(|| {
-            DesktopError::invalid_target(format!(
-                "Wayland ScreenCast display '{id}' was not returned by the portal"
-            ))
-        })?;
+        .next()
+        .expect("selector returns a nonempty display set");
     let right = display
         .pixel_x
         .checked_add(display.pixel_width)
@@ -35,7 +28,7 @@ pub(crate) fn select_capture(
         })?;
     if right > image.width() || bottom > image.height() {
         return Err(DesktopError::capture_failed(format!(
-            "Wayland ScreenCast display '{id}' lies outside the captured composite"
+            "Wayland display '{}' lies outside the captured composite", display.id
         )));
     }
     let selected = imageops::crop_imm(

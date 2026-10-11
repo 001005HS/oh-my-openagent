@@ -117,11 +117,16 @@ impl PortalCapture {
         eis: Option<&[EisRegion]>,
         windows: impl FnOnce() -> CoreResult<Vec<DesktopWindow>>,
     ) -> CoreResult<(RgbaImage, FrameGeometry)> {
-        self.selected_display_allowed()?;
+        let selector = match target {
+            Target::Desktop => self.selector.clone(),
+            Target::Display(_) => target.display_selector().expect("display selector"),
+            Target::Window(_) => DisplaySelector::All,
+        };
+        Self::selected_display_allowed(&selector)?;
         self.eis_derived = false;
         let runtime = portal_runtime()?;
         let force_screenshot = matches!(
-            &self.selector,
+            &selector,
             DisplaySelector::Id(id) if id == PORTAL_DISPLAY_ID
         );
         match (!force_screenshot)
@@ -129,17 +134,17 @@ impl PortalCapture {
             .transpose()
         {
             Ok(Some(cast)) => {
-                let (image, displays) = pipewire::select_capture(&self.selector, cast.image, cast.displays)?;
+                let (image, displays) = pipewire::select_capture(&selector, cast.image, cast.displays)?;
                 self.probe = Probe::Granted;
                 self.displays = displays;
                 self.eis_derived = cast.geometry == Geometry::FromEis;
                 return match (target, cast.geometry) {
-                    (Target::Desktop, Geometry::Unknown) => {
+                    (Target::Desktop | Target::Display(_), Geometry::Unknown) => {
                         let frame =
                             FrameGeometry::pixels_only(image.width(), image.height(), SCREENCAST_GEOMETRY_UNKNOWN);
                         Ok((image, frame))
                     }
-                    (Target::Desktop, _) => Ok((image, FrameGeometry::for_displays(&self.displays))),
+                    (Target::Desktop | Target::Display(_), _) => Ok((image, FrameGeometry::for_displays(&self.displays))),
                     (Target::Window(id), Geometry::Unknown) => Err(DesktopError::capture_failed(format!(
                         "window {id}: {SCREENCAST_GEOMETRY_UNKNOWN}, so the window cannot be located in \
                          its pixels; capture the desktop instead"
@@ -193,22 +198,24 @@ impl PortalCapture {
         let frame = match derived {
             Some(displays) => {
                 self.eis_derived = true;
+                let (image, displays) = pipewire::select_capture(&selector, image, displays)?;
                 self.displays = displays;
-                FrameGeometry::for_displays(&self.displays)
+                let frame = FrameGeometry::for_displays(&self.displays);
+                return Ok((image, frame));
             }
             None => {
-                self.displays = vec![portal_display(image.width(), image.height())];
+                self.displays = selector.select(vec![portal_display(image.width(), image.height())], None)?;
                 FrameGeometry::pixels_only(image.width(), image.height(), SCREENSHOT_GEOMETRY_UNKNOWN)
             }
         };
         Ok((image, frame))
     }
 
-    fn selected_display_allowed(&self) -> CoreResult<()> {
-        match &self.selector {
-            DisplaySelector::All => Ok(()),
+    fn selected_display_allowed(selector: &DisplaySelector) -> CoreResult<()> {
+        match selector {
+            DisplaySelector::Active | DisplaySelector::All => Ok(()),
             DisplaySelector::Id(id)
-                if id == PORTAL_DISPLAY_ID || id.starts_with(pipewire::DISPLAY_PREFIX) =>
+                if id.starts_with(PORTAL_DISPLAY_PREFIX) || id.starts_with(pipewire::DISPLAY_PREFIX) =>
             {
                 Ok(())
             }

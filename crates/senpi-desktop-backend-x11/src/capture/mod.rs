@@ -77,14 +77,30 @@ impl<S: XServer> X11Capture<S> {
     /// target has no visible root area or `GetImage` fails.
     pub fn capture(&self, target: &Target) -> CoreResult<(RgbaImage, FrameGeometry)> {
         match target {
-            Target::Desktop => self.capture_desktop(),
+            Target::Desktop | Target::Display(_) => {
+                let selector = target.display_selector().unwrap_or_else(|| self.selector.clone());
+                self.capture_desktop(&selector)
+            }
             Target::Window(id) => self.capture_window(id),
         }
     }
 
     /// Every selected display composited at its `pixel_x/pixel_y`.
-    fn capture_desktop(&self) -> CoreResult<(RgbaImage, FrameGeometry)> {
-        let displays = self.displays()?;
+    fn capture_desktop(&self, selector: &DisplaySelector) -> CoreResult<(RgbaImage, FrameGeometry)> {
+        let focused = if *selector == DisplaySelector::Active {
+            windows::focused(&self.server)?
+        } else {
+            None
+        };
+        let selected = monitors::displays(&self.server, selector)?;
+        let mut displays = match selector {
+            DisplaySelector::Id(_) => selected,
+            DisplaySelector::Active | DisplaySelector::All => selector.select(selected, focused.as_ref())?,
+        };
+        if displays.len() == 1 {
+            displays[0].pixel_x = 0;
+            displays[0].pixel_y = 0;
+        }
         let frame = FrameGeometry::for_displays(&displays);
         let width = displays
             .iter()
