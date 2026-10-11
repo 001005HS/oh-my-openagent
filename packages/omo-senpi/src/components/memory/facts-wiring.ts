@@ -42,8 +42,8 @@ export interface MemoryFactsWiring {
   onSettled(conversationId: string, selection?: FactsModelSelection): Promise<FactsEnqueueResult>
   /** Leftover queue entries a crashed run left behind, ready for relaunch. */
   reconcilePending(): Promise<FactsQueueEntry[]>
-  /** Recover old artifacts without launching a child. */
-  reconcileExtractor(): void
+  /** Recover old artifacts and reset first-turn admission for a bound session, without a child. */
+  reconcileExtractor(conversationId?: string): void
   /** Explicit user action (unpark) launches pending work immediately. */
   launchExtractor(): void
   cancelActive(): Promise<void>
@@ -59,6 +59,7 @@ export function createMemoryFactsWiring(options: MemoryFactsWiringOptions): Memo
     ...(options.now === undefined ? {} : { now: options.now }),
   })
   let settles = 0
+  const settledSessions = new Set<string>()
 
   const fire = (operation: "launch" | "reconcile", signal?: AbortSignal, selection?: FactsModelSelection): void => {
     if (signal?.aborted === true) return
@@ -91,10 +92,12 @@ export function createMemoryFactsWiring(options: MemoryFactsWiringOptions): Memo
     },
 
     async onSettled(conversationId: string, selection?: FactsModelSelection): Promise<FactsEnqueueResult> {
+      const pending = settledSessions.has(conversationId) ? [] : await wiring.reconcilePending()
       const result = await wiring.enqueueSettled(conversationId)
       if (!options.factsEnabled()) return result
+      settledSessions.add(conversationId)
       settles += 1
-      if (settles >= Math.max(1, options.debounceSettles?.() ?? 4)) {
+      if (pending.length > 0 || settles >= Math.max(1, options.debounceSettles?.() ?? 4)) {
         settles = 0
         fire("launch", undefined, selection)
       }
@@ -111,7 +114,8 @@ export function createMemoryFactsWiring(options: MemoryFactsWiringOptions): Memo
       }
     },
 
-    reconcileExtractor(): void {
+    reconcileExtractor(conversationId?: string): void {
+      if (conversationId !== undefined) settledSessions.delete(conversationId)
       if (options.factsEnabled()) fire("reconcile")
     },
 

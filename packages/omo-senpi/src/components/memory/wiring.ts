@@ -30,7 +30,7 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
   const promptCache = new MemoryBlockCache()
   const lastEventCtx: { current?: unknown } = {}
   const activeSession: { current?: string } = {}
-  const userActivity = createMemoryUserActivity()
+  const userActivity = createMemoryUserActivity(options.env)
   const skillsUsageTrackersRef: { current: Map<string, SkillsUsageTracker> } = { current: new Map() }
   const memoryUsageTrackersRef: { current: Map<string, MemoryUsageTracker> } = { current: new Map() }
   const reflectionLive = createMemoryReflectionLiveWiring(options, activeSession, lastEventCtx)
@@ -198,7 +198,7 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
       if (branchEntryCount(eventCtx) > 0) {
         await journalWiringFor(identity).reconcileSession(eventCtx)
       }
-      factsWiringFor(identity).reconcileExtractor()
+      factsWiringFor(identity).reconcileExtractor(sessionId)
       await reflectionLive.bind(
         pi,
         sessionId,
