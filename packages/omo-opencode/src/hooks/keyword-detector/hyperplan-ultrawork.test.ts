@@ -298,14 +298,54 @@ describe("keyword-detector hyperplan-ultrawork combo", () => {
     expect(text).not.toContain("<ultrawork-mode>")
   })
 
-  test("should still trigger combo on 'hpp ulw-loop'", async () => {
-    // given - ulw-loop is a valid ultrawork combo keyword
-    const sessionID = "combo-ulw-loop-session"
+  test.each(["ulw-plan", "ulw-research", "ulw-execute", "ulw-loop"])(
+    "#given skill %s beside hyperplan #when chat.message fires #then neither combo nor ultrawork activates",
+    async (skillName) => {
+      // given
+      for (const prompt of [
+        `hpp ${skillName}`,
+        `${skillName} hpp`,
+        `hyperplan ${skillName.toUpperCase()}.`,
+        `(${skillName.toUpperCase()}) hyperplan`,
+      ]) {
+        const sessionID = `combo-skill-${skillName}`
+        getMainSessionSpy = spyOn(sessionState, "getMainSessionID").mockReturnValue(sessionID)
+        const toastCalls: string[] = []
+        const hook = createKeywordDetectorHook(createMockPluginInput({ toastCalls }))
+        const output = {
+          message: {} as Record<string, unknown>,
+          parts: [{ type: "text", text: prompt }],
+        }
+
+        // when
+        await hook["chat.message"]({ sessionID }, output)
+
+        // then
+        expect(toastCalls).toEqual(["Hyperplan Mode Activated"])
+        expect(textOf(output)).not.toContain("<hyperplan-ultrawork-mode>")
+        expect(textOf(output)).not.toContain("<ultrawork-mode>")
+        getMainSessionSpy.mockRestore()
+      }
+    },
+  )
+
+  test.each([
+    "hpp ulw",
+    "ulw hpp",
+    "hpp ulw.",
+    "ulw hpp!",
+    "hyperplan ultrawork",
+    "ultrawork hyperplan",
+    "hyperplan ultrawork!",
+    "ultrawork hyperplan.",
+  ])("#given bare combo in %s #when chat.message fires #then combo activates", async (prompt) => {
+    // given
+    const sessionID = "combo-bare-keyword-session"
     getMainSessionSpy = spyOn(sessionState, "getMainSessionID").mockReturnValue(sessionID)
     const hook = createKeywordDetectorHook(createMockPluginInput())
     const output = {
       message: {} as Record<string, unknown>,
-      parts: [{ type: "text", text: "hpp ulw-loop iterate on design" }],
+      parts: [{ type: "text", text: prompt }],
     }
 
     // when - keyword detection runs
