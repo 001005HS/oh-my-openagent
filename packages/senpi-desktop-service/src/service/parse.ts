@@ -35,6 +35,7 @@ const CAPABILITIES: FieldSpec = {
 	input: "boolean",
 	ax: "boolean",
 	backgroundWindowInput: "boolean",
+	cursorOverlay: "boolean",
 	capturePermission: "string",
 	inputPermission: "string",
 	axPermission: "string",

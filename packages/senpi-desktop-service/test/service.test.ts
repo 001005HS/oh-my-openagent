@@ -149,7 +149,7 @@ describe("DesktopService", HANG_GUARD, () => {
 		expect(payload(next).pid).toBe(log.children[1]?.pid);
 		const replayed = log.requests.filter((request) => request.child === 1).map((request) => request.method);
 		expect(replayed.slice(0, 3)).toEqual(["engine.hello", "session.open", "stopPath.start"]);
-		expect((await log.nthRequest("session.open", 2)).params).toEqual({ display: "all" });
+		expect((await log.nthRequest("session.open", 2)).params).toEqual({ display: "all", showCursor: true });
 	});
 
 	it("closes quietly right after a grace kill, before the killed child has exited", async () => {

@@ -8,6 +8,7 @@ import {
 	type StopPathStatus,
 } from "@oh-my-opencode/senpi-desktop-protocol";
 import { type ChildFactory, engineChildFactory } from "./child";
+import { ControlGrantLedger } from "./control-grants";
 import { type Listener, NotificationHub, type Unsubscribe } from "./notifications";
 import { isDesktopCapabilities, isStopPathStatus, parseHello, parseSessionOpened } from "./parse";
 import { type CallOptions, DesktopEngineRpcError, DesktopServiceError, RpcClient } from "./rpc-client";
@@ -15,43 +16,13 @@ import {
 	CAPABILITIES_TIMEOUT_MS,
 	CLOSE_TIMEOUT_MS,
 	HEARTBEAT_MS,
-	REVOKE_TIMEOUT_MS,
 	START_TIMEOUT_MESSAGE,
 	START_TIMEOUT_MS,
 } from "./timeouts";
-
-/** `session.open` params, forwarded verbatim; every policy they configure is enforced by the engine. */
-export interface DesktopSessionOpenParams {
-	readonly display?: string | null;
-	readonly macosCanary?: "session" | "off";
-	readonly allowHostRelayOnlyStop?: boolean;
-	readonly auditPath?: string | null;
-	readonly artifactDir?: string | null;
-	readonly screenshotGc?: { readonly staleMs?: number; readonly scanIntervalMs?: number };
-	readonly captureCaps?: {
-		readonly maxWidth?: number | null;
-		readonly maxHeight?: number | null;
-		readonly coordinateSafe?: boolean;
-		readonly maxBytes?: number;
-	};
-}
+import type { Connection, DesiredSession, DesktopSessionOpenParams } from "./session-state";
 
 export interface DesktopServiceOptions {
 	readonly createChild?: ChildFactory;
-}
-
-/** One live engine child. Mutable: the resume token, armed chord, and heartbeat belong to this child only. */
-interface Connection {
-	readonly rpc: RpcClient;
-	resumeToken: string;
-	armedChord: string | undefined;
-	heartbeat: NodeJS.Timeout | undefined;
-}
-
-/** What the host asked for; replayed onto a fresh child after a crash or grace kill. */
-interface DesiredSession {
-	readonly params: DesktopSessionOpenParams;
-	chord: string | undefined;
 }
 
 /**
@@ -65,9 +36,7 @@ export class DesktopService {
 	#connection: Connection | undefined;
 	#desired: DesiredSession | undefined;
 	#lastStopPath: StopPathStatus | undefined;
-	/** `control.grant` requests sent, and how many of them a successful `control.revoke` has covered. */
-	#grantsSent = 0;
-	#grantsRevoked = 0;
+	readonly #controlGrants = new ControlGrantLedger();
 
 	constructor(options: DesktopServiceOptions = {}) {
 		this.#createChild = options.createChild ?? engineChildFactory();
@@ -91,9 +60,10 @@ export class DesktopService {
 	/** Starts the engine when none runs, then opens (or reconfigures) the desktop session. */
 	open(params: DesktopSessionOpenParams): Promise<DesktopCapabilities> {
 		return this.#serialize(async () => {
-			this.#desired = { params, chord: this.#desired?.chord };
+			const normalized = { ...params, showCursor: params.showCursor ?? true };
+			this.#desired = { params: normalized, chord: this.#desired?.chord };
 			const live = this.#connection;
-			if (live?.rpc.alive === true) return this.#openSession(live, params);
+			if (live?.rpc.alive === true) return this.#openSession(live, normalized);
 			if (live !== undefined) this.#drop(live);
 			return (await this.#start(this.#desired)).capabilities;
 		});
@@ -113,17 +83,10 @@ export class DesktopService {
 
 	async call(method: EngineMethod, params: unknown, options: CallOptions = {}): Promise<unknown> {
 		const connection = await this.#live();
-		// Counted before the request is sent: a grant whose reply is lost to a cancel may still be live.
-		if (method === "control.grant") this.#grantsSent += 1;
-		const covers = this.#grantsSent;
+		const covers = this.#controlGrants.beforeRequest(method);
 		const result = await connection.rpc.request(method, params, options);
-		if (method === "control.revoke") this.#revoked(covers);
+		this.#controlGrants.afterSuccess(method, covers);
 		return result;
-	}
-
-	/** A revoke that succeeded covers every grant sent before it; one that failed or was dropped covers none. */
-	#revoked(covers: number): void {
-		this.#grantsRevoked = Math.max(this.#grantsRevoked, covers);
 	}
 
 	/**
@@ -135,21 +98,7 @@ export class DesktopService {
 	 * `session.close` stays the backstop that always releases the grant.
 	 */
 	revokeControl(): Promise<void> {
-		const connection = this.#connection;
-		if (connection === undefined || !connection.rpc.alive || this.#grantsSent <= this.#grantsRevoked) {
-			return Promise.resolve();
-		}
-		const covers = this.#grantsSent;
-		return connection.rpc.request("control.revoke", {}, { timeoutMs: REVOKE_TIMEOUT_MS }).then(
-			() => this.#revoked(covers),
-			(error: unknown) => {
-				if (error instanceof DesktopServiceError || error instanceof DesktopEngineRpcError) {
-					this.#hub.emitError(error);
-					return;
-				}
-				throw error;
-			},
-		);
+		return this.#controlGrants.revoke(this.#connection, (error) => this.#hub.emitError(error));
 	}
 
 	async capabilities(): Promise<DesktopCapabilities> {

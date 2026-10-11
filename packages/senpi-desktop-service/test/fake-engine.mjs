@@ -34,6 +34,7 @@ const capabilities = {
 	input: true,
 	ax: true,
 	backgroundWindowInput: true,
+	cursorOverlay: false,
 	deliveryModes: ["background", "foreground"],
 	capturePermission: "granted",
 	inputPermission: "granted",

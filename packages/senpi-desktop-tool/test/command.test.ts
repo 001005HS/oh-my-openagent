@@ -19,6 +19,7 @@ describe("/computer command", HANG_GUARD, () => {
 
 		// Then
 		expect(text).toMatch(/stopPath=global .*focusGuard=true .*capturePermission=granted/);
+		expect(text).toContain("cursorOverlay=false");
 	});
 
 	it("reports status without starting an engine", async () => {
@@ -136,6 +137,39 @@ describe("/computer command", HANG_GUARD, () => {
 			showCursor: true,
 			children: 0,
 		});
+	});
+
+	it.each([true, false])("forwards showCursor=%s when activating", async (showCursor) => {
+		// Given
+		const { handle, log } = desktopFixture({ showCursor });
+
+		// When
+		await runComputerCommand("on", handle, hostContext());
+
+		// Then
+		expect(log.requests.filter((request) => request.method === "session.open").map((request) => request.params))
+			.toEqual([expect.objectContaining({ showCursor })]);
+	});
+
+	it("forwards cursor on when the setting is omitted", async () => {
+		const { handle, log } = desktopFixture();
+		await runComputerCommand("on", handle, hostContext());
+		expect(log.requests.filter((request) => request.method === "session.open").map((request) => request.params))
+			.toEqual([expect.objectContaining({ showCursor: true })]);
+	});
+
+	it("forwards cursor off to an already running engine", async () => {
+		// Given
+		const { handle, log } = desktopFixture();
+		await runComputerCommand("on", handle, hostContext());
+		const before = log.requests.length;
+
+		// When
+		await runComputerCommand("cursor off", handle, hostContext());
+
+		// Then
+		expect(log.requests.slice(before).filter((request) => request.method === "session.open")
+			.map((request) => request.params)).toEqual([expect.objectContaining({ showCursor: false })]);
 	});
 
 	it("does not mutate the cursor setting for an invalid toggle", async () => {

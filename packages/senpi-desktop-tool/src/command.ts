@@ -32,6 +32,7 @@ function describeCapabilities(capabilities: DesktopCapabilities | undefined): st
 		`inputPermission=${capabilities.inputPermission}`,
 		`axPermission=${capabilities.axPermission}`,
 		`backgroundWindowInput=${capabilities.backgroundWindowInput}`,
+		`cursorOverlay=${capabilities.cursorOverlay}`,
 		`screenLocked=${capabilities.screenLocked}`,
 	].join(" ");
 }
@@ -49,7 +50,8 @@ async function status(handle: ComputerHandle): Promise<string> {
 }
 
 /**
- * `/computer on|off|status|stop|resume` (no argument = `status`); returns the text to show the user.
+ * `/computer on|off|status|stop|resume|cursor on|cursor off` (no argument = `status`);
+ * returns the text to show the user.
  * `stop` and `resume` are user-only: the model has no tool action that reaches them.
  */
 export async function runComputerCommand(

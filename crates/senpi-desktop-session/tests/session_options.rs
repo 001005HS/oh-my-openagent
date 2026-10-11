@@ -54,3 +54,29 @@ async fn session_reconfiguration_passes_the_selected_canary_policy_to_each_backe
         vec![DesktopSessionOptions::default(), disabled, enabled]
     );
 }
+
+#[tokio::test]
+async fn cursor_only_reconfiguration_does_not_recreate_the_backend() {
+    // Given: one opened session and its factory creation ledger.
+    let options = Arc::new(Mutex::new(Vec::new()));
+    let session = Session::start(
+        RecordingFactory {
+            options: Arc::clone(&options),
+        },
+        SessionTimeouts::default(),
+    )
+    .expect("session starts");
+    let shown = DesktopSessionOptions::default();
+    let hidden = DesktopSessionOptions {
+        show_cursor: false,
+        ..shown.clone()
+    };
+    session.open(shown.clone()).wait().await.expect("opens");
+
+    // When: only the display-only cursor preference changes.
+    session.open(hidden).wait().await.expect("reconfigures");
+    session.close().wait().await.expect("closes");
+
+    // Then: only the probe and initial open created backends.
+    assert_eq!(*options.lock(), vec![DesktopSessionOptions::default(), shown]);
+}

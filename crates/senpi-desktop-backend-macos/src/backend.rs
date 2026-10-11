@@ -99,6 +99,7 @@ impl MacosBackend {
             input: trusted,
             ax: trusted,
             background_window_input: trusted && crate::skylight::is_available() && !canary_failed,
+            cursor_overlay: self.overlay_available(),
             delivery_modes: vec!["background".to_string(), "foreground".to_string()],
             capture_permission: permission_label(capture_permission),
             input_permission: permission_label(trusted),
@@ -138,6 +139,10 @@ impl Backend for MacosBackend {
 
     fn capabilities(&mut self) -> DesktopCapabilities {
         MacosBackend::capabilities(self)
+    }
+
+    fn set_show_cursor(&mut self, enabled: bool) {
+        MacosBackend::set_show_cursor(self, enabled);
     }
 
     fn displays(&mut self) -> CoreResult<Vec<DesktopDisplay>> {
