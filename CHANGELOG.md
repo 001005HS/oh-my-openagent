@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Computer use screenshots the monitor you are working on by default, and `computer.display(id)` reaches any other one.** An unset `computer.display` now captures the active monitor, the one the focused window mostly sits on, instead of compositing every display; `"all"` and display ids work as before. `computer.display("all" | "active" | id)` gives a screenshot and input handle for one display without changing the session default, and `computer.displays()` lists every monitor. ([#9651](https://github.com/code-yeongyu/oh-my-openagent/issues/9651), [#9995](https://github.com/code-yeongyu/oh-my-openagent/pull/9995))
+
 **`background_task.taskCleanupDelayMs` now also sets how long finished background tasks stay retrievable.** A delay longer than 30 minutes is no longer cut short; leaving it unset keeps the existing timing. Thanks to @imadal1n. ([#9984](https://github.com/code-yeongyu/oh-my-openagent/pull/9984))
 
 **The MCP OAuth callback server answers errors in plain text.** Its not-found, provider-error and missing-parameter responses are now sent as `text/plain; charset=utf-8` with `X-Content-Type-Options: nosniff`, so an `error_description` in the callback URL is shown as text and never rendered as HTML. MCP sign-in currently runs through a second callback server that never echoed that text, so nothing you see changes; consolidating the two is tracked separately. Thanks to @niStee. ([#6464](https://github.com/code-yeongyu/oh-my-openagent/pull/6464), [#9979](https://github.com/code-yeongyu/oh-my-openagent/issues/9979))
