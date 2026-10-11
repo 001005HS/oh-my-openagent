@@ -1,5 +1,7 @@
 export const CODE_BLOCK_PATTERN = /```[\s\S]*?```/g
 export const INLINE_CODE_PATTERN = /`[^`]+`/g
+// `ulw-plan`, `ulw-research` and other ulw-* skill names are not the ultrawork keyword.
+export const ULTRAWORK_PATTERN = /\b(?:ultrawork|ulw(?!-\w))\b/i
 
 import type { KeywordType } from "../../config/schema/keyword-detector"
 import { getUltraworkMessage, isPlannerAgent, isNonOmoAgent } from "./ultrawork"
@@ -33,7 +35,7 @@ export type KeywordDetector = {
 export const KEYWORD_DETECTORS: KeywordDetector[] = [
   {
     type: "ultrawork",
-    pattern: /\b(?:ultrawork|ulw(?!-\w))\b/i,
+    pattern: ULTRAWORK_PATTERN,
     message: getUltraworkMessage,
   },
   {
