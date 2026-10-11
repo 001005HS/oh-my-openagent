@@ -22,6 +22,9 @@ function isAlive(pid) {
     return true
   } catch (error) {
     if (error.code === "ESRCH") return false
+    // EPERM proves existence, not ownership. This probe never signals an exit;
+    // retain the pid for the bounded diagnostic rather than crashing.
+    if (error.code === "EPERM") return true
     throw error
   }
 }
