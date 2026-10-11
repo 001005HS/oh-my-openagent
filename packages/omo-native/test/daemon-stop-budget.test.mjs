@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
+import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { runDaemonCommand } from "../bin/lib/daemon.js"
@@ -50,7 +51,7 @@ describe("daemon stop respects the engine shutdown budget", () => {
       const engineBudget = Number(execFileSync(process.execPath, [
         "--eval",
         `import { STOP_WAIT_BUDGET_MS } from ${JSON.stringify(pathToFileURL(engineStopModule).href)}; console.log(STOP_WAIT_BUDGET_MS)`,
-      ], { env, cwd: "/tmp", encoding: "utf8", timeout: 15_000 }))
+      ], { env, cwd: tmpdir(), encoding: "utf8", timeout: 15_000 }))
       expect(Number.isFinite(engineBudget)).toBe(true)
       expect(hostStopBudgetMs(env)).toBe(engineBudget)
     })
