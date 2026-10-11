@@ -55,8 +55,8 @@ export async function prepareCLAEvent({ github, context, core, eventPath }) {
   const pr = await resolveAutomationPR({ github, context, core })
   if (!pr) return
   const { writeFile } = await import("node:fs/promises")
-  // Contributor Assistant expects a PR event. Only API-derived metadata is
-  // serialized; the action never checks out or executes the PR's source.
+  // Hand API-derived PR metadata to the trusted signature-check step.
+  // The issue_comment signing action uses its real GitHub event separately.
   const payload = {
     action: "synchronize", number: pr.number, pull_request: pr,
     repository: pr.base.repo,

@@ -161,18 +161,19 @@ jobs:
               });
               if (current.state !== "open" ||
                   current.head.sha !== context.payload.pull_request.head.sha) return;
-              const marker = "<!-- trusted-cla-signature-request -->";
-              const body = `${marker}\nThank you for your contribution! ${unsigned
+              const marker = "CLA Assistant Lite bot";
+              const body = `Thank you for your contribution! ${unsigned
                 .map(contributor => `@${contributor.login}`).join(", ")} must sign the ` +
                 `[Contributor License Agreement](https://github.com/${owner}/${repo}/blob/dev/CLA.md).\n\n` +
                 "To sign, comment on this PR with:\n```\n" +
-                "I have read the CLA Document and I hereby sign the CLA\n```";
+                "I have read the CLA Document and I hereby sign the CLA\n```\n\n" +
+                `<sub>Posted by the **${marker}**.</sub>`;
               const comments = await github.paginate(github.rest.issues.listComments, {
                 owner, repo, issue_number: pullNumber, per_page: 100,
               });
               const existing = comments.find(comment =>
                 comment.user?.login === "github-actions[bot]" &&
-                comment.body?.startsWith(marker));
+                comment.body?.includes(marker));
               if (existing) {
                 await github.rest.issues.updateComment({
                   owner, repo, comment_id: existing.id, body,
@@ -250,7 +251,7 @@ jobs:
             echo "### What this job checks"
             echo
             echo "- Checks stored CLA signatures for pull requests."
-            echo "- Runs Contributor Assistant only when a signature action is needed."
+            echo "- Records signing comments with Contributor Assistant; trusted API checks deliver instructions."
             echo
             echo "### If this fails"
             echo

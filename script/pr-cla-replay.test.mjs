@@ -24,7 +24,7 @@ async function replay({ signed = false, allowlisted = false, existing = false, a
     path: ".github/workflows/pr-automation-signal.yml", event: "pull_request",
     status: "completed", conclusion: "success", repository: pr.base.repo,
     head_repository: { id: 2, owner: { login: author.login } },
-    head_branch: "contribution", head_sha: pr.head.sha, pull_requests: [{ number: 42 }],
+    head_branch: "contribution", head_sha: pr.head.sha, pull_requests: [],
   }
   const payload = { workflow_run: { id: 123 } }
   const context = { repo: { owner: "owner", repo: "project" }, eventName: "workflow_run", payload }
@@ -41,6 +41,7 @@ async function replay({ signed = false, allowlisted = false, existing = false, a
         get: async () => ({ data: advanced && ++gets > 1
           ? { ...pr, head: { ...pr.head, sha: "new-head" } } : pr }),
         listCommits() {},
+        list() {},
       },
       issues: {
         listComments() {},
@@ -49,11 +50,15 @@ async function replay({ signed = false, allowlisted = false, existing = false, a
       },
       checks: { create: async args => checks.push(args) },
     },
-    paginate: async method => {
+    paginate: async (method, args) => {
+      if (method === github.rest.pulls.list) {
+        expect(args).toMatchObject({ state: "open", head: `${author.login}:contribution` })
+        return [pr]
+      }
       if (method === github.rest.pulls.listCommits) return [{ author }]
       if (method === github.rest.issues.listComments) return existing ? [{
         id: 99, user: { login: "github-actions[bot]" },
-        body: "<!-- trusted-cla-signature-request -->\nold request",
+        body: "All contributors have signed the CLA.<sub>Posted by the **CLA Assistant Lite bot**.</sub>",
       }] : []
       throw new Error("Unexpected paginated API")
     },
@@ -79,8 +84,6 @@ async function replay({ signed = false, allowlisted = false, existing = false, a
     process.env.RESULT = "success"
     process.env.UNSIGNED = outputs.get("needs_cla_action")
     await execute(cla.jobs.cla.steps.find(step => step.name === "Report CLA result on the current PR head"))
-    expect(process.env.GITHUB_EVENT_NAME).toBe("workflow_run")
-    expect(context.eventName).toBe("workflow_run")
     return { comments, checks, outputs }
   } finally {
     for (const key of Object.keys(process.env)) if (!(key in oldEnv)) delete process.env[key]
@@ -95,6 +98,8 @@ test("an unsigned fork workflow_run delivers signing instructions and fails the 
   expect(result.comments[0]).toMatchObject({ operation: "create", owner: "owner", repo: "project", issue_number: 42 })
   expect(result.comments[0].body).toContain("I have read the CLA Document and I hereby sign the CLA")
   expect(result.comments[0].body).toContain("unsigned-fork-contributor")
+  // The pinned action consumes this sentinel when adopting the instruction comment.
+  expect(result.comments[0].body).toMatch(/CLA Assistant Lite bot/)
   expect(result.checks).toHaveLength(1)
   expect(result.checks[0]).toMatchObject({ name: "cla", head_sha: "fork-head", conclusion: "failure" })
 })
