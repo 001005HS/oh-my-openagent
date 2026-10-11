@@ -5,9 +5,25 @@ import { deviceName, devicePlatform } from "./device-name"
 import { loginDevice } from "./device-flow"
 import { createCredentialStore } from "./keystore"
 import { BrowserUnavailable, loginLoopback } from "./loopback"
-import { type ChooseDevice, type ListedDevice, serviceOrigin, SignInError } from "./protocol"
-import { createSession } from "./session"
+import { type ChooseDevice, type ListedDevice, RequestFailure, serviceOrigin, SignInError } from "./protocol"
+import { createSession, type Session } from "./session"
 import { terminalText } from "./terminal-text"
+
+// Probe the service before anything user-visible (a browser tab, a device code) so an
+// unreachable or unhealthy service fails at once instead of after a dead page and a wait.
+async function ensureServiceAvailable(session: Pick<Session, "request">, api: string): Promise<void> {
+  try {
+    await session.request("/v1/health", { method: "GET" })
+  } catch (error) {
+    if (!(error instanceof SignInError)) throw error
+    // No usable HTTP answer (DNS, refused, TLS, timeout, non-JSON body): the client can't tell a
+    // service that hasn't launched from an offline network, so it names both.
+    if (error instanceof RequestFailure) {
+      throw new SignInError(`Can't reach OmO accounts at ${api}. The service may not be available yet, or your network, proxy or certificate settings are blocking it.`)
+    }
+    throw new SignInError(`OmO accounts at ${api} aren't available right now. Try again later.`)
+  }
+}
 
 type Options = { readonly api?: string; readonly accounts?: string; readonly device?: boolean; readonly browser?: boolean }
 
@@ -58,6 +74,7 @@ async function run(action: "login" | "logout" | "whoami", options: Options): Pro
       console.log(saved ? `Signed in to ${api} as ${terminalText(saved.device.name)}.` : "Not signed in.")
       return
     }
+    await ensureServiceAvailable(session, api)
     const name = deviceName()
     const platform = devicePlatform()
     if (!options.device && options.browser !== false) {
