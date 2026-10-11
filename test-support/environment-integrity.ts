@@ -27,6 +27,7 @@ export function checkFileEnvironment(path: string): void {
 }
 
 export function installEnvironmentIntegrityCheck(): void {
+  // Tests must import describe/it/expect from bun:test; plugin-loaded files have no implicit test globals.
   Bun.plugin({
     name: "test-file-environment-integrity",
     setup(build) {

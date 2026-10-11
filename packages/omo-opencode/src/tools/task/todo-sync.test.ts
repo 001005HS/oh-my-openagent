@@ -1,4 +1,3 @@
-/// <reference types="bun-types/test-globals" />
 import { beforeEach, describe, expect, it, vi } from "bun:test";
 import type { Task } from "../../features/claude-tasks/types";
 import type { PluginInput } from "@opencode-ai/plugin";

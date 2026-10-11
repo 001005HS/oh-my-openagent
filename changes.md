@@ -1,3 +1,7 @@
+## 2026-10-11 - Detect environment leaks at test-file teardown (#9390, #9469)
+
+Thanks to @Dante-dan for the per-file teardown leak check: tests now report added, removed, or changed `process.env` keys after a file's own cleanup, then restore the worker baseline without printing values. Maintainer follow-ups put `OMO_MEMORY_HOME` in the shared hermetic-home installer so package-local Senpi tests use a per-run temporary memory root too, and remove the leftover implicit-test-globals reference. Tests loaded by the integrity plugin must import their test functions from `bun:test`.
+
 ## 2026-10-11 - Run code has no handle-level path to the foreground-control grant (#9967)
 
 Follow-ups to #9908's review. A window handle's facade method seam was a TypeScript-only `protected` property, so `computer.run` code could call `w.method(...)` and send any engine method, including the host-only `control.grant`, without the human confirm. The seam is now a true private (`#method`, as `ElementHandle` already had) and the shared request helper is module-private, so a handle exposes only its named helpers; a regression test runs that exploit and asserts no `control.grant` reaches the engine. This corrects #9908's wording: a call chain reaches the grant only through `control.acquire`, and run code now has no handle-level path to it either; the grant is a consent guard for a cooperating model, not a sandbox boundary (the run vm is not one).
