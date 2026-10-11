@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**OpenCode task delegation and team creation now honor `claude_code.agents: false`, so disabled Claude Code agents fail fast instead of being selected.** Thanks to @cynkai. ([#8744](https://github.com/code-yeongyu/oh-my-openagent/issues/8744), [#8802](https://github.com/code-yeongyu/oh-my-openagent/pull/8802))
+
 **OpenCode runtime fallback can switch models after a provider content-filter error.** When fallback is enabled and alternate models are configured, a blocked response advances to a different model; the existing attempt limit and chain exhaustion still stop retries. ([#6796](https://github.com/code-yeongyu/oh-my-openagent/issues/6796), [#7257](https://github.com/code-yeongyu/oh-my-openagent/pull/7257))
 
 ## [5.1.30] - 2026-10-11
