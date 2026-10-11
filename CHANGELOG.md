@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**OpenCode task delegation and team creation now honor `claude_code.agents: false`, so disabled Claude Code agents fail fast instead of being selected.** Thanks to @cynkai. ([#8744](https://github.com/code-yeongyu/oh-my-openagent/issues/8744), [#8802](https://github.com/code-yeongyu/oh-my-openagent/pull/8802))
+
 **Delegated OpenCode sessions show their task category in the title.** Background, synchronous and fallback-created child sessions prefix the category while keeping the description and agent suffix; tasks without a category keep their existing title. ([#6854](https://github.com/code-yeongyu/oh-my-openagent/issues/6854), [#7256](https://github.com/code-yeongyu/oh-my-openagent/pull/7256))
 
 ## [5.1.30] - 2026-10-11
