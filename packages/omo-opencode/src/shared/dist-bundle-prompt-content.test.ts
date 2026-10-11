@@ -4,6 +4,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
+import { getPrometheusPrompt } from "../agents/prometheus/system-prompt"
+import { getAgentListDisplayName } from "./agent-display-names"
 
 const DIST_INDEX = "dist/index.js"
 const PROMETHEUS_SOURCE = "packages/prompts-core/prompts/prometheus/default.md"
@@ -28,13 +30,15 @@ try {
 `
 
 type RuntimeAgent = {
+  name?: string
+  model?: string
   mode?: unknown
   permission?: unknown
   prompt: string
 }
 
 describe("dist bundle prompt content", () => {
-  test("#given the built plugin bundle #when its runtime agent factory is executed #then the bundled prompt equals its source artifact", async () => {
+  test("#given the built plugin bundle #when its runtime agent factory is executed #then its composed prompt and role equal their source artifacts", async () => {
     const distIndex = Bun.file(DIST_INDEX)
     expect(await distIndex.exists(), `${DIST_INDEX} must exist before this CI-only test runs`).toBe(true)
 
@@ -77,8 +81,14 @@ describe("dist bundle prompt content", () => {
       const runtimeAgents = JSON.parse(stdout) as RuntimeAgent[]
 
       const sourcePrompt = await readFile(PROMETHEUS_SOURCE, "utf8")
-      const runtimeAgent = runtimeAgents.find((agent) => agent.prompt === sourcePrompt)
-      expect(runtimeAgent, `${PROMETHEUS_SOURCE} was not returned by the built plugin runtime`).toBeDefined()
+      const runtimeAgent = runtimeAgents.find((agent) => agent.name === getAgentListDisplayName("prometheus"))
+      expect(runtimeAgent, "Prometheus was not returned by the built plugin runtime").toBeDefined()
+      if (!runtimeAgent) throw new Error("Missing bundled Prometheus agent")
+      expect(runtimeAgent.prompt).toBe(getPrometheusPrompt(runtimeAgent.model))
+      const frameEnd = "\n</omo-model-core>\n\n"
+      const roleOffset = runtimeAgent.prompt.indexOf(frameEnd)
+      expect(roleOffset).toBeGreaterThanOrEqual(0)
+      expect(runtimeAgent.prompt.slice(roleOffset + frameEnd.length)).toBe(sourcePrompt)
       expect(runtimeAgent).toMatchObject({
         mode: "primary",
         permission: {
