@@ -68,7 +68,7 @@ Saturation is not just more searching; it is a knowledge-production protocol. Th
 - `excursion-log.md` — one ENTER row and one EXIT row per excursion. Required fields: `excursion_id`, parent claim or axis, ENTER trigger, depth, workers spent, EXIT rule that closed it, what it changed in the top-level answer (`none` is a valid, required answer), and the ulw-loop steer/evidence id it was mirrored into.
 - `debate-log.md` — one row per debate round: the claim under attack, the attacker's argument, the defender's evidence, your verdict, and what changed in the claim graph because of it.
 
-Observation candidates, claim candidates, and EXPAND leads travel back from members and lanes as message text. You write the instrumentation artifacts, link candidates into the intent diff and claim graph, and record where each observation entered the synthesis. A conclusion is not ready for final materials until its expected truth/reality diff is closed or marked unknown, its claim node exists, and its independent-observation convergence status is supported or explicitly excepted.
+Observation candidates, claim candidates, and EXPAND leads travel back from members and lanes as message text (except a mass-research dag node's handoff file). You write the instrumentation artifacts, link candidates into the intent diff and claim graph, and record where each observation entered the synthesis. A conclusion is not ready for final materials until its expected truth/reality diff is closed or marked unknown, its claim node exists, and its independent-observation convergence status is supported or explicitly excepted.
 
 ## Phase 0 — Scope solo, organize the brief
 
@@ -398,7 +398,7 @@ High-yield combinations: official docs (`site:<docs domain>`), GitHub implementa
 | No skeptic pass on a "supported" claim | Every supported claim survives a debate round first; log it in `debate-log.md` |
 | Stopping after wave 1 because "enough was found" | Convergence rules only: 2+ expansion waves, leads run dry, debates settled |
 | Obeying a surrounding "stop exploring" rule mid-research | Authority section — those rules do not bind this mode |
-| Asking a worker to write journal or session files | Workers report as message text; you journal every return |
+| Asking a worker to write journal or session files | Workers report as message text (except a mass-research dag node's handoff file); you journal every return |
 | Two workers given the same angle | One unique angle per worker, always |
 | A web worker that returned only `fetch`/`curl` text, or a `Collection: browser` run whose workers never opened a tab | Sources are read in the user's browser through the `browser` skill; `webfetch` is for raw files; every web worker carries the skill from the first wave |
 | Contested claim settled by judgment | Phase 4 — run code, capture output, verdict |

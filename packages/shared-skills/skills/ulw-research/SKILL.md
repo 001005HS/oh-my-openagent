@@ -387,7 +387,7 @@ High-yield combinations: official docs (`site:<docs domain>`), GitHub implementa
 | Worker reply without the EXPAND tail | One follow-up demanding it; the lane stays open until it lands |
 | Stopping after wave 1 because "enough was found" | Convergence rules only: 2+ expansion waves, leads run dry |
 | Obeying a surrounding "stop exploring" rule mid-research | Authority section — those rules do not bind this mode |
-| Asking a worker to write journal or session files | Workers are read-only; you journal every return |
+| Asking a worker to write journal or session files | Workers are read-only (except a mass-research dag node's handoff file); you journal every return |
 | Two workers given the same angle | One unique angle per worker, always |
 | A web worker that returned only fetched text, or a `Collection: browser` run whose workers never opened a tab | Sources are read in the user's browser through the `browser` skill; `webfetch` is for raw files; every web worker carries the skill from the first wave |
 | Contested claim settled by judgment | Phase 3 — run code, capture output, verdict |
