@@ -35,6 +35,7 @@ export type CmuxNotifyBridgeDeps = {
   readonly pathLookup?: (binaryName: string) => string | null
   readonly spawnProcess?: (cmuxPath: string, args: readonly string[]) => CmuxNotifyProcess
   readonly onDiagnostic?: (diagnostic: CmuxNotifyDiagnostic) => void
+  readonly schedule?: (run: () => void) => void
 }
 
 /**
@@ -47,25 +48,41 @@ export function createCmuxNotifyBridge(deps: CmuxNotifyBridgeDeps = {}): CmuxNot
   const pathLookup = deps.pathLookup ?? findExecutableOnPath
   const spawnProcess = deps.spawnProcess ?? defaultSpawnProcess
   const onDiagnostic = deps.onDiagnostic ?? logDiagnostic
+  const schedule = deps.schedule ?? queueMicrotask
   let cachedCmuxPath: string | undefined
+  // Completions delivered by one batched flush arrive as separate notify calls in the same tick;
+  // they are merged into one notification so a fan-out does not raise one toast per child.
+  let pending: ParentNotifierMessage["details"][number][] | undefined
 
   return {
     notify(message: ParentNotifierMessage): void {
-      try {
-        if (platform !== "darwin") return
-        if (message.details.length === 0) return
-        const cmuxPath = resolveCmuxPath()
-        if (cmuxPath === null) return
-        const child = spawnProcess(cmuxPath, buildNotifyArgs(message))
-        child.onError((error) => onDiagnostic({ kind: "spawn_error", message: error.message }))
-        child.onClose((code) => {
-          if (code !== 0 && code !== null) onDiagnostic({ kind: "nonzero_exit", code })
-        })
-        child.unref()
-      } catch (error) {
-        log("omo-senpi cmux notify failed", { error: error instanceof Error ? error.message : String(error) })
+      if (platform !== "darwin" || message.details.length === 0) return
+      if (pending !== undefined) {
+        pending.push(...message.details)
+        return
       }
+      pending = [...message.details]
+      schedule(() => {
+        const details = pending ?? []
+        pending = undefined
+        send(details)
+      })
     },
+  }
+
+  function send(details: ParentNotifierMessage["details"]): void {
+    try {
+      const cmuxPath = resolveCmuxPath()
+      if (cmuxPath === null) return
+      const child = spawnProcess(cmuxPath, buildNotifyArgs(details))
+      child.onError((error) => onDiagnostic({ kind: "spawn_error", message: error.message }))
+      child.onClose((code) => {
+        if (code !== 0 && code !== null) onDiagnostic({ kind: "nonzero_exit", code })
+      })
+      child.unref()
+    } catch (error) {
+      log("omo-senpi cmux notify failed", { error: error instanceof Error ? error.message : String(error) })
+    }
   }
 
   function resolveCmuxPath(): string | null {
@@ -76,8 +93,8 @@ export function createCmuxNotifyBridge(deps: CmuxNotifyBridgeDeps = {}): CmuxNot
   }
 }
 
-function buildNotifyArgs(message: ParentNotifierMessage): readonly string[] {
-  return ["notify", "--title", notificationTitle(message.details), "--body", notificationBody(message)]
+function buildNotifyArgs(details: ParentNotifierMessage["details"]): readonly string[] {
+  return ["notify", "--title", notificationTitle(details), "--body", notificationBody(details)]
 }
 
 function notificationTitle(details: ParentNotifierMessage["details"]): string {
@@ -86,8 +103,8 @@ function notificationTitle(details: ParentNotifierMessage["details"]): string {
   return STATUS_TITLES[first.status] ?? MIXED_STATUS_TITLE
 }
 
-function notificationBody(message: ParentNotifierMessage): string {
-  const body = completionMessageLines(message.details).join("\n")
+function notificationBody(details: ParentNotifierMessage["details"]): string {
+  const body = completionMessageLines(details).join("\n")
   if (body.length <= CMUX_NOTIFY_BODY_MAX_CHARS) return body
   const limit = CMUX_NOTIFY_BODY_MAX_CHARS - TRUNCATION_MARKER.length
   const end = isHighSurrogate(body.charCodeAt(limit - 1)) ? limit - 1 : limit

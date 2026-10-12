@@ -109,16 +109,54 @@ describe("cmux notification for Senpi task completions (#6580)", () => {
     expect(bridge.calls).toEqual([])
   })
 
-  test("#given no coordinator #when a completion is sent directly #then the notification follows the send", () => {
+  test("#given no coordinator #when a completion is sent directly #then the notification follows the send", async () => {
     //#given
     const bridge = recordingBridge()
     const notifier = createParentNotifier(fakePi(), undefined, undefined, undefined, undefined, bridge)
 
     //#when
     notifier.enqueue(completion())
+    await Promise.resolve()
 
     //#then
     expect(bridge.calls).toEqual(["st_1"])
+  })
+
+  test("#given a direct send that rejects #when the completion is enqueued #then no notification is sent", async () => {
+    //#given
+    const bridge = recordingBridge()
+    const rejected = Promise.reject(new Error("send failed"))
+    const notifier = createParentNotifier({ ...fakePi(), sendMessage: () => rejected }, undefined, undefined, undefined, undefined, bridge)
+
+    //#when
+    notifier.enqueue(completion())
+    await rejected.catch(() => undefined)
+    await Promise.resolve()
+
+    //#then
+    expect(bridge.calls).toEqual([])
+  })
+
+  test("#given several completions delivered by one batched flush #when notified #then cmux raises one notification for all of them", () => {
+    //#given
+    const spawned: (readonly string[])[] = []
+    let runScheduled: (() => void) | undefined
+    const bridge = createCmuxNotifyBridge({ platform: "darwin", pathLookup: () => "/bin/cmux", schedule: (run) => { runScheduled = run }, spawnProcess: (_path, args) => { spawned.push(args); return { onError: () => undefined, onClose: () => undefined, unref: () => undefined } } })
+    let flush: (() => void) | undefined
+    const coordinator = new IdleInjectionCoordinator(() => undefined, { scheduleFlush: (run) => { flush = run } })
+    const notifier = createParentNotifier(fakePi(), coordinator, () => true, undefined, undefined, bridge)
+
+    //#when
+    notifier.enqueue(completion({ task_id: "st_1" }))
+    notifier.enqueue(completion({ task_id: "st_2", status: "error" as never }))
+    notifier.enqueue(completion({ task_id: "st_3" }))
+    flush?.()
+    runScheduled?.()
+
+    //#then
+    expect(spawned).toHaveLength(1)
+    expect(spawned[0]?.[2]).toBe("OMO background tasks")
+    for (const id of ["st_1", "st_2", "st_3"]) expect(spawned[0]?.[4]).toContain(id)
   })
 
   test("#given a non-macOS host or no cmux binary #when notify is called #then nothing is spawned", () => {
@@ -127,8 +165,8 @@ describe("cmux notification for Senpi task completions (#6580)", () => {
     const spawnProcess = (path: string) => { spawned.push(path); return { onError: () => undefined, onClose: () => undefined, unref: () => undefined } }
 
     //#when
-    createCmuxNotifyBridge({ platform: "linux", pathLookup: () => "/bin/cmux", spawnProcess }).notify(completion())
-    createCmuxNotifyBridge({ platform: "darwin", pathLookup: () => null, spawnProcess }).notify(completion())
+    createCmuxNotifyBridge({ platform: "linux", pathLookup: () => "/bin/cmux", spawnProcess, schedule: (run) => run() }).notify(completion())
+    createCmuxNotifyBridge({ platform: "darwin", pathLookup: () => null, spawnProcess, schedule: (run) => run() }).notify(completion())
 
     //#then
     expect(spawned).toEqual([])
@@ -140,7 +178,7 @@ describe("cmux notification for Senpi task completions (#6580)", () => {
     const spawnProcess = (_path: string, args: readonly string[]) => { captured.push(args); return { onError: () => undefined, onClose: () => undefined, unref: () => undefined } }
 
     //#when
-    createCmuxNotifyBridge({ platform: "darwin", pathLookup: () => "/bin/cmux", spawnProcess }).notify(completion({ final_response: "x".repeat(5000) }))
+    createCmuxNotifyBridge({ platform: "darwin", pathLookup: () => "/bin/cmux", spawnProcess, schedule: (run) => run() }).notify(completion({ final_response: "x".repeat(5000) }))
 
     //#then
     const body = captured[0]?.[4] ?? ""

@@ -61,7 +61,7 @@ export function createParentNotifier(
         else coordinator.flushSoon()
         return
       }
-      pi.sendMessage(
+      const sent = pi.sendMessage(
         {
           customType: message.customType,
           content: content(),
@@ -70,7 +70,7 @@ export function createParentNotifier(
         },
         { triggerTurn: true, deliverAs: "steer" },
       )
-      cmuxNotify.notify(message)
+      void Promise.resolve(sent).then(() => cmuxNotify.notify(message), () => undefined)
     },
   }
 }
