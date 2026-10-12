@@ -442,7 +442,7 @@ function toolDetail(args: unknown): string | undefined {
 
 /**
  * The memory identity this session writes to, resolved exactly the way the memory component
- * resolves it (`resolveMemoryIdentity(memory.agent, cwd, env)`): a column naming a different
+ * resolves it (`resolveMemoryIdentity(memory.agent, cwd, env)` with `memory.auto_identity`): a column naming a different
  * identity than the one being written to would be worse than no column at all. The resolver is
  * pure apart from two `exists` probes that keep a legacy directory attached, so it runs once on
  * mount rather than on the refresh path.
@@ -451,7 +451,9 @@ function defaultResolveMemory(cwd: string): PanelMemoryIdentity | undefined {
   try {
     const settings = loadSenpiOmoConfig({ cwd }).config.memory
     if (settings?.enabled === false) return undefined
-    const identity = resolveMemoryIdentity(settings?.agent, cwd, process.env)
+    const identity = resolveMemoryIdentity(settings?.agent, cwd, process.env, undefined, {
+      autoIdentity: settings?.auto_identity,
+    })
     return {
       id: identity.id,
       reflectionDir: identity.paths.reflection,

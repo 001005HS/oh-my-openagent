@@ -134,7 +134,9 @@ export function createMemoryComponent(options: MemoryComponentOptions = {}): Omo
         // process happens to sit in: one shared host serves sessions from many workspaces (#8556).
         const sessionCwd = surface.cwd ?? cwd
         const memoryRoot = resolveMemoryRoot(env, sessionCwd)
-        const resolved = resolveMemoryIdentity(sessionConfig.agent, sessionCwd, env)
+        const resolved = resolveMemoryIdentity(sessionConfig.agent, sessionCwd, env, undefined, {
+          autoIdentity: sessionConfig.auto_identity,
+        })
         const previous = findLatestMemoryBinding(surface.entries)
         const adoption = adoptSessionIdentity({
           recorded: previous,
