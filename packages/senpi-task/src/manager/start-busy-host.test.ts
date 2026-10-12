@@ -218,6 +218,40 @@ describe("task start against a busy host (#10042)", () => {
     expect(handle.followUpCalls).toEqual([])
   })
 
+  test("#given a start still waiting on the host #when the session shuts down and the host admits it within the bound #then the child is resident before suspension runs", async () => {
+    // given
+    const held = new BusyHostRunner()
+    const h = makeManager({ inProcess: held })
+    const started = await bounded(h.manager.start(baseSpec({ run_in_background: true })))
+    if (started.kind !== "started") throw new Error("fixture did not start")
+    expect(started.starting).toBe(true)
+
+    // when
+    const settling = h.manager.settleLaunchesForShutdown?.(60_000)
+    held.release.resolve(undefined)
+    await bounded(settling ?? Promise.resolve())
+
+    // then
+    expect(h.manager.residentTaskIds()).toContain(started.task_id)
+  })
+
+  test("#given a start still waiting on the host #when the session shuts down and the host admits it only after the bound #then the late child is discarded, never attached to the closed session", async () => {
+    // given
+    const held = new BusyHostRunner()
+    const h = makeManager({ inProcess: held })
+    const started = await bounded(h.manager.start(baseSpec({ run_in_background: true })))
+    if (started.kind !== "started") throw new Error("fixture did not start")
+
+    // when
+    await bounded(h.manager.settleLaunchesForShutdown?.(0) ?? Promise.resolve())
+    held.release.resolve(undefined)
+    await bounded(h.manager.whenLaunched?.(started.task_id) ?? Promise.resolve())
+
+    // then
+    expect(h.manager.residentTaskIds()).not.toContain(started.task_id)
+    expect(held.handles.get(started.task_id)?.subscribeCount()).toBe(0)
+  })
+
   test("#given a host that answers at once #when a task starts #then the result is reported as before, not as starting", async () => {
     const h = makeManager()
     const started = await bounded(h.manager.start(baseSpec({ run_in_background: true })))

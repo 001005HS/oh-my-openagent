@@ -175,6 +175,9 @@ class TaskManagerImpl implements TaskManager {
   readonly #closingRungs = new Map<string, { readonly epoch: number; readonly handle: ManagedChildHandle }>()
   readonly #waiters = new Map<string, TaskWaiter[]>()
   readonly #launching = new Map<string, Promise<unknown>>()
+  // First launches still being admitted when the session shut down past its settle bound: a late admission
+  // is discarded, never attached to a session that is gone (its live child would keep the host alive).
+  readonly #abandonedLaunches = new Set<string>()
   readonly #background = new Set<string>()
   readonly #evicting = new Set<string>()
   readonly #sendCounts = new Map<string, number>()
@@ -771,6 +774,24 @@ class TaskManagerImpl implements TaskManager {
   }
 
   /** Settles once the task's in-flight launch has settled, admitted or refused; at once when none is in flight. */
+  /**
+   * Session shutdown first gives in-flight first launches up to boundMs to be admitted, so the
+   * normal suspension parks them like any resident child. A launch still unadmitted after that is
+   * abandoned: when its host finally answers, the child is torn down instead of attached.
+   */
+  async settleLaunchesForShutdown(boundMs: number): Promise<void> {
+    const inFlight = [...this.#launching.values()].map((launch) => launch.then(() => undefined, () => undefined))
+    if (inFlight.length > 0 && boundMs > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const bound = new Promise<void>((resolveBound) => {
+        timer = setTimeout(resolveBound, boundMs)
+      })
+      await Promise.race([Promise.all(inFlight), bound])
+      clearTimeout(timer)
+    }
+    for (const taskId of this.#launching.keys()) this.#abandonedLaunches.add(taskId)
+  }
+
   whenLaunched(taskId: string): Promise<void> {
     return (this.#launching.get(taskId) ?? Promise.resolve()).then(() => undefined, () => undefined)
   }
@@ -875,6 +896,11 @@ class TaskManagerImpl implements TaskManager {
     if (!this.#ownsLaunch(context, current)) {
       await this.#discardStaleLaunch(context, handle)
       return { ok: false, error: cancelled ? "task was cancelled during launch" : "task stopped during launch" }
+    }
+    if (this.#abandonedLaunches.delete(record.task_id)) {
+      this.#options.store.appendEvent(record.task_id, { type: "launch_abandoned", payload: { reason: "session_shutdown" } })
+      await this.#discardStaleLaunch(context, handle)
+      return { ok: false, error: "the session shut down before the host admitted the child" }
     }
 
     const unsubscribe = this.#subscribeChildFacts(handle, record.task_id)

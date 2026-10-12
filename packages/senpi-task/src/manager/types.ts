@@ -306,6 +306,8 @@ export type TaskManager = {
   start(spec: ManagerStartSpec): Promise<StartResult>
   // Settles once the task's in-flight launch settles (a `starting` result keeps launching, #10042).
   whenLaunched?(taskId: string): Promise<void>
+  /** Bounded wait for in-flight first launches at session shutdown; later admissions are discarded. */
+  settleLaunchesForShutdown?(boundMs: number): Promise<void>
   startOwned(spec: ManagerStartSpec, owner: DagTaskOwner): Promise<OwnedStartResult>
   findOwnedTask(owner: DagTaskOwnerKey): TaskRecord | undefined
   continueTask(taskIdOrName: string, prompt: string, deliverAs?: "steer" | "followUp"): Promise<ContinueResult>
