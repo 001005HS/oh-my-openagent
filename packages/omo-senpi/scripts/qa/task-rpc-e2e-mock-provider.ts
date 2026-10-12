@@ -179,23 +179,30 @@ function isTaskTerminal(tasksDir: string, name: string): boolean {
 
 function awaitTerminalTask(step: { name: string; tasksDir: string; timeoutMs: number }, signal?: AbortSignal): Promise<boolean> {
   return new Promise((resolveTerminal) => {
-    if (isTaskTerminal(step.tasksDir, step.name)) {
-      resolveTerminal(true)
-      return
-    }
     let settled = false
+    let watcher: { close(): void } | undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
     const finish = (terminal: boolean): void => {
       if (settled) return
       settled = true
-      watcher.close()
+      watcher?.close()
       clearTimeout(timer)
       resolveTerminal(terminal)
     }
-    const watcher = watch(step.tasksDir, () => {
+    const check = (): void => {
       if (isTaskTerminal(step.tasksDir, step.name)) finish(true)
-    })
-    const timer = setTimeout(() => finish(false), step.timeoutMs)
+    }
+    // Watch first, then check: a record written between the two is still seen. The harness creates the
+    // tasks dir before the parent starts; if it is missing the wait ends at once and the check fails.
+    try {
+      watcher = watch(step.tasksDir, check)
+    } catch {
+      finish(false)
+      return
+    }
+    timer = setTimeout(() => finish(false), step.timeoutMs)
     signal?.addEventListener("abort", () => finish(false))
+    check()
   })
 }
 

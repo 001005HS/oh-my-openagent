@@ -22,7 +22,7 @@ const PROJECT_OMO_CONFIG = {
 const CHILD_STEPS_COMPLETE = [{ type: "text", text: CHILD_FINAL_TEXT }]
 const CHILD_STEPS_HANG = [{ type: "hang" }]
 
-export const TASKS_DIR_PLACEHOLDER = "<tasks-dir>"
+const TASKS_DIR_PLACEHOLDER = "<tasks-dir>"
 
 /** Binds the scenario's await_task steps to this run's task store. */
 export function bindTasksDir(steps, stateDir) {

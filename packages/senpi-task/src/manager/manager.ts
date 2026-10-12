@@ -175,9 +175,9 @@ class TaskManagerImpl implements TaskManager {
   readonly #closingRungs = new Map<string, { readonly epoch: number; readonly handle: ManagedChildHandle }>()
   readonly #waiters = new Map<string, TaskWaiter[]>()
   readonly #launching = new Map<string, Promise<unknown>>()
-  // First launches still being admitted when the session shut down past its settle bound: a late admission
-  // is discarded, never attached to a session that is gone (its live child would keep the host alive).
-  readonly #abandonedLaunches = new Set<string>()
+  // Set once session shutdown starts settling launches: a queued launch whose lane frees during
+  // suspension must not start a child for a session that is going away (shutdown parks it instead).
+  #shutdownStarted = false
   readonly #background = new Set<string>()
   readonly #evicting = new Set<string>()
   readonly #sendCounts = new Map<string, number>()
@@ -773,13 +773,14 @@ class TaskManagerImpl implements TaskManager {
     })
   }
 
-  /** Settles once the task's in-flight launch has settled, admitted or refused; at once when none is in flight. */
   /**
    * Session shutdown first gives in-flight first launches up to boundMs to be admitted, so the
    * normal suspension parks them like any resident child. A launch still unadmitted after that is
-   * abandoned: when its host finally answers, the child is torn down instead of attached.
+   * parked here like a pending record (persisted_only, host ownership cleared): its late admission
+   * then fails the launch-ownership check and is torn down, and a resumed session relaunches it.
    */
   async settleLaunchesForShutdown(boundMs: number): Promise<void> {
+    this.#shutdownStarted = true
     const inFlight = [...this.#launching.values()].map((launch) => launch.then(() => undefined, () => undefined))
     if (inFlight.length > 0 && boundMs > 0) {
       let timer: ReturnType<typeof setTimeout> | undefined
@@ -789,9 +790,13 @@ class TaskManagerImpl implements TaskManager {
       await Promise.race([Promise.all(inFlight), bound])
       clearTimeout(timer)
     }
-    for (const taskId of this.#launching.keys()) this.#abandonedLaunches.add(taskId)
+    for (const taskId of this.#launching.keys()) {
+      this.#options.store.transition(taskId, { type: "persist_only", timestamp: nowIso(this.#now) })
+      this.#options.store.appendEvent(taskId, { type: "suspended", payload: { reason: "session_shutdown_before_admission" } })
+    }
   }
 
+  /** Settles once the task's in-flight launch has settled, admitted or refused; at once when none is in flight. */
   whenLaunched(taskId: string): Promise<void> {
     return (this.#launching.get(taskId) ?? Promise.resolve()).then(() => undefined, () => undefined)
   }
@@ -846,6 +851,11 @@ class TaskManagerImpl implements TaskManager {
   }
 
   async #launch(initial: LaunchContext): Promise<LaunchOutcome> {
+    if (this.#shutdownStarted) {
+      // Still pending: the shutdown suspension parks it with the other pending records.
+      this.#releaseSlot(initial.record.task_id, initial.model, initial.record.notification.run_epoch)
+      return { ok: false, error: "the session is shutting down" }
+    }
     const startResult = this.#options.store.transition(initial.record.task_id, { type: "start", timestamp: nowIso(this.#now) })
     if (!startResult.applied) {
       this.#releaseSlot(initial.record.task_id, initial.model, initial.record.notification.run_epoch)
@@ -896,11 +906,6 @@ class TaskManagerImpl implements TaskManager {
     if (!this.#ownsLaunch(context, current)) {
       await this.#discardStaleLaunch(context, handle)
       return { ok: false, error: cancelled ? "task was cancelled during launch" : "task stopped during launch" }
-    }
-    if (this.#abandonedLaunches.delete(record.task_id)) {
-      this.#options.store.appendEvent(record.task_id, { type: "launch_abandoned", payload: { reason: "session_shutdown" } })
-      await this.#discardStaleLaunch(context, handle)
-      return { ok: false, error: "the session shut down before the host admitted the child" }
     }
 
     const unsubscribe = this.#subscribeChildFacts(handle, record.task_id)

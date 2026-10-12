@@ -117,6 +117,9 @@ export function wireEventBridge(
     statusUi.dispose()
     state.leadPollers.shutdown()
     await state.resumptionChannels.emitShutdown()
+    // A first launch still being admitted gets a bounded chance to land, so suspension parks it like
+    // any resident child; one still unadmitted is parked as pending and never outlives the session (#10042).
+    await engine.manager.settleLaunchesForShutdown?.(SHUTDOWN_LAUNCH_SETTLE_MS)
     const shutdownEvent = payload as SessionShutdownEvent
     const parentSessionId = engine.runtime.sessionId()
     const reason = shutdownEvent.reason
@@ -128,9 +131,6 @@ export function wireEventBridge(
       )
       return
     }
-    // A first launch still being admitted gets a bounded chance to land, so suspension parks it like
-    // any resident child; one admitted later is discarded instead of kept alive past the session (#10042).
-    await engine.manager.settleLaunchesForShutdown?.(SHUTDOWN_LAUNCH_SETTLE_MS)
     // The context can lose its session id during teardown. Only this engine's live handles
     // establish fallback ownership; scanning every record would suspend sibling host sessions.
     const parentSessionIds = parentSessionId === undefined

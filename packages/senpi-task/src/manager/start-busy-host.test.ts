@@ -4,6 +4,8 @@ import type { ManagedChildHandle } from "./child-handle"
 import type { ManagedStartSpec } from "./types"
 import { RunnerError } from "../runners/in-process/runner-error"
 import { bounded } from "../lifecycle/__fixtures__/live-parent-clock"
+import { readEvents } from "../lifecycle/__fixtures__/lifecycle-fakes"
+import { isRevivalCandidate } from "../lifecycle/revival-selection"
 import { FakeRunner, baseSpec, cleanupProjects, makeManager, settings } from "./__fixtures__/manager-fakes"
 
 afterEach(cleanupProjects)
@@ -250,6 +252,37 @@ describe("task start against a busy host (#10042)", () => {
     // then
     expect(h.manager.residentTaskIds()).not.toContain(started.task_id)
     expect(held.handles.get(started.task_id)?.subscribeCount()).toBe(0)
+    const parked = h.store.load(started.task_id)
+    if (parked === null || parked === undefined) throw new Error("parked record missing")
+    expect(parked.status).toBe("running")
+    expect(parked.residency_state).toBe("persisted_only")
+    expect(parked.host_pid).toBeUndefined()
+    expect(isRevivalCandidate(parked, parked.parent_session_id)).toBe(true)
+    expect(readEvents(h.store, started.task_id)).toContain("suspended")
+  })
+
+  test("#given a task queued for a lane #when the lane frees after session shutdown began #then no child starts and the task stays pending for shutdown to park", async () => {
+    // given
+    const runner = new FakeRunner()
+    const h = makeManager({ inProcess: runner, config: oneLane() })
+    const first = await bounded(h.manager.start(baseSpec({ run_in_background: true })))
+    if (first.kind !== "started") throw new Error("first task did not start")
+    const queued = await bounded(h.manager.start(baseSpec({ run_in_background: true })))
+    if (queued.kind !== "started") throw new Error("second task did not start")
+    expect(queued.queue_position).toBeDefined()
+    const firstHandle = runner.handles.get(first.task_id)
+    if (firstHandle === undefined) throw new Error("first child has no handle")
+    await bounded(firstHandle.waitForSubscription())
+
+    // when
+    await bounded(h.manager.settleLaunchesForShutdown?.(0) ?? Promise.resolve())
+    firstHandle.settle({ status: "completed", finalResponse: "DONE" })
+    await bounded(h.manager.waitFor(first.task_id))
+    await bounded(h.manager.whenLaunched?.(queued.task_id) ?? Promise.resolve())
+
+    // then
+    expect(runner.startedSpecs.map((spec) => spec.taskId)).not.toContain(queued.task_id)
+    expect(h.store.load(queued.task_id)?.status).toBe("pending")
   })
 
   test("#given a host that answers at once #when a task starts #then the result is reported as before, not as starting", async () => {
