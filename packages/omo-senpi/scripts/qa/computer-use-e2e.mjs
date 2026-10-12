@@ -140,7 +140,7 @@ const displayRun = {
 // Zoom recaptures native detail of a region while input stays in the full screenshot's frame.
 const zoomRun = {
   action: "run",
-  code: "const full = await desktop.screenshot({ silent: true }); const zoom = await desktop.zoom({ x: 0, y: 0, width: full.width / 4, height: full.height / 4 }, { silent: true }); await desktop.click(full.width - 10, full.height - 10); return 'ZOOM ' + [full.width, full.height, zoom.coordinateWidth, zoom.coordinateHeight, zoom.region.width, zoom.region.height].join(' ')",
+  code: "const full = await desktop.screenshot({ silent: true }); const zoom = await desktop.zoom({ x: 0, y: 0, width: full.width / 4, height: full.height / 4 }, { silent: true }); await desktop.click(full.width - 10, full.height - 10); return 'ZOOM ' + [full.width, full.height, zoom.coordinateWidth, zoom.coordinateHeight, zoom.region.width, zoom.region.height, full.sourceWidth, full.sourceHeight, zoom.sourceWidth, zoom.sourceHeight].join(' ')",
 }
 const displayShotChain = { action: "call", chain: [{ method: "display", args: ["2"] }, { method: "screenshot" }] }
 const displayClickChain = { action: "call", chain: [{ method: "display", args: ["2"] }, { method: "click", args: [20, 10] }] }
@@ -154,11 +154,12 @@ const scenarios = [
       { type: "text", text: "done" },
     ],
     verify: ({ results, methods }) => {
-      const [fw, fh, cw, ch, rw, rh] = (/ZOOM ([\d. ]+)/.exec(resultText(results.find((r) => r.toolName === "computer")))?.[1] ?? "").trim().split(" ").map(Number)
+      const [fw, fh, cw, ch, rw, rh, fsw, fsh, zsw, zsh] = (/ZOOM ([\d. ]+)/.exec(resultText(results.find((r) => r.toolName === "computer")))?.[1] ?? "").trim().split(" ").map(Number)
       return [
         ["the zoom run succeeded", results.find((r) => r.toolName === "computer")?.isError === false],
         ["zoom reports the full screenshot as its input frame", fw > 0 && cw === fw && ch === fh],
         ["zoom echoes the requested quarter region", rw === fw / 4 && rh === fh / 4],
+        ["zoom recaptured only the region: a quarter of the full native source", zsw === fsw / 4 && zsh === fsh / 4],
         ["a click at full-frame coordinates after zoom reached the engine", methods.includes("click")],
       ]
     },

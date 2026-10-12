@@ -31,7 +31,7 @@ function caption(frame: CaptureResult): string {
 	const source = scaled ? ` (scaled from ${frame.sourceWidth}x${frame.sourceHeight})` : "";
 	const artifact = frame.artifactPath ? ` -> ${frame.artifactPath}` : "";
 	const zoom = frame.region == null ? "" :
-		` zoom; input coordinates remain ${frame.coordinateWidth}x${frame.coordinateHeight}`;
+		` zoom; input coordinates remain ${frame.coordinateWidth ?? frame.width}x${frame.coordinateHeight ?? frame.height}`;
 	return `screenshot ${frame.target} ${size}${source}${artifact}${zoom}`;
 }
 
@@ -73,7 +73,9 @@ export async function captureScreenshot(
 			output.text(frame.note ?? "screenshot is available only as the artifact above");
 		}
 	}
-	const { width, height, sourceWidth, sourceHeight, coordinateWidth, coordinateHeight, scale, frameId } = frame;
+	const { width, height, sourceWidth, sourceHeight, scale, frameId } = frame;
+	const coordinateWidth = frame.coordinateWidth ?? width;
+	const coordinateHeight = frame.coordinateHeight ?? height;
 	return {
 		target: frame.target,
 		frameId,

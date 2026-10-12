@@ -46,7 +46,7 @@ fn enum_names(schema: &Value) -> BTreeSet<String> {
 
 #[test]
 fn schema_is_fresh() {
-    let generated = serde_json::to_string(&engine_schema()).unwrap() + "\n";
+    let generated = serde_json::to_string_pretty(&engine_schema()).unwrap() + "\n";
     assert_fresh(SCHEMA_PATH, &generated);
 }
 

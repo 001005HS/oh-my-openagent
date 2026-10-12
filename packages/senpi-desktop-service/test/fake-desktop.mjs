@@ -1,4 +1,5 @@
 // Scripted desktop methods for test/fake-engine.mjs, enabled by FAKE_ENGINE_DESKTOP=1.
+// FAKE_ENGINE_PRE_ZOOM=1 acts like an engine that predates region zoom: no coordinate fields, no captureRegion.
 // One display, two windows ("101" Code, "202" Mail). Pointer input needs a prior capture of the same
 // target (InvalidCoordinateFrame otherwise), as the real engine's per-target frames do.
 // Captures of "desktop" and "101" are inline PNGs; "202" is artifact-only.
@@ -130,9 +131,16 @@ export function createDesktop() {
 				}
 				const frameId = `${target}-${frames.size + 1}`;
 				frames.set(target, frameId);
+				if (process.env.FAKE_ENGINE_PRE_ZOOM === "1") {
+					const { coordinateWidth, coordinateHeight, region, ...older } = capture(target, frameId);
+					return { result: older };
+				}
 				return { result: capture(target, frameId) };
 			}
 			case "captureRegion": {
+				if (process.env.FAKE_ENGINE_PRE_ZOOM === "1") {
+					return { error: { code: -32601, message: "Method not found", data: { reason: "unknown" } } };
+				}
 				const frameId = frames.get(target);
 				if (frameId === undefined || (params.frameId !== undefined && params.frameId !== frameId)) {
 					return error(-32007, "InvalidCoordinateFrame", "zoom needs the latest full screenshot");

@@ -68,15 +68,15 @@ describe("native region zoom", { timeout: 30_000 }, () => {
 	});
 
 
-	it("refuses an engine with a foreign ABI before any region request", async () => {
-		// Given
-		const log = fakeEngineFactory({ FAKE_ENGINE_ABI: "other/9" });
-		const service = new DesktopService({ createChild: log.factory });
-		services.push(service);
+	it("keeps screenshots working against an engine that predates zoom, and reports zoom as unavailable", async () => {
+		// Given: an engine on the same ABI without coordinate fields or captureRegion
+		const { log, run } = await open({ FAKE_ENGINE_PRE_ZOOM: "1" });
 		// When
-		const opening = service.open({});
-		// Then
-		await expect(opening).rejects.toThrow("ABI mismatch");
-		expect(log.requests.some((request) => request.method === "captureRegion")).toBe(false);
+		const shot = await run(`return await desktop.screenshot({ silent: true });`);
+		const zoom = run(`const full = await desktop.screenshot({ silent: true }); return await desktop.zoom({ x: 0, y: 0, width: 8, height: 6 });`);
+		// Then: the full frame falls back to the capture's own size
+		expect(shot.returnValue).toMatchObject({ width: 1280, height: 800, coordinateWidth: 1280, coordinateHeight: 800 });
+		await expect(zoom).rejects.toThrow();
+		expect(log.requests.filter((request) => request.method === "captureRegion")).toHaveLength(1);
 	});
 });

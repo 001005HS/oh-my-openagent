@@ -65,8 +65,9 @@ export interface CaptureResult {
 	readonly height: number;
 	readonly sourceWidth: number;
 	readonly sourceHeight: number;
-	readonly coordinateWidth: number;
-	readonly coordinateHeight: number;
+	/** The full screenshot's frame for input; absent from engines that predate zoom, where it is `width`x`height`. */
+	readonly coordinateWidth?: number | null;
+	readonly coordinateHeight?: number | null;
 	readonly region?: CaptureRegion | null;
 	readonly scale: number;
 	readonly target: string;
@@ -143,8 +144,8 @@ const CAPTURE: FieldSpec = {
 	height: "number",
 	sourceWidth: "number",
 	sourceHeight: "number",
-	coordinateWidth: "number",
-	coordinateHeight: "number",
+	coordinateWidth: "number?",
+	coordinateHeight: "number?",
 	scale: "number",
 	target: "string",
 	frameId: "string",
