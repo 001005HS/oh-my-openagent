@@ -115,6 +115,7 @@ async fn capture(session: &Session, caps: Option<CaptureCaps>) -> CoreResult<Val
     let params = CaptureParams {
         target: "desktop".to_owned(),
         caps,
+        exclude_window_titles: None,
     };
     let reply = session.submit(Op::Capture(params)).wait().await?;
     Ok(serde_json::to_value(reply).expect("capture serializes"))

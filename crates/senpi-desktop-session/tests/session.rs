@@ -58,6 +58,7 @@ fn capture_desktop() -> Op {
     Op::Capture(CaptureParams {
         target: "desktop".to_owned(),
         caps: None,
+        exclude_window_titles: None,
     })
 }
 

@@ -119,7 +119,7 @@ async fn safety_stop_during_hold_wakes_releases_and_reports_suspended() {
 async fn bounded_button_hold_releases_on_cancellation() {
     // Given a full-frame pointer point and an observer registered before input.
     let (session, sink, _) = open().await;
-    session.submit(Op::Capture(CaptureParams { target: "101".to_owned(), caps: None }))
+    session.submit(Op::Capture(CaptureParams { target: "101".to_owned(), caps: None, exclude_window_titles: None }))
         .wait().await.unwrap();
     let events = sink.subscribe();
     let pending = session.submit(Op::HoldMouse(HoldMouseParams {
