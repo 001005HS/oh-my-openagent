@@ -58,7 +58,7 @@ Defines the senpi `computer` tool: its permission tiers, settings, the `/compute
 |---|---|
 | `enabled` | `isSupportedHost()` |
 | `showCursor` | `true`; set `false` or use `/computer cursor off` to hide it |
-| `display` | `"all"` |
+| `display` | `"active"` (focused monitor, primary fallback); `"all"` composites every display, or use a display id |
 | `maxWidth` / `maxHeight` | `3840` / `2400` |
 | `screenshotMaxBytes` | `5000000` |
 | `stopHotkey` | `ctrl+alt+cmd+escape` on macOS, else `ctrl+alt+shift+escape` |

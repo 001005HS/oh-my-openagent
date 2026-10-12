@@ -54,7 +54,7 @@ impl MacosBackend {
         }
         if let Ok(windows) = self.capture.windows() {
             let window = windows.iter().find(|window| match target {
-                Target::Desktop => window.focused,
+                Target::Desktop | Target::Display(_) => window.focused,
                 Target::Window(id) => window.id == *id,
             });
             if let Some(window) = window {
@@ -146,7 +146,7 @@ impl Backend for MacosBackend {
     }
 
     fn displays(&mut self) -> CoreResult<Vec<DesktopDisplay>> {
-        self.capture.displays()
+        self.capture.all_displays()
     }
 
     fn windows(&mut self) -> CoreResult<Vec<DesktopWindow>> {

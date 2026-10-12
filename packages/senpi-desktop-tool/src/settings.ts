@@ -10,7 +10,7 @@ export const ComputerSettingsSchema = Type.Object(
 	{
 		enabled: Type.Optional(Type.Boolean({ description: "Register the computer tool (experimental; default: host supported)" })),
 		showCursor: Type.Optional(Type.Boolean({ default: true, description: "Show the display-only virtual cursor on macOS" })),
-		display: Type.Optional(Type.String({ description: "`all` composites every display; otherwise a display id" })),
+		display: Type.Optional(Type.String({ description: "`active` (default) follows the focused monitor; `all` composites every display; otherwise a display id" })),
 		maxWidth: Type.Optional(Type.Integer({ minimum: 1, default: 3840 })),
 		maxHeight: Type.Optional(Type.Integer({ minimum: 1, default: 2400 })),
 		screenshotMaxBytes: Type.Optional(Type.Integer({ minimum: 1, default: 5_000_000 })),
@@ -80,7 +80,7 @@ export function resolveComputerSettings(raw: unknown, platform: string = process
 	return {
 		enabled: value.enabled ?? isSupportedHost(platform),
 		showCursor: value.showCursor ?? true,
-		display: value.display ?? "all",
+		display: value.display ?? "active",
 		maxWidth: value.maxWidth ?? 3840,
 		maxHeight: value.maxHeight ?? 2400,
 		screenshotMaxBytes: value.screenshotMaxBytes ?? 5_000_000,
