@@ -1,3 +1,7 @@
+## 2026-10-11 - Detect environment leaks at test-file teardown (#9390, #9469)
+
+Thanks to @Dante-dan for the per-file teardown leak check: tests now report added, removed, or changed `process.env` keys after a file's own cleanup, then restore the worker baseline without printing values. Maintainer follow-ups put `OMO_MEMORY_HOME` in the shared hermetic-home installer so package-local Senpi tests use a per-run temporary memory root too, and remove the leftover implicit-test-globals reference. Tests loaded by the integrity plugin must import their test functions from `bun:test`.
+
 ## 2026-10-11 - Preserve maintenance and error classification after first-input memory admission (#9922)
 
 Facts reconciliation still recovers terminal artifacts under a pre-aborted launch signal and reports an existing active run without starting a model child. First-user-settle runtime recovery catches and classifies failures, treats reflection lock contention as a harmless skip, and continues RPC state synchronization. Compaction and transient-run fixtures now follow accepted-input admission; the obsolete overdue startup-dream hook is removed. Adapter-level tests cover child/member process-environment forwarding, and both the Senpi and Codex installer artifacts are rebuilt against the current memory schema.
