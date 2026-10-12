@@ -1,5 +1,5 @@
 //! Wire shapes exchanged with the persistent capture helper: one JSON
-//! request per line, one JSON header plus raw BGRA bytes per reply.
+//! request per line, one JSON header plus packed premultiplied BGRA bytes per reply.
 
 use serde::{Deserialize, Serialize};
 

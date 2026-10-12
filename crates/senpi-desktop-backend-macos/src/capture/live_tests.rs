@@ -160,3 +160,21 @@ fn helper_start_failure_falls_back_and_reports_legacy() {
     assert!(image.width() > 0 && image.height() > 0);
     std::env::remove_var("SENPI_DESKTOP_CAPTURE_HELPER_PROGRAM");
 }
+
+/// Show a solid sRGB RGB(240, 80, 20) window and set
+/// SENPI_DESKTOP_QA_COLOUR_WINDOW_ID to its Quartz id. Its centre must be
+/// unobscured solid content, not title-bar chrome. The unequal red/blue
+/// channels distinguish the native bitmap layout from the wire decoder.
+#[test]
+#[ignore = "live: needs a known-colour window, Screen Recording and the SCK helper"]
+fn sck_known_colour_preserves_channel_order() {
+    let id = std::env::var("SENPI_DESKTOP_QA_COLOUR_WINDOW_ID")
+        .expect("show a solid sRGB RGB(240, 80, 20) window and set its Quartz id");
+    let capture = MacCapture::new(DisplaySelector::All, Screencapture::system());
+    let (image, geometry) = capture.capture(&Target::Window(id)).unwrap();
+    assert!(!geometry.is_legacy_capture(), "must exercise the native SCK writer");
+    let pixel = image.get_pixel(image.width() / 2, image.height() / 2).0;
+    for (actual, expected) in pixel.into_iter().zip([240u8, 80, 20, 255]) {
+        assert!(actual.abs_diff(expected) <= 2, "unexpected RGBA pixel: {pixel:?}");
+    }
+}
