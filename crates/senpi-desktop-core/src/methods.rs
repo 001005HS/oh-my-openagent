@@ -12,15 +12,15 @@ use serde::{Deserialize, Serialize};
 use crate::menus::MenuItem;
 use crate::protocol_params::{
     AdvanceClockParams, AxClickParams, AxElementAtParams, AxPerformParams, AxQueryParams, AxRefParams,
-    AxSetValueParams, AxSnapshotParams, CancelParams, CaptureParams, ClipboardText, ControlGrantParams, DragParams,
-    EmptyParams, KeyChordParams, MenuPathParams, PointParams, RaiseWindowParams, ScrollParams, StopPathResumeParams,
+    AxSetValueParams, AxSnapshotParams, CancelParams, CaptureParams, CaptureRegionParams, ClipboardText, ControlGrantParams, DragParams,
+    EmptyParams, KeyChordParams, MenuPathParams, MenuSelectParams, ObserveParams, PointParams, RaiseWindowParams, ScrollParams, StopPathResumeParams,
     StopPathStartParams, StopPathStopParams, TypeTextParams,
 };
 use crate::protocol_results::{
     AuditEvent, ControlStateResult, EngineLog, HelloResult, SessionOpenResult, StopPathStatus,
 };
 use crate::types::{
-    AxNode, AxSnapshot, CaptureResult, DesktopCapabilities, DesktopDisplay, DesktopSessionOptions, DesktopWindow,
+    AxNode, AxSnapshot, CaptureResult, DesktopCapabilities, DesktopDisplay, DesktopSessionOptions, DesktopWindow, ObserveResult,
 };
 
 /// What a method may do to the desktop or to the engine's input gate.
@@ -95,6 +95,8 @@ method_table! {
     Displays = "displays", Read, Public, EmptyParams => Vec<DesktopDisplay>;
     Windows = "windows", Read, Public, EmptyParams => Vec<DesktopWindow>;
     Capture = "capture", Read, Public, CaptureParams => CaptureResult;
+    CaptureRegion = "captureRegion", Read, Public, CaptureRegionParams => CaptureResult;
+    Observe = "observe", Read, Public, ObserveParams => ObserveResult;
     Click = "click", Exec, Public, PointParams => ();
     MoveMouse = "moveMouse", Exec, Public, PointParams => ();
     Drag = "drag", Exec, Public, DragParams => ();
@@ -103,7 +105,7 @@ method_table! {
     KeyChord = "keyChord", Exec, Public, KeyChordParams => ();
     RaiseWindow = "raiseWindow", Exec, Public, RaiseWindowParams => ();
     MenusItems = "menus.items", Read, Public, MenuPathParams => Vec<MenuItem>;
-    MenusSelect = "menus.select", Exec, Public, MenuPathParams => ();
+    MenusSelect = "menus.select", Exec, Public, MenuSelectParams => ();
     ClipboardRead = "clipboard.read", Read, Public, EmptyParams => ClipboardText;
     ClipboardWrite = "clipboard.write", Exec, Public, ClipboardText => ();
     AxSnapshot = "ax.snapshot", Read, Public, AxSnapshotParams => AxSnapshot;
