@@ -626,6 +626,9 @@ async function admitFrontier(context: SchedulerContext): Promise<boolean> {
           } catch (reason) {
             settled = { status: "rejected", reason }
           }
+          // Leaves the in-flight set in the same step that parks, attaches or fails the node, so a
+          // fold can never see it both parked and still in flight.
+          inFlight.delete(nodeId)
           admitOne(nodeId, settled)
         })()
         inFlight.set(nodeId, started.finally(() => inFlight.delete(nodeId)))
@@ -666,7 +669,9 @@ async function admitFrontier(context: SchedulerContext): Promise<boolean> {
           folded = true
           emitCompletedWaves(context)
           // The slot a fold may free goes to the oldest denial first, before the nodes it unblocks.
-          const retry = admissionOrder.filter((nodeId) => parked.has(nodeId))
+          // A node parked a microtask ago may still be in flight until its start settles; it stays
+          // parked and is retried on the next fold or at the end of the pass.
+          const retry = admissionOrder.filter((nodeId) => parked.has(nodeId) && !inFlight.has(nodeId))
           for (const nodeId of retry) parked.delete(nodeId)
           launch(retry)
         }
