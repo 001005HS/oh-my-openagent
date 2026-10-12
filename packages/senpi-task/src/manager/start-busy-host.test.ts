@@ -5,7 +5,6 @@ import type { ManagedStartSpec } from "./types"
 import { RunnerError } from "../runners/in-process/runner-error"
 import { bounded } from "../lifecycle/__fixtures__/live-parent-clock"
 import { FakeRunner, baseSpec, cleanupProjects, makeManager, settings } from "./__fixtures__/manager-fakes"
-import { START_REPORT_WINDOW_MS } from "./manager"
 
 afterEach(cleanupProjects)
 
@@ -121,24 +120,25 @@ describe("task start against a busy host (#10042)", () => {
     expect(next.queue_position).toBeUndefined()
   })
 
-  test("#given a team member start #when the task host is slow past the report window #then the member start is still awaited, because a member must be live to be addressable", async () => {
+  test("#given a start still waiting on the host #when the caller awaits whenLaunched #then it settles only once the child is admitted and resident", async () => {
     // given
     const held = new BusyHostRunner()
     const h = makeManager({ inProcess: held })
-    let returned = false
-    const starting = h.manager.start(baseSpec({ run_in_background: true, team_role: "member", team_member_name: "m1", team_run_id: "run-1" }))
-      .then((result) => { returned = true; return result })
+    const started = await bounded(h.manager.start(baseSpec({ run_in_background: true })))
+    if (started.kind !== "started") throw new Error("fixture did not start")
+    expect(started.starting).toBe(true)
+    const whenLaunched = h.manager.whenLaunched?.bind(h.manager)
+    if (whenLaunched === undefined) throw new Error("the manager exposes no whenLaunched")
+    let launched = false
+    const settled = whenLaunched(started.task_id).then(() => { launched = true })
 
-    // when: a timer armed after the report window expires after it (timers fire in expiry order)
-    await new Promise((resolve) => setTimeout(resolve, START_REPORT_WINDOW_MS + 50))
-    const returnedWhileHeld = returned
+    // when
     held.release.resolve(undefined)
-    const result = await bounded(starting)
+    await bounded(settled)
 
     // then
-    expect(returnedWhileHeld).toBe(false)
-    if (result.kind !== "started") throw new Error(`expected started, got ${result.kind}`)
-    expect(result.starting).toBeUndefined()
+    expect(launched).toBe(true)
+    expect(h.manager.getResidentHandle(started.task_id)).toBeDefined()
   })
 
   test("#given a host that answers at once #when a task starts #then the result is reported as before, not as starting", async () => {

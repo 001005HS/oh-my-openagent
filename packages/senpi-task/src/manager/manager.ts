@@ -130,7 +130,8 @@ type ReattachingTaskManager = TaskManager & {
 
 // A start the task host answers this fast (a dead host's refusal, an in-process child) is reported
 // in the tool result; a slower one returns `starting` and its outcome arrives on the record (#10042).
-// A team member is the exception: it must be live to be addressable, so its start is awaited.
+// A caller that needs the child admitted (a team member must be live to be addressable) awaits
+// whenLaunched(taskId).
 export const START_REPORT_WINDOW_MS = 250
 
 const NOOP_DESTRUCTION: DestructionPort = { destroyResidentTask: () => Promise.resolve() }
@@ -173,6 +174,7 @@ class TaskManagerImpl implements TaskManager {
   // next epoch, so the lease the live handle holds is looked up here, not on the record.
   readonly #closingRungs = new Map<string, { readonly epoch: number; readonly handle: ManagedChildHandle }>()
   readonly #waiters = new Map<string, TaskWaiter[]>()
+  readonly #launching = new Map<string, Promise<unknown>>()
   readonly #background = new Set<string>()
   readonly #evicting = new Set<string>()
   readonly #sendCounts = new Map<string, number>()
@@ -479,9 +481,11 @@ class TaskManagerImpl implements TaskManager {
 
     if (lease !== undefined) {
       const launching = this.#launch(context)
-      const reported = spec.team_role === "member"
-        ? { settled: true as const, value: await launching }
-        : await settledWithin(launching, START_REPORT_WINDOW_MS)
+      this.#launching.set(finalRecord.task_id, launching)
+      void launching.finally(() => {
+        if (this.#launching.get(finalRecord.task_id) === launching) this.#launching.delete(finalRecord.task_id)
+      }).catch(() => undefined)
+      const reported = await settledWithin(launching, START_REPORT_WINDOW_MS)
       if (!reported.settled) {
         launching.catch((error: unknown) => {
           log("senpi-task start still admitting failed", { taskId: finalRecord.task_id, error: String(error) })
@@ -763,6 +767,11 @@ class TaskManagerImpl implements TaskManager {
         void this.#steering.notifyStarted(fresh.task_id)
       },
     })
+  }
+
+  /** Settles once the task's in-flight launch has settled, admitted or refused; at once when none is in flight. */
+  whenLaunched(taskId: string): Promise<void> {
+    return (this.#launching.get(taskId) ?? Promise.resolve()).then(() => undefined, () => undefined)
   }
 
   waitFor(taskId: string, options?: { readonly signal?: AbortSignal }): Promise<TaskRecord> {
