@@ -14,6 +14,8 @@ declare const process: {
 interface FsModule {
   existsSync(path: string): boolean
   readFileSync(path: string, encoding: string): string
+  readdirSync(path: string): string[]
+  watch(path: string, listener: () => void): { close(): void }
 }
 
 interface PathModule {
@@ -24,7 +26,7 @@ interface UrlModule {
   pathToFileURL(path: string): { href: string }
 }
 
-const { existsSync, readFileSync } = process.getBuiltinModule<FsModule>("fs")
+const { existsSync, readFileSync, readdirSync, watch } = process.getBuiltinModule<FsModule>("fs")
 const { join } = process.getBuiltinModule<PathModule>("path")
 const { pathToFileURL } = process.getBuiltinModule<UrlModule>("url")
 
@@ -36,6 +38,9 @@ type MockStep =
   | { type: "text"; text: string }
   | { type: "tool_call"; name: string; arguments: Record<string, unknown>; id?: string }
   | { type: "hang" }
+  // Ends the parent's turn only once the named task's record is terminal, so a check about the child's
+  // completion does not depend on the child finishing within the parent's remaining scripted steps.
+  | { type: "await_task"; name: string; tasksDir: string; timeoutMs: number; text: string }
 
 interface MockScript {
   parentSteps: MockStep[]
@@ -156,9 +161,48 @@ function messagesContainChild(context: Context): boolean {
   return false
 }
 
+const TERMINAL_TASK_STATUSES = new Set(["completed", "error", "cancelled", "lost"])
+
+function isTaskTerminal(tasksDir: string, name: string): boolean {
+  if (!existsSync(tasksDir)) return false
+  for (const file of readdirSync(tasksDir)) {
+    if (!file.endsWith(".json")) continue
+    try {
+      const record = JSON.parse(readFileSync(join(tasksDir, file), "utf8")) as { name?: string; status?: string }
+      if (record.name === name && TERMINAL_TASK_STATUSES.has(record.status ?? "")) return true
+    } catch {
+      // A record mid-rename reads as torn JSON; the next directory event re-reads it.
+    }
+  }
+  return false
+}
+
+function awaitTerminalTask(step: { name: string; tasksDir: string; timeoutMs: number }, signal?: AbortSignal): Promise<boolean> {
+  return new Promise((resolveTerminal) => {
+    if (isTaskTerminal(step.tasksDir, step.name)) {
+      resolveTerminal(true)
+      return
+    }
+    let settled = false
+    const finish = (terminal: boolean): void => {
+      if (settled) return
+      settled = true
+      watcher.close()
+      clearTimeout(timer)
+      resolveTerminal(terminal)
+    }
+    const watcher = watch(step.tasksDir, () => {
+      if (isTaskTerminal(step.tasksDir, step.name)) finish(true)
+    })
+    const timer = setTimeout(() => finish(false), step.timeoutMs)
+    signal?.addEventListener("abort", () => finish(false))
+  })
+}
+
 function stepContent(step: MockStep, callCount: number): AssistantContent[] {
   if (step.type === "text") return [{ type: "text", text: step.text }]
   if (step.type === "hang") return [{ type: "text", text: "" }]
+  if (step.type === "await_task") return [{ type: "text", text: step.text }]
   return [{ type: "toolCall", id: step.id ?? `omo-mock-tool-${callCount}`, name: step.name, arguments: step.arguments }]
 }
 
@@ -230,6 +274,13 @@ function streamMockResponse(_model: Model<Api>, context: Context, options?: Simp
         const aborted = { ...message, stopReason: "aborted" as const }
         stream.push({ type: "error", reason: "aborted", error: aborted })
         stream.end(aborted)
+      })
+      return
+    }
+    if (step.type === "await_task") {
+      void awaitTerminalTask(step, options?.signal).then((terminal) => {
+        const text = terminal ? step.text : `${step.text} (task ${step.name} not terminal after ${step.timeoutMs}ms)`
+        emitStep(stream, { type: "text", text }, { ...message, content: [{ type: "text", text }] })
       })
       return
     }
