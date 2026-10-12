@@ -14,7 +14,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 
 import { existsSync, lstatSync, readdirSync, realpathSync } from "../fs/resilient"
 import { resolveLinkedWorktreeSource } from "./git-layout"
-import { MEMORY_ROOT_ENV_VAR } from "./layout"
+import { MEMORY_ROOT_ENV_VAR, resolveMemoryRoot } from "./layout"
 import { resolveAutoIdentity, type AutoIdentityMode, type MemoryIdentity } from "./resolve"
 
 export interface ProjectIdentity {
@@ -86,7 +86,7 @@ export function createProjectIdentityResolver(options: ProjectIdentityResolverOp
   const mode = options.autoIdentity ?? "path"
   const exists = options.exists ?? existsSync
   const homeRoot = realPathOrResolved(homedir())
-  const memoryRootReal = options.memoryRoot === undefined ? undefined : realPathOrResolved(options.memoryRoot)
+  const memoryRootReal = realPathOrResolved(options.memoryRoot ?? resolveMemoryRoot(env, sessionCwd))
   const linkedRoots = new Set<string>()
   const checkedLinks = new Set<string>()
   const byDir = new Map<string, ProjectIdentity | null>()
@@ -107,7 +107,7 @@ export function createProjectIdentityResolver(options: ProjectIdentityResolverOp
   function isTooBroadRoot(target: string): boolean {
     if (isInsideOrEqual(sessionRoot, target)) return true
     if (isInsideOrEqual(homeRoot, target)) return true
-    return memoryRootReal !== undefined && isInsideOrEqual(memoryRootReal, target)
+    return isInsideOrEqual(memoryRootReal, target)
   }
 
   function scanSessionTree(): void {

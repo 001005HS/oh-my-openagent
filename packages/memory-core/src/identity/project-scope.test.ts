@@ -144,16 +144,23 @@ describe("createProjectIdentityResolver", () => {
     expect(resolver.forPath(join(sibling, "notes.md"))).toBeUndefined()
   })
 
-  it("#given a link to the memory root's parent #when a file under it is touched #then nothing under the memory root comes into scope", () => {
-    // given
-    const { workspace, child, env } = fixture(({ child }) => [child])
-    const memoryRoot = env[MEMORY_ROOT_ENV_VAR]
-    symlinkSync(join(memoryRoot, ".."), join(workspace, "mem-parent"))
-    const resolver = createProjectIdentityResolver({ sessionCwd: workspace, env, memoryRoot })
+  it("#given a link to a directory holding the memory root #when a project with memory beside the memory root is touched through it #then it is never in scope, with or without the root passed in", () => {
+    // given - the memory root and a project with memory share one parent; the session links that parent.
+    const { workspace, sibling } = fixture(() => [])
+    const memoryRoot = join(sibling, "memory")
+    const neighbour = join(sibling, "neighbour")
+    mkdirSync(neighbour, { recursive: true })
+    const env = { [MEMORY_ROOT_ENV_VAR]: memoryRoot }
+    mkdirSync(resolveMemoryIdentity("auto", neighbour, env).paths.repo, { recursive: true })
+    symlinkSync(sibling, join(workspace, "shared"))
 
-    // when / then - the child inside the session tree still resolves; the broad link adds nothing.
-    expect(resolver.forPath(join(workspace, "mem-parent", "memory", "x.md"))).toBeUndefined()
-    expect(resolver.forPath(join(child, "src", "index.ts"))?.identity.id).toBe(resolveMemoryIdentity("auto", child, env).id)
+    // when
+    const passed = createProjectIdentityResolver({ sessionCwd: workspace, env, memoryRoot }).forPath(join(workspace, "shared", "neighbour", "a.ts"))
+    const fromEnv = createProjectIdentityResolver({ sessionCwd: workspace, env }).forPath(join(workspace, "shared", "neighbour", "a.ts"))
+
+    // then
+    expect(passed).toBeUndefined()
+    expect(fromEnv).toBeUndefined()
   })
 
   it("#given a symlink committed inside a git work tree #when a file through it is touched #then it is never followed", () => {
