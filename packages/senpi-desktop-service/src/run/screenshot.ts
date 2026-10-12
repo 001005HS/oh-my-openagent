@@ -1,5 +1,5 @@
 import type { RunScope } from "./context";
-import { type CaptureRegion, type CaptureResult, expectResult, isCaptureResult } from "./engine-results";
+import { type CaptureRegion, type CaptureResult, expectResult, isCaptureResult, isZoomResult } from "./engine-results";
 
 export interface ScreenshotOptions {
 	/** Skip displaying the capture to the model. */
@@ -53,7 +53,7 @@ export async function captureScreenshot(
 	};
 	const method = region === undefined ? "capture" : "captureRegion";
 	const params = region === undefined ? { target, caps } : { target, caps, region, frameId: options.frameId };
-	const frame = expectResult(method, await scope.call(method, params), isCaptureResult);
+	const frame = expectResult(method, await scope.call(method, params), region === undefined ? isCaptureResult : isZoomResult);
 	return displayScreenshot(scope, frame, options);
 }
 
