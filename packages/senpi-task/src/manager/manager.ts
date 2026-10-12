@@ -131,7 +131,7 @@ type ReattachingTaskManager = TaskManager & {
 // A start the task host answers this fast (a dead host's refusal, an in-process child) is reported
 // in the tool result; a slower one returns `starting` and its outcome arrives on the record (#10042).
 // A team member is the exception: it must be live to be addressable, so its start is awaited.
-const START_REPORT_WINDOW_MS = 250
+export const START_REPORT_WINDOW_MS = 250
 
 const NOOP_DESTRUCTION: DestructionPort = { destroyResidentTask: () => Promise.resolve() }
 function ownerLockPath(stateDir: string, owner: DagTaskOwnerKey): string {

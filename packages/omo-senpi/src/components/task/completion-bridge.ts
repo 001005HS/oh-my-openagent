@@ -46,7 +46,8 @@ export function createCompletionObservingStore(backing: TaskRecordStore, deps: C
         const next = mutation(fresh)
         // A fenced fail (a start the task host refused after the caller stopped waiting, #10042) ends
         // a run through mutate, not transition; the notifier's epoch fence keeps every edge exactly-once.
-        becameTerminal = (TERMINAL_STATUSES.has(next.status) && !TERMINAL_STATUSES.has(fresh.status))
+        becameTerminal = (TERMINAL_STATUSES.has(next.status) && !TERMINAL_STATUSES.has(fresh.status)
+          && next.notification.run_epoch >= fresh.notification.run_epoch)
           || (TERMINAL_STATUSES.has(next.status) && next.notification.run_epoch > fresh.notification.run_epoch)
         return next
       })

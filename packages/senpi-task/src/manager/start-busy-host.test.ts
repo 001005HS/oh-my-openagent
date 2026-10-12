@@ -5,6 +5,7 @@ import type { ManagedStartSpec } from "./types"
 import { RunnerError } from "../runners/in-process/runner-error"
 import { bounded } from "../lifecycle/__fixtures__/live-parent-clock"
 import { FakeRunner, baseSpec, cleanupProjects, makeManager, settings } from "./__fixtures__/manager-fakes"
+import { START_REPORT_WINDOW_MS } from "./manager"
 
 afterEach(cleanupProjects)
 
@@ -128,8 +129,8 @@ describe("task start against a busy host (#10042)", () => {
     const starting = h.manager.start(baseSpec({ run_in_background: true, team_role: "member", team_member_name: "m1", team_run_id: "run-1" }))
       .then((result) => { returned = true; return result })
 
-    // when: a timer armed after the 250 ms report window expires after it (timers fire in expiry order)
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    // when: a timer armed after the report window expires after it (timers fire in expiry order)
+    await new Promise((resolve) => setTimeout(resolve, START_REPORT_WINDOW_MS + 50))
     const returnedWhileHeld = returned
     held.release.resolve(undefined)
     const result = await bounded(starting)
