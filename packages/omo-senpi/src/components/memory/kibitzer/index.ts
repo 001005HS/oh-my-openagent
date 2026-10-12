@@ -54,7 +54,7 @@ export interface KibitzerCompositionOptions {
   /** Shared with recall so the sidecar's `memory` tool reads the corpus the candidates came from. */
   readonly corpusCache?: RecallCorpusCache
   /** The child projects a session touched (#10044): their notes join the sidecar's memory tool, their nudges name a readable path. */
-  readonly projectScope?: Pick<ProjectMemoryScope, "recallDocuments" | "sourceFor">
+  readonly projectScope?: Pick<ProjectMemoryScope, "recallCorpora" | "sourceFor">
   readonly coordinator?: IdleInjectionCoordinator
   readonly sendMessage: KibitzerDeliveryOptions["sendMessage"]
   readonly appendEntry: (customType: string, data?: unknown) => void
@@ -165,7 +165,7 @@ export function createKibitzerComposition(options: KibitzerCompositionOptions): 
           repo,
           cache: corpusCache,
           queryExpansion: settings.queryExpansion,
-          ...(options.projectScope === undefined ? {} : { projectDocuments: () => options.projectScope?.recallDocuments(sessionId) ?? Promise.resolve([]) }),
+          ...(options.projectScope === undefined ? {} : { projectCorpora: () => options.projectScope?.recallCorpora(sessionId) ?? Promise.resolve([]) }),
         },
         nudge: binding.nudge,
         budget: binding.budget,

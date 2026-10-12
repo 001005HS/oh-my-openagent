@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, writeFileSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
@@ -47,7 +47,7 @@ function commitNotes(repo: string, notes: Record<string, { description: string; 
 }
 
 function world(options: { recall?: boolean } = {}) {
-  const root = mkdtempSync(join(tmpdir(), "project-memory-recall-"))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "project-memory-recall-")))
   roots.push(root)
   const workspace = join(root, "workspace")
   const child = join(workspace, "billing")
@@ -80,7 +80,7 @@ function world(options: { recall?: boolean } = {}) {
     resolveContext: (sessionId) => (sessionId === SESSION ? own : undefined),
     resolveSettings: () => memorySettings(),
     env: {},
-    projectDocuments: scope.recallDocuments,
+    projectCorpora: scope.recallCorpora,
   })
   const touch = (path: string) =>
     pi.dispatch("tool_result", { type: "tool_result", toolName: "read", input: { path }, content: [] }, {
@@ -151,7 +151,7 @@ describe("project memory in Kibitzer recall (#10044)", () => {
       caps: DEFAULT_KIBITZER_TOOL_CAPS,
       budget: () => budget,
       searchedPaths: new Set(),
-      projectDocuments: () => w.scope.recallDocuments(SESSION),
+      projectCorpora: () => w.scope.recallCorpora(SESSION),
     })
 
     // when

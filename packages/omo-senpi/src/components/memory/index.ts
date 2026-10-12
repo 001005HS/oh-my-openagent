@@ -182,6 +182,7 @@ export function createMemoryComponent(options: MemoryComponentOptions = {}): Omo
           identityPaths: run.paths,
           durableRoot: run.durableRoot,
           binding,
+          projectScope: { memoryRoot, autoIdentity: sessionConfig.auto_identity },
         })
         memoryModuleSupervisor.acquire()
         pi.appendEntry(MEMORY_BINDING_CUSTOM_TYPE, binding)

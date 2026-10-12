@@ -31,6 +31,7 @@ import type { MemoryExtensionAPI } from "./capabilities"
 import type { MemoryIdentityContext } from "./context"
 import { resolveMemorySettings } from "./identity-runtime"
 import { withProjectDocuments } from "./project-memory-nudge"
+import { selectWithProjectSeats, type ProjectRecallCorpus } from "./project-recall-seats"
 import { createRecallDrain, type PendingNudgesPort } from "./recall-drain"
 import { createTranscriptMentionIndex } from "./recall-transcript-mentions"
 import {
@@ -73,8 +74,8 @@ export interface MemoryRecallWiringOptions {
   readonly env: Record<string, string | undefined>
   readonly createRepo?: (context: MemoryIdentityContext) => GitMemoryRepo
   readonly corpusCache?: RecallCorpusCache
-  /** Notes of the child projects this session touched, under `@project/` paths (#10044). */
-  readonly projectDocuments?: (sessionId: string) => Promise<readonly RecallDocument[]>
+  /** Each child project this session touched, its notes under `@project/` paths (#10044); ranked apart from the bound memory. */
+  readonly projectCorpora?: (sessionId: string) => Promise<readonly ProjectRecallCorpus[]>
   readonly ledgerFor?: (context: MemoryIdentityContext) => RecallLedger
   readonly pendingFor?: (context: MemoryIdentityContext) => PendingNudgesPort
   readonly drainQueued?: (sessionId: string, context: MemoryIdentityContext) => RecallNudge[]
@@ -169,9 +170,9 @@ export function createMemoryRecallWiring(options: MemoryRecallWiringOptions): Me
 
     const repo = createRepo(context)
     const own = await corpusCache.load(repo)
-    const projectDocuments = await options.projectDocuments?.(session.id) ?? []
-    const corpus = { ...own, documents: withProjectDocuments(own.documents, projectDocuments) }
-    if (corpus.documents.length === 0) return undefined
+    const projects = await options.projectCorpora?.(session.id) ?? []
+    const allDocuments = withProjectDocuments(own.documents, projects.length === 0 ? [] : projectDocumentsOf(projects))
+    if (allDocuments.length === 0) return undefined
 
     // Raw entries include tool calls/results that the judge's text-only window omits. The index
     // scans the bounded window per entry and caches by entry id, so a trigger costs only the new
@@ -179,16 +180,17 @@ export function createMemoryRecallWiring(options: MemoryRecallWiringOptions): Me
     const excludePaths = transcriptMentions.excludedPaths({
       sessionId: session.id,
       entries: session.entries,
-      documents: corpus.documents,
+      documents: allDocuments,
     })
 
     const ledger = ledgerFor(context)
     const surfaced = await ledger.surfacedPaths(session.id)
-    const candidates = selectRecallCandidates(corpus.documents, queries, {
-      maxItems: recall.max_items,
-      surfaced,
-      excludePaths,
-    })
+    const candidates = selectWithProjectSeats(own.documents, projects, recall.max_items, (documents, extraQueries) =>
+      selectRecallCandidates(documents, [...queries, ...extraQueries], {
+        maxItems: recall.max_items,
+        surfaced,
+        excludePaths,
+      }))
     if (candidates.length === 0) return undefined
     return {
       sessionId: session.id,
@@ -231,6 +233,17 @@ export function createMemoryRecallWiring(options: MemoryRecallWiringOptions): Me
       }
     },
   }
+}
+
+const projectDocumentLists = new WeakMap<readonly ProjectRecallCorpus[], readonly RecallDocument[]>()
+
+// One stable array per corpora list, for the transcript-mention index keyed on the document array.
+function projectDocumentsOf(projects: readonly ProjectRecallCorpus[]): readonly RecallDocument[] {
+  const cached = projectDocumentLists.get(projects)
+  if (cached !== undefined) return cached
+  const documents = projects.flatMap((project) => project.documents)
+  projectDocumentLists.set(projects, documents)
+  return documents
 }
 
 function defaultCreateRepo(context: MemoryIdentityContext): GitMemoryRepo {

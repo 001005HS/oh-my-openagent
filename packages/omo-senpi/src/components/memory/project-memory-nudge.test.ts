@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, writeFileSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
@@ -44,7 +44,7 @@ interface World {
 }
 
 function world(childNotes: Record<string, string> = { "reference/deploy.md": "how the child deploys" }): World {
-  const root = mkdtempSync(join(tmpdir(), "project-memory-nudge-"))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "project-memory-nudge-")))
   roots.push(root)
   const workspace = join(root, "workspace")
   const child = join(workspace, "child")
