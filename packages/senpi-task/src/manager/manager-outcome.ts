@@ -6,6 +6,7 @@ import type { ManagedChildHandle } from "./child-handle"
 import type { ForgetOptions } from "./types"
 import { terminalFailureMessage } from "./credential-failure"
 import { nowIso } from "./manager-helpers"
+import { withUnreachedSteeringNotice } from "../state/queued-steering"
 import { createProvisionalExitTracker, type ExitConfirmationSchedule } from "./provisional-exit"
 
 export type ManagedOutcome = Awaited<ReturnType<ManagedChildHandle["waitForOutcome"]>>
@@ -119,6 +120,27 @@ export function createOutcomeTracker(ports: OutcomeTrackerPorts): OutcomeTracker
   // settled: the residency is released through forget() and every waiter receives a synthesized
   // error terminal naming the failure, so waitFor resolves and a DAG node folds as failed/retryable
   // instead of pinning its dependents forever. The on-disk record stays non-terminal by necessity.
+  // A run that finishes while sends it acknowledged as queued are still waiting (a respawned child
+  // can finish its turn before the queue drains) must not strand them silently: the result says
+  // they may not have arrived and how to resend, and the queue is cleared so no later revival
+  // replays them on top of a result the parent already has.
+  function releaseUnreachedSteering(taskId: string, epoch: number): void {
+    let unreached = 0
+    ports.store.mutate(taskId, (fresh) => {
+      const queue = fresh.pending_steering ?? []
+      const kept = queue.filter((entry) => entry.workpool !== undefined)
+      unreached = queue.length - kept.length
+      if (unreached === 0 || fresh.notification.run_epoch !== epoch) return fresh
+      const { pending_steering: _unreached, ...rest } = fresh
+      return {
+        ...rest,
+        ...(kept.length === 0 ? {} : { pending_steering: kept }),
+        error_message: withUnreachedSteeringNotice(undefined, unreached),
+      }
+    })
+    if (unreached > 0) ports.store.appendEvent(taskId, { type: "steer_dropped", payload: { count: unreached, reason: "target_finished" } })
+  }
+
   function persistTerminal(taskId: string, owned: TaskRecord, timestamp: string, transition: TaskTransition): void {
     try {
       ports.store.transition(taskId, transition)
@@ -238,6 +260,7 @@ export function createOutcomeTracker(ports: OutcomeTrackerPorts): OutcomeTracker
         if (settling !== undefined) await settling
         const runStatsField = runStats === undefined ? {} : { run_stats: runStats }
         if (outcome.status === "completed" && outcome.finalResponse.length > 0) {
+          releaseUnreachedSteering(taskId, epoch)
           persistTerminal(taskId, owned, timestamp, { type: "complete", timestamp, final_response: outcome.finalResponse, ...runStatsField })
         } else if (outcome.status === "completed") {
           // A clean runner exit is not evidence that the child actually started. A session with

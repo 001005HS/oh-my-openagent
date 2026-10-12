@@ -13,6 +13,11 @@ export type StartCause = {
 }
 
 const TIMEOUT_PREFIX = "Timeout waiting for response to "
+
+/** The RPC client's own deadline: the peer accepted the connection and never answered the request. */
+export function isRpcResponseTimeout(error: unknown): error is Error {
+  return error instanceof Error && error.message.startsWith(TIMEOUT_PREFIX)
+}
 const TIMED_OUT_COMMANDS = new Set(["prompt", "switch_session", "open_session", "get_entries", "steer", "follow_up"])
 const ERROR_CODE_SHAPE = /^[a-z][a-z0-9_]{0,47}$/
 const TRANSPORT_LOSS_CODES = new Set(["rpc_transport_gone", "session_detached", "transport_recovery_expired"])

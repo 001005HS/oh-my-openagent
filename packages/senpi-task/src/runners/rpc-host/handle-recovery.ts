@@ -1,3 +1,4 @@
+import { isRpcResponseTimeout } from "../../manager/start-failure-cause"
 import type { HostSessionIdentity, HostSessionPort } from "./handle-port"
 import { recoverLostTransport, type HostShardEvents } from "./handle-reattach"
 import {
@@ -141,7 +142,7 @@ export function createHandleRecovery(host: HandleRecoveryHost): HandleRecovery {
       .catch((error: unknown) => {
         log("senpi-task host session reattach continuation failed", { taskId: host.taskId, error: String(error) })
         if (isTransportLossError(error) || isTransportRecoveryExpired(error)
-          || (error instanceof Error && error.message.startsWith("Timeout waiting for response to "))) {
+          || isRpcResponseTimeout(error)) {
           if (host.alive() && !host.stopRequested()) host.park("daemon_unavailable")
         } else host.continuationFailed(error)
       })

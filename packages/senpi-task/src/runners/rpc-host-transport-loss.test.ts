@@ -92,12 +92,18 @@ function parkedFor(parent: ParentSession, taskId: string): boolean {
     && (record.status === "running" || record.status === "pending")
 }
 
-/** The plain notice a child ends with once live-parent recovery runs out: a reason and an action, no transport jargon. */
-function expectRecoveryNotice(record: TaskRecord): void {
+/**
+ * The one result a child ends with once live-parent recovery runs out: a reason and an action, no
+ * transport jargon, delivered to the parent exactly once, with the stop recorded as confirmed or not.
+ */
+function expectRecoveryNotice(lane: Lane, record: TaskRecord, confirmedStop: boolean): void {
   expect(record.status).toBe("error")
   expect(record.failure_kind).toBe("suspended_unresumable")
   expect(record.error_message).toContain("Retry")
   expect(record.error_message).not.toContain("transport lost")
+  const results = lane.live.messages.filter((message) => JSON.stringify(message).includes(`id:${record.task_id} `))
+  expect(results).toHaveLength(1)
+  expect(record.fallback_closing_child !== undefined).toBe(!confirmedStop)
 }
 
 describe("a child whose host transport drops", () => {
@@ -156,19 +162,59 @@ describe("a child whose host transport drops", () => {
     await live.until(() => parent.store.load(first.task_id)?.revival_deferred_reason === "capacity")
     world.host.completeTurn(routingOf(world, second), "second done")
     expect((await settled(parent, second.task_id)).status).toBe("completed")
+    const steered = world.host.waitForCommand("steer")
     live.advance(5_000)
     await live.until(() => parent.store.load(first.task_id)?.residency_state === "resident"
       && parent.store.load(first.task_id)?.suspension_reason === undefined)
     expect(parent.store.load(first.task_id)?.host_session?.session_path).toBe(first.host_session?.session_path)
+
+    // then the message acknowledged as queued reaches the respawned child before its run ends
+    expect(JSON.stringify(await steered)).toContain("still there?")
+    await live.until(() => (parent.store.load(first.task_id)?.pending_steering?.length ?? 0) === 0)
     world.host.completeTurn(routingOf(world, first), "finished after the respawn")
     const done = await settled(parent, first.task_id)
     expect(done.status).toBe("completed")
     expect(done.final_response).toBe("finished after the respawn")
+    expect(done.error_message).toBeUndefined()
+  })
+
+  test("#given a message queued for a parked child #when the respawned run finishes before that message is acknowledged #then the result keeps the answer, says the message may not have arrived and how to resend it, and nothing stays queued", async () => {
+    // given
+    const { world, parent, clock, live } = await laneOf(1)
+    await parent.startChildren(1)
+    const child = recordAt(parent, 0)
+    world.host.withholdReply("open_session")
+    const reopenAsked = world.host.waitForCommand("open_session")
+    world.host.cutConnections()
+    await reopenAsked
+    world.host.allowReply("open_session")
+    clock.expire()
+    await live.until(() => parkedFor(parent, child.task_id))
+    const sent = await runTaskSend(parent.manager, { to: child.task_id, message: "one more thing" }, parent.sessionId)
+    expect(sent.details).toMatchObject({ kind: "queued" })
+
+    // when - the respawned child gets the message but the run ends before the host acknowledges it
+    world.host.withholdReply("steer")
+    const steered = world.host.waitForCommand("steer")
+    live.advance(5_000)
+    await steered
+    world.host.completeTurn(routingOf(world, child), "done before the message landed")
+
+    // then
+    const done = await settled(parent, child.task_id)
+    expect(done.status).toBe("completed")
+    expect(done.final_response).toBe("done before the message landed")
+    expect(done.error_message).toContain("may not have reached it")
+    expect(done.error_message).toContain("task_send")
+    expect(done.pending_steering).toBeUndefined()
+    await live.until(() => live.messages.some((message) => JSON.stringify(message).includes("may not have reached it")))
+    world.host.allowReply("steer")
   })
 
   test("#given several children on one host #when the host crashes, comes back, and never accepts the continuation #then each parks with its lease released, nothing reports reattached, and after the recovery budget each ends with one plain notice", async () => {
     // given
-    const { world, parent, clock, live, outcomes } = await laneOf(3, {}, [0])
+    const lane = await laneOf(3, {}, [0])
+    const { world, parent, clock, live, outcomes } = lane
     await parent.startChildren(3)
     const children = [0, 1, 2].map((index) => recordAt(parent, index))
     world.host.withholdReply("prompt")
@@ -191,7 +237,7 @@ describe("a child whose host transport drops", () => {
     live.advance(CLOSE_DEADLINE_MS)
 
     // then
-    for (const child of children) expectRecoveryNotice(await settled(parent, child.task_id))
+    for (const child of children) expectRecoveryNotice(lane, await settled(parent, child.task_id), false)
     // The last slot frees on the store write that follows the final terminal transition.
     await live.until(() => concurrencyOf(parent).getCount(HOST_CHILD_MODEL) === 0)
   })
@@ -216,7 +262,8 @@ describe("a child whose host transport drops", () => {
 
   test("#given a child that started a long-running process #when its parked recovery runs out and its host answers again #then its session is closed on the host and the process is gone", async () => {
     // given
-    const { world, parent, clock, live } = await laneOf(1, { sessionProcesses: true })
+    const lane = await laneOf(1, { sessionProcesses: true })
+    const { world, parent, clock, live } = lane
     await parent.startChildren(1)
     const child = recordAt(parent, 0)
     const session = world.host.sessions().find((candidate) => candidate.sessionPath === child.host_session?.session_path)
@@ -234,7 +281,7 @@ describe("a child whose host transport drops", () => {
     world.host.allowReply("open_session")
     const closed = world.host.waitForCommand("close_session")
     live.advance(LIVE_PARENT_SUSPENSION_BUDGET_MS + 1)
-    expectRecoveryNotice(await settled(parent, child.task_id))
+    expectRecoveryNotice(lane, await settled(parent, child.task_id), true)
     world.host.cutConnections()
     await closed
 
@@ -289,7 +336,13 @@ describe("a child whose host transport drops", () => {
     clock.expire()
     expect(parent.store.load(pending.task_id)?.status).toBe("running")
     expect(concurrencyOf(parent).leaseState(pending.task_id, started?.notification.run_epoch ?? -1)).toBe("held")
-    expect(concurrencyOf(parent).getCount(HOST_CHILD_MODEL)).toBeLessThanOrEqual(2)
+    // The second slot is the live-parent revival's reservation for the first parked child, which is
+    // being respawned (claimed resident, cause still recorded) and has no run lease until it attaches;
+    // the other stays parked behind it.
+    expect(concurrencyOf(parent).getCount(HOST_CHILD_MODEL)).toBe(2)
+    const [revived, waiting] = [first, second].map((child) => parent.store.load(child.task_id))
+    expect([revived?.residency_state, revived?.suspension_reason]).toEqual(["resident", "daemon_unavailable"])
+    expect([waiting?.residency_state, waiting?.suspension_reason]).toEqual(["rpc_detached", "daemon_unavailable"])
   })
 })
 

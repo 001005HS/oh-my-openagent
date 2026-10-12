@@ -84,7 +84,9 @@ function finalResponseForNotification(record: TaskRecord, stateDir: string | und
   const tail = entries.length === 0 ? undefined : renderTranscript(entries, { mode: "tail", tailLines: 60 }).text
   const source = record.failure_kind === "suspended_unresumable"
     ? [record.error_message, tail, record.final_response].filter(Boolean).join("\n\n")
-    : record.final_response ?? record.error_message ?? ""
+    : record.status === "completed" && record.final_response !== undefined && record.error_message !== undefined
+      ? [record.final_response, record.error_message].join("\n\n")
+      : record.final_response ?? record.error_message ?? ""
   if (source.length <= FINAL_RESPONSE_TRANSPORT_LIMIT) return { text: source }
   if (stateDir === undefined) return { text: source.slice(0, FINAL_RESPONSE_TRANSPORT_LIMIT) }
 

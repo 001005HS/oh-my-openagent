@@ -8,6 +8,11 @@ export function withDroppedSteeringNotice(message: string | undefined, count: nu
   const notice = `${count} queued message${count === 1 ? " was" : "s were"} not delivered. Resend ${count === 1 ? "it" : "them"} to a new task.`
   return message?.endsWith(notice) === true ? message : [message, notice].filter(Boolean).join("\n")
 }
+export function withUnreachedSteeringNotice(message: string | undefined, count: number): string | undefined {
+  if (count === 0) return message
+  const notice = `${count} message${count === 1 ? "" : "s"} sent while the task was recovering may not have reached it before it finished. Send ${count === 1 ? "it" : "them"} again with task_send if ${count === 1 ? "it still applies" : "they still apply"}.`
+  return message?.endsWith(notice) === true ? message : [message, notice].filter(Boolean).join("\n")
+}
 /** A terminal turn's later queued continuation owes its own terminal result when its target ends. */
 export function endDroppedSteering(record: TaskRecord, timestamp: string, count: number): TaskRecord {
   const error_message = withDroppedSteeringNotice(
