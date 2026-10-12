@@ -4,7 +4,7 @@ import type { ManagedChildHandle } from "./child-handle"
 import type { ManagedStartSpec } from "./types"
 import { RunnerError } from "../runners/in-process/runner-error"
 import { bounded } from "../lifecycle/__fixtures__/live-parent-clock"
-import { FakeRunner, baseSpec, cleanupProjects, makeManager } from "./__fixtures__/manager-fakes"
+import { FakeRunner, baseSpec, cleanupProjects, makeManager, settings } from "./__fixtures__/manager-fakes"
 
 afterEach(cleanupProjects)
 
@@ -21,6 +21,8 @@ class BusyHostRunner extends FakeRunner {
     })
   }
 }
+
+const oneLane = () => settings({ default_concurrency: 1, global_concurrency: 0 })
 
 const hostBusy = () => new RunnerError({
   kind: "host_unavailable",
@@ -49,7 +51,7 @@ describe("task start against a busy host (#10042)", () => {
   test("#given a start still waiting on the host #when the host refuses it #then the record fails with the host's reason and waiters settle", async () => {
     // given
     const held = new BusyHostRunner()
-    const h = makeManager({ inProcess: held })
+    const h = makeManager({ inProcess: held, config: oneLane() })
     const started = await bounded(h.manager.start(baseSpec({ run_in_background: true })))
     if (started.kind !== "started") throw new Error("fixture did not start")
     const failed = Promise.withResolvers<void>()
@@ -69,6 +71,10 @@ describe("task start against a busy host (#10042)", () => {
     const record = await bounded(waited)
     expect(record.status).toBe("error")
     expect(record.failure_kind).toBe("host_unavailable")
+    // The same host refuses the next start too: reaching the runner at all (not a queue) proves the
+    // failed start gave its lane slot back.
+    const next = await bounded(h.manager.start(baseSpec({ run_in_background: true })))
+    expect(next.kind).toBe("start_failed")
   })
 
   test("#given a start still waiting on the host #when the host admits it late #then the child runs and completes normally", async () => {
@@ -93,10 +99,10 @@ describe("task start against a busy host (#10042)", () => {
     expect(record.final_response).toBe("DONE")
   })
 
-  test("#given a start still waiting on the host #when the parent cancels it (a foreground abort) #then a late admission never revives the cancelled task", async () => {
+  test("#given a start still waiting on the host #when the parent cancels it (a foreground abort) #then a late admission is discarded and the lane slot is free", async () => {
     // given
     const held = new BusyHostRunner()
-    const h = makeManager({ inProcess: held })
+    const h = makeManager({ inProcess: held, config: oneLane() })
     const started = await bounded(h.manager.start(baseSpec({ run_in_background: false })))
     if (started.kind !== "started") throw new Error("fixture did not start")
 
@@ -104,10 +110,34 @@ describe("task start against a busy host (#10042)", () => {
     const cancelled = await h.manager.cancelTask(started.task_id, "parent turn aborted")
     held.release.resolve(undefined)
     await bounded(held.admitted.promise)
+    const next = await bounded(h.manager.start(baseSpec({ run_in_background: true })))
 
     // then
     expect(cancelled.kind).toBe("cancelled")
     expect(h.store.load(started.task_id)?.status).toBe("cancelled")
+    expect(held.handles.get(started.task_id)?.subscribeCount()).toBe(0)
+    if (next.kind !== "started") throw new Error("second start did not start")
+    expect(next.queue_position).toBeUndefined()
+  })
+
+  test("#given a team member start #when the task host is slow past the report window #then the member start is still awaited, because a member must be live to be addressable", async () => {
+    // given
+    const held = new BusyHostRunner()
+    const h = makeManager({ inProcess: held })
+    let returned = false
+    const starting = h.manager.start(baseSpec({ run_in_background: true, team_role: "member", team_member_name: "m1", team_run_id: "run-1" }))
+      .then((result) => { returned = true; return result })
+
+    // when: a timer armed after the 250 ms report window expires after it (timers fire in expiry order)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const returnedWhileHeld = returned
+    held.release.resolve(undefined)
+    const result = await bounded(starting)
+
+    // then
+    expect(returnedWhileHeld).toBe(false)
+    if (result.kind !== "started") throw new Error(`expected started, got ${result.kind}`)
+    expect(result.starting).toBeUndefined()
   })
 
   test("#given a host that answers at once #when a task starts #then the result is reported as before, not as starting", async () => {

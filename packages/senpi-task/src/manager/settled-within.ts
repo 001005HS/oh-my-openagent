@@ -7,7 +7,7 @@ export async function settledWithin<T>(work: Promise<T>, windowMs: number, signa
   let timer: ReturnType<typeof setTimeout> | undefined
   let onAbort: (() => void) | undefined
   const stopped = new Promise<SettledWithin<T>>((resolve) => {
-    timer = setTimeout(() => resolve({ settled: false, cause: "elapsed" }), windowMs)
+    if (Number.isFinite(windowMs)) timer = setTimeout(() => resolve({ settled: false, cause: "elapsed" }), windowMs)
     if (signal === undefined) return
     onAbort = () => resolve({ settled: false, cause: "aborted" })
     signal.addEventListener("abort", onAbort, { once: true })

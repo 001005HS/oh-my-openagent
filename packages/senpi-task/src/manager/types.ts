@@ -156,6 +156,7 @@ export type StartResult =
       readonly effective_model?: ResolvedModelRecord
       readonly queue_position?: number
       // The task host has not admitted the child yet; its start outcome arrives on the record (#10042).
+      // run_epoch and resolved_model are then the plan's: a start-time fallback may still move both.
       readonly starting?: true
       readonly name_warning?: string
       // Where an isolated child is working. The merge outcome is NOT here: it does not exist yet.

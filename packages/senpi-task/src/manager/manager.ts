@@ -78,10 +78,6 @@ import type {
 } from "./types"
 import { describeStartFailure } from "./start-failure"
 import { settledWithin } from "./settled-within"
-
-// A start the task host answers this fast (a dead host's refusal, an in-process child) is reported
-// in the tool result; a slower one returns `starting` and its outcome arrives on the record (#10042).
-const START_REPORT_WINDOW_MS = 250
 import { failStrandedHandoff, type StrandedHandoffFailure } from "./fail-stranded-handoff"
 
 type PreparedIsolation = Extract<IsolationPreparation, { readonly ok: true }>
@@ -131,6 +127,11 @@ type ReattachingTaskManager = TaskManager & {
   waiterKeyCount(): number
   releasedKeyCount(): number
 }
+
+// A start the task host answers this fast (a dead host's refusal, an in-process child) is reported
+// in the tool result; a slower one returns `starting` and its outcome arrives on the record (#10042).
+// A team member is the exception: it must be live to be addressable, so its start is awaited.
+const START_REPORT_WINDOW_MS = 250
 
 const NOOP_DESTRUCTION: DestructionPort = { destroyResidentTask: () => Promise.resolve() }
 function ownerLockPath(stateDir: string, owner: DagTaskOwnerKey): string {
@@ -478,7 +479,9 @@ class TaskManagerImpl implements TaskManager {
 
     if (lease !== undefined) {
       const launching = this.#launch(context)
-      const reported = await settledWithin(launching, START_REPORT_WINDOW_MS)
+      const reported = spec.team_role === "member"
+        ? { settled: true as const, value: await launching }
+        : await settledWithin(launching, START_REPORT_WINDOW_MS)
       if (!reported.settled) {
         launching.catch((error: unknown) => {
           log("senpi-task start still admitting failed", { taskId: finalRecord.task_id, error: String(error) })
