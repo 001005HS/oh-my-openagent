@@ -22,6 +22,20 @@ class BusyHostRunner extends FakeRunner {
   }
 }
 
+// The first start is admitted at once and holds the only lane; every later start waits on the host.
+class LaneThenBusyRunner extends FakeRunner {
+  readonly release = Promise.withResolvers<void>()
+  readonly heldStart = Promise.withResolvers<string>()
+  #starts = 0
+
+  override start(spec: ManagedStartSpec): Promise<ManagedChildHandle> {
+    this.#starts += 1
+    if (this.#starts === 1) return super.start(spec)
+    this.heldStart.resolve(spec.taskId)
+    return this.release.promise.then(() => super.start(spec))
+  }
+}
+
 const oneLane = () => settings({ default_concurrency: 1, global_concurrency: 0 })
 
 const hostBusy = () => new RunnerError({
@@ -158,14 +172,50 @@ describe("task start against a busy host (#10042)", () => {
 
     // when
     const sent = await bounded(h.manager.sendToTask({ idOrName: started.task_id, message: "steer while starting", deliverAs: "steer" }))
+    expect(sent.kind).toBe("queued")
     held.release.resolve(undefined)
     await bounded(delivered.promise)
 
     // then
-    expect(sent.kind).toBe("queued")
     const handle = held.handles.get(started.task_id)
     if (handle === undefined) throw new Error("admitted child has no handle")
-    expect([...handle.steerCalls, ...handle.followUpCalls].join("\n")).toContain("steer while starting")
+    expect(handle.steerCalls).toEqual(["steer while starting"])
+    expect(handle.followUpCalls).toEqual([])
+  })
+
+  test("#given a task that waited for a lane and is now waiting on the host #when the parent steers it #then the message is queued and delivered once the child is admitted", async () => {
+    // given
+    const runner = new LaneThenBusyRunner()
+    const h = makeManager({ inProcess: runner, config: oneLane() })
+    const first = await bounded(h.manager.start(baseSpec({ run_in_background: true })))
+    if (first.kind !== "started") throw new Error("first task did not start")
+    const second = await bounded(h.manager.start(baseSpec({ run_in_background: true })))
+    if (second.kind !== "started") throw new Error("second task did not start")
+    expect(second.queue_position).toBeDefined()
+    const firstHandle = runner.handles.get(first.task_id)
+    if (firstHandle === undefined) throw new Error("first child has no handle")
+    await bounded(firstHandle.waitForSubscription())
+    const delivered = Promise.withResolvers<void>()
+    const append = h.store.appendEvent.bind(h.store)
+    spyOn(h.store, "appendEvent").mockImplementation((id, event) => {
+      const result = append(id, event)
+      if (id === second.task_id && event.type === "steered") delivered.resolve()
+      return result
+    })
+    firstHandle.settle({ status: "completed", finalResponse: "DONE" })
+    await bounded(runner.heldStart.promise)
+
+    // when
+    const sent = await bounded(h.manager.sendToTask({ idOrName: second.task_id, message: "steer while starting", deliverAs: "steer" }))
+    expect(sent.kind).toBe("queued")
+    runner.release.resolve()
+    await bounded(delivered.promise)
+
+    // then
+    const handle = runner.handles.get(second.task_id)
+    if (handle === undefined) throw new Error("admitted child has no handle")
+    expect(handle.steerCalls).toEqual(["steer while starting"])
+    expect(handle.followUpCalls).toEqual([])
   })
 
   test("#given a host that answers at once #when a task starts #then the result is reported as before, not as starting", async () => {

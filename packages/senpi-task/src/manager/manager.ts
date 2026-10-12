@@ -481,11 +481,7 @@ class TaskManagerImpl implements TaskManager {
     }
 
     if (lease !== undefined) {
-      const launching = this.#launch(context)
-      this.#launching.set(finalRecord.task_id, launching)
-      void launching.finally(() => {
-        if (this.#launching.get(finalRecord.task_id) === launching) this.#launching.delete(finalRecord.task_id)
-      }).catch(() => undefined)
+      const launching = this.#trackLaunch(finalRecord.task_id, context)
       const reported = await settledWithin(launching, START_REPORT_WINDOW_MS)
       if (!reported.settled) {
         launching.catch((error: unknown) => {
@@ -533,7 +529,11 @@ class TaskManagerImpl implements TaskManager {
     }
 
     const position = this.#concurrency.enqueue(plan.model, finalRecord.task_id, finalRecord.notification.run_epoch, () => {
-      void this.#launch(context)
+      // A lane-queued first launch is still a first launch while its host admits it (#10042): a send in
+      // that window queues behind the launch instead of reviving a session that does not exist yet.
+      void this.#trackLaunch(finalRecord.task_id, context).catch((error: unknown) => {
+        log("senpi-task queued launch failed", { taskId: finalRecord.task_id, error: String(error) })
+      })
     })
     return {
       kind: "started",
@@ -814,6 +814,15 @@ class TaskManagerImpl implements TaskManager {
 
   // Test-only observability for proving the release guard never grows unboundedly across revives.
   releasedKeyCount(): number { return this.#released.size }
+
+  #trackLaunch(taskId: string, context: LaunchContext): Promise<LaunchOutcome> {
+    const launching = this.#launch(context)
+    this.#launching.set(taskId, launching)
+    void launching.finally(() => {
+      if (this.#launching.get(taskId) === launching) this.#launching.delete(taskId)
+    }).catch(() => undefined)
+    return launching
+  }
 
   async #launch(initial: LaunchContext): Promise<LaunchOutcome> {
     const startResult = this.#options.store.transition(initial.record.task_id, { type: "start", timestamp: nowIso(this.#now) })
