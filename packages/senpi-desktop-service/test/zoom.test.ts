@@ -68,9 +68,10 @@ describe("native region zoom", { timeout: 30_000 }, () => {
 	});
 
 
-	it("refuses a zoom reply that omits the full input frame instead of guessing it from the crop", async () => {
+	it.each(["FAKE_ENGINE_ZOOM_NO_FRAME", "FAKE_ENGINE_ZOOM_NO_REGION"])(
+		"refuses a zoom reply that omits the full input frame or its region (%s)", async (broken) => {
 		// Given
-		const { run } = await open({ FAKE_ENGINE_ZOOM_NO_FRAME: "1" });
+		const { run } = await open({ [broken]: "1" });
 		// When
 		const zoom = run(`const full = await desktop.screenshot({ silent: true }); return await desktop.zoom({ x: 0, y: 0, width: 8, height: 6 }, { frameId: full.frameId });`);
 		// Then

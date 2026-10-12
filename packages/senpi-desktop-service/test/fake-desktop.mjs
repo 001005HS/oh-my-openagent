@@ -1,5 +1,5 @@
 // Scripted desktop methods for test/fake-engine.mjs, enabled by FAKE_ENGINE_DESKTOP=1.
-// FAKE_ENGINE_ZOOM_NO_FRAME=1 answers captureRegion without the full input frame (a broken engine).
+// FAKE_ENGINE_ZOOM_NO_FRAME=1 answers captureRegion without the full input frame, FAKE_ENGINE_ZOOM_NO_REGION=1 without its region (broken engines).
 // FAKE_ENGINE_PRE_ZOOM=1 acts like an engine that predates region zoom: no coordinate fields, no captureRegion.
 // One display, two windows ("101" Code, "202" Mail). Pointer input needs a prior capture of the same
 // target (InvalidCoordinateFrame otherwise), as the real engine's per-target frames do.
@@ -157,6 +157,10 @@ export function createDesktop() {
 					sourceWidth: region.width * 2, sourceHeight: region.height * 2 };
 				if (process.env.FAKE_ENGINE_ZOOM_NO_FRAME === "1") {
 					const { coordinateWidth, coordinateHeight, ...broken } = zoomed;
+					return { result: broken };
+				}
+				if (process.env.FAKE_ENGINE_ZOOM_NO_REGION === "1") {
+					const { region: _region, ...broken } = zoomed;
 					return { result: broken };
 				}
 				return { result: zoomed };
