@@ -119,7 +119,7 @@ function continuationHint(record: TaskRecord): string {
 
 function completionDetailLines(detail: CompletionDetails, width: number | undefined): readonly string[] {
   if (detail.recovery_failure_notice !== undefined)
-    return [detail.recovery_failure_notice]
+    return [detail.final_response]
   const identity = joinRendererTokens([
     detail.resumed_turn === true ? "task completion (resumed turn)" : "task completion",
     `name:${normalizeRendererText(detail.name)}`,
