@@ -178,6 +178,11 @@ export const isCaptureResult: Guard<CaptureResult> = (value): value is CaptureRe
 	matches(value, CAPTURE) && (value.region == null ||
 		matches(value.region, { x: "number", y: "number", width: "number", height: "number" }));
 
+/** A zoom reply must carry the full input frame and its region; only plain captures may predate them. */
+export const isZoomResult: Guard<CaptureResult> = (value): value is CaptureResult =>
+	isCaptureResult(value) && typeof value.coordinateWidth === "number" &&
+	typeof value.coordinateHeight === "number" && value.region != null;
+
 export const isText: Guard<{ readonly text: string }> = (value): value is { readonly text: string } =>
 	isRecord(value) && typeof value.text === "string";
 

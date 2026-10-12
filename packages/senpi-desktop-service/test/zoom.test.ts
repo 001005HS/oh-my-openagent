@@ -68,6 +68,15 @@ describe("native region zoom", { timeout: 30_000 }, () => {
 	});
 
 
+	it("refuses a zoom reply that omits the full input frame instead of guessing it from the crop", async () => {
+		// Given
+		const { run } = await open({ FAKE_ENGINE_ZOOM_NO_FRAME: "1" });
+		// When
+		const zoom = run(`const full = await desktop.screenshot({ silent: true }); return await desktop.zoom({ x: 0, y: 0, width: 8, height: 6 }, { frameId: full.frameId });`);
+		// Then
+		await expect(zoom).rejects.toThrow("malformed captureRegion result");
+	});
+
 	it("keeps screenshots working against an engine that predates zoom, and reports zoom as unavailable", async () => {
 		// Given: an engine on the same ABI without coordinate fields or captureRegion
 		const { log, run } = await open({ FAKE_ENGINE_PRE_ZOOM: "1" });
@@ -76,7 +85,7 @@ describe("native region zoom", { timeout: 30_000 }, () => {
 		const zoom = run(`const full = await desktop.screenshot({ silent: true }); return await desktop.zoom({ x: 0, y: 0, width: 8, height: 6 });`);
 		// Then: the full frame falls back to the capture's own size
 		expect(shot.returnValue).toMatchObject({ width: 1280, height: 800, coordinateWidth: 1280, coordinateHeight: 800 });
-		await expect(zoom).rejects.toThrow();
+		await expect(zoom).rejects.toThrow("Method not found");
 		expect(log.requests.filter((request) => request.method === "captureRegion")).toHaveLength(1);
 	});
 });
