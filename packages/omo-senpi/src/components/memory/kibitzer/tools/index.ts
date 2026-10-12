@@ -3,7 +3,7 @@
 // output caps, the per-wake budget, and redaction. The registry is normative - exactly these five
 // names, no aliases, no write capability of any kind.
 
-import type { GitMemoryRepo, RecallCorpusCache, RecallNudge } from "@oh-my-opencode/memory-core"
+import type { GitMemoryRepo, RecallCorpusCache, RecallDocument, RecallNudge } from "@oh-my-opencode/memory-core"
 
 import type { WakeToolBudget } from "./budget"
 import { resolveKibitzerToolCaps, type KibitzerToolCaps } from "./caps"
@@ -40,6 +40,7 @@ export interface KibitzerSidecarToolsInput {
     readonly cache?: RecallCorpusCache
     /** `memory.recall.query_expansion`; the search accepts no added terms when omitted. */
     readonly queryExpansion?: boolean
+    readonly projectDocuments?: () => Promise<readonly RecallDocument[]>
   }
   readonly nudge: {
     readonly offered: ReadonlySet<string>
@@ -73,6 +74,7 @@ export function createKibitzerSidecarTools(input: KibitzerSidecarToolsInput): Ki
       budget: input.budget,
       searchedPaths,
       queryExpansion: input.memory.queryExpansion === true,
+      ...(input.memory.projectDocuments === undefined ? {} : { projectDocuments: input.memory.projectDocuments }),
     }),
     createKibitzerSidecarNudgeTool({ ...input.nudge, searched: searchedPaths, budget: input.budget }),
   ]

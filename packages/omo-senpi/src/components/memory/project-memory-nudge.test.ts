@@ -8,7 +8,7 @@ import { MEMORY_ROOT_ENV_VAR, buildIdentityPaths, resolveMemoryIdentity } from "
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import { createMemoryIdentityContext, type MemoryIdentityContext } from "./context"
 import { isGrantedProjectMemoryRead } from "./project-memory-grants"
-import { PROJECT_MEMORY_NUDGE_MAX_NOTES, registerProjectMemoryNudge, type ProjectMemorySwitches } from "./project-memory-nudge"
+import { PROJECT_MEMORY_NUDGE_MAX_NOTES, createProjectMemoryScope, type ProjectMemorySwitches } from "./project-memory-nudge"
 import { rmSyncEfaultTolerant } from "./teardown.test-support"
 
 const roots: string[] = []
@@ -62,12 +62,12 @@ function world(childNotes: Record<string, string> = { "reference/deploy.md": "ho
   })
   const pi = new FakeExtensionAPI()
   const switches = { current: { nudge: true, recall: true } }
-  registerProjectMemoryNudge(pi, {
+  createProjectMemoryScope({
     resolveContext: () => own,
     switches: () => switches.current,
     fallbackCwd: () => workspace,
     env,
-  })
+  }).register(pi)
   return { pi, own, workspace, child, other, childRepo, switches }
 }
 

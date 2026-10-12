@@ -10,8 +10,6 @@ import type { MemoryCommandIdentity, MemoryCommandSettings } from "./commands/ty
 import type { DreamTriggerWiring } from "./dream-trigger"
 import type { MemoryFactsWiring } from "./facts-wiring"
 import { registerMemoryGuard } from "./guard"
-import { registerProjectMemoryNudge } from "./project-memory-nudge"
-import { resolveMemorySettings } from "./reflection-settings"
 import type { MemoryIdentityRuntime } from "./identity-runtime"
 import type { MemoryJournalWiring } from "./journal-wiring"
 import type { createMemoryNudgeWiring } from "./nudge-wiring"
@@ -163,12 +161,6 @@ export function registerMemoryStatic(input: {
       },
       resolveSessionId: () => activeSession.current,
     },
-  })
-  registerProjectMemoryNudge(pi, {
-    resolveContext,
-    switches: () => resolveMemorySettings(options.loadConfig({ cwd: options.cwd() }).config.memory).project_scope,
-    fallbackCwd: options.cwd,
-    env: options.env,
   })
   registerMemoryGuard(pi, ctx, {
     getContext: (eventContext) => {

@@ -2,10 +2,14 @@ import {
   GitMemoryRepo,
   RecallCorpusCache,
   createProjectIdentityResolver,
+  parseProjectMemoryPath,
+  qualifyProjectDocuments,
   type ProjectIdentity,
   type ProjectIdentityResolver,
   type RecallDocument,
 } from "@oh-my-opencode/memory-core"
+
+import { join } from "node:path"
 
 import type { SenpiExtensionAPI } from "../../extension/types"
 import type { MemoryIdentityContext } from "./context"
@@ -13,6 +17,7 @@ import { grantProjectMemoryRead } from "./project-memory-grants"
 import { isRecord, sessionIdFrom } from "./wiring-context"
 
 export const PROJECT_MEMORY_NUDGE_MAX_NOTES = 30
+export const PROJECT_MEMORY_RECALL_MAX_PROJECTS = 3
 
 const TOUCH_TOOL_NAMES = new Set(["read", "edit", "write"])
 const PATH_ARGUMENT_NAMES = ["path", "file_path", "filePath"] as const
@@ -34,13 +39,17 @@ interface SessionScope {
   readonly resolver: ProjectIdentityResolver
   readonly nudged: Set<string>
   readonly touched: ProjectIdentity[]
+  merged?: { readonly key: string; readonly documents: readonly RecallDocument[] }
 }
 
 export interface ProjectMemoryScope {
+  register(pi: SenpiExtensionAPI): void
   touchedMostRecentFirst(sessionId: string): readonly ProjectIdentity[]
+  recallDocuments(sessionId: string): Promise<readonly RecallDocument[]>
+  sourceFor(sessionId: string, path: string): string | undefined
 }
 
-export function registerProjectMemoryNudge(pi: SenpiExtensionAPI, options: ProjectMemoryNudgeOptions): ProjectMemoryScope {
+export function createProjectMemoryScope(options: ProjectMemoryNudgeOptions): ProjectMemoryScope {
   const sessions = new Map<string, SessionScope>()
   const corpora = new Map<string, RecallCorpusCache>()
 
@@ -58,16 +67,42 @@ export function registerProjectMemoryNudge(pi: SenpiExtensionAPI, options: Proje
     return created
   }
 
-  async function notesOf(project: ProjectIdentity): Promise<readonly RecallDocument[]> {
+  async function corpusOf(project: ProjectIdentity) {
     const dir = project.identity.paths.repo
     let cache = corpora.get(dir)
     if (cache === undefined) {
       cache = new RecallCorpusCache()
       corpora.set(dir, cache)
     }
-    return (await cache.load(new GitMemoryRepo({ dir, agentId: project.identity.id }))).documents
+    return await cache.load(new GitMemoryRepo({ dir, agentId: project.identity.id }))
   }
 
+  async function notesOf(project: ProjectIdentity): Promise<readonly RecallDocument[]> {
+    return (await corpusOf(project)).documents
+  }
+
+  // The merged array keeps its identity while no project's HEAD moved, so the recall memos keyed
+  // on a document array (BM25 index, CJK share) are built once per revision, not once per prompt.
+  async function recallDocuments(sessionId: string): Promise<readonly RecallDocument[]> {
+    const scope = sessions.get(sessionId)
+    if (scope === undefined || !options.switches().recall) return []
+    const projects = scope.touched.slice(0, PROJECT_MEMORY_RECALL_MAX_PROJECTS)
+    const corpora = await Promise.all(projects.map(async (project) => ({ project, corpus: await corpusOf(project) })))
+    const key = corpora.map(({ project, corpus }) => `${project.identity.id}@${corpus.revision ?? "none"}`).join(",")
+    if (scope.merged?.key === key) return scope.merged.documents
+    const documents = corpora.flatMap(({ project, corpus }) => qualifyProjectDocuments(project.identity.id, corpus.documents))
+    scope.merged = { key, documents }
+    return documents
+  }
+
+  function sourceFor(sessionId: string, path: string): string | undefined {
+    const parsed = parseProjectMemoryPath(path)
+    if (parsed === undefined) return undefined
+    const project = sessions.get(sessionId)?.touched.find((entry) => entry.identity.id === parsed.identityId)
+    return project === undefined ? undefined : join(project.identity.paths.repo, parsed.path)
+  }
+
+  function register(pi: SenpiExtensionAPI): void {
   pi.on("tool_result", async (payload: unknown, eventCtx: unknown) => {
     const touchedPath = touchedPathOf(payload)
     if (touchedPath === undefined) return undefined
@@ -104,8 +139,14 @@ export function registerProjectMemoryNudge(pi: SenpiExtensionAPI, options: Proje
     const sessionId = sessionIdFrom(eventCtx)
     if (sessionId !== undefined) sessions.delete(sessionId)
   })
+  }
 
-  return { touchedMostRecentFirst: (sessionId) => sessions.get(sessionId)?.touched ?? [] }
+  return {
+    register,
+    touchedMostRecentFirst: (sessionId) => sessions.get(sessionId)?.touched ?? [],
+    recallDocuments,
+    sourceFor,
+  }
 }
 
 export function formatProjectMemoryNudge(project: ProjectIdentity, notes: readonly RecallDocument[]): string {
@@ -133,3 +174,19 @@ function touchedPathOf(payload: unknown): string | undefined {
   return undefined
 }
 
+const mergedCorpora = new WeakMap<readonly RecallDocument[], WeakMap<readonly RecallDocument[], readonly RecallDocument[]>>()
+
+/** The session's own notes plus its touched projects', as one stable array per pair of inputs (the recall memos are keyed on it). */
+export function withProjectDocuments(own: readonly RecallDocument[], projects: readonly RecallDocument[]): readonly RecallDocument[] {
+  if (projects.length === 0) return own
+  let byProjects = mergedCorpora.get(own)
+  if (byProjects === undefined) {
+    byProjects = new WeakMap()
+    mergedCorpora.set(own, byProjects)
+  }
+  const cached = byProjects.get(projects)
+  if (cached !== undefined) return cached
+  const merged = [...own, ...projects]
+  byProjects.set(projects, merged)
+  return merged
+}

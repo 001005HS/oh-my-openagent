@@ -18,6 +18,7 @@ import {
   GitMemoryRepo,
   PendingNudges,
   RecallCorpusCache,
+  type RecallDocument,
   RecallLedger,
   planRecallQueries,
   selectRecallCandidates,
@@ -29,6 +30,7 @@ import type { ComponentLogger } from "../../extension/types"
 import type { MemoryExtensionAPI } from "./capabilities"
 import type { MemoryIdentityContext } from "./context"
 import { resolveMemorySettings } from "./identity-runtime"
+import { withProjectDocuments } from "./project-memory-nudge"
 import { createRecallDrain, type PendingNudgesPort } from "./recall-drain"
 import { createTranscriptMentionIndex } from "./recall-transcript-mentions"
 import {
@@ -71,6 +73,8 @@ export interface MemoryRecallWiringOptions {
   readonly env: Record<string, string | undefined>
   readonly createRepo?: (context: MemoryIdentityContext) => GitMemoryRepo
   readonly corpusCache?: RecallCorpusCache
+  /** Notes of the child projects this session touched, under `@project/` paths (#10044). */
+  readonly projectDocuments?: (sessionId: string) => Promise<readonly RecallDocument[]>
   readonly ledgerFor?: (context: MemoryIdentityContext) => RecallLedger
   readonly pendingFor?: (context: MemoryIdentityContext) => PendingNudgesPort
   readonly drainQueued?: (sessionId: string, context: MemoryIdentityContext) => RecallNudge[]
@@ -164,7 +168,9 @@ export function createMemoryRecallWiring(options: MemoryRecallWiringOptions): Me
     if (queries.length === 0) return undefined
 
     const repo = createRepo(context)
-    const corpus = await corpusCache.load(repo)
+    const own = await corpusCache.load(repo)
+    const projectDocuments = await options.projectDocuments?.(session.id) ?? []
+    const corpus = { ...own, documents: withProjectDocuments(own.documents, projectDocuments) }
     if (corpus.documents.length === 0) return undefined
 
     // Raw entries include tool calls/results that the judge's text-only window omits. The index

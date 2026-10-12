@@ -1,4 +1,5 @@
 import {
+  type RecallDocument,
   RecallCorpusCache,
   selectRecallCandidates,
   type GitMemoryRepo,
@@ -9,6 +10,7 @@ import { Type, type Static } from "typebox"
 
 import type { WakeToolBudget } from "./budget"
 import type { KibitzerToolCaps } from "./caps"
+import { withProjectDocuments } from "../../project-memory-nudge"
 import { normalizeMemoryPath } from "./path-safety"
 import { boundedText, budgeted, okJson, okText, rejection, type KibitzerSidecarTool } from "./result"
 
@@ -52,6 +54,8 @@ export interface KibitzerMemoryToolInput {
   readonly searchedPaths: Set<string>
   /** `memory.recall.query_expansion`. Off, the tool has the two-field search it always had. */
   readonly queryExpansion?: boolean
+  /** The session's touched projects' notes (#10044), searched and read beside the bound memory. */
+  readonly projectDocuments?: () => Promise<readonly RecallDocument[]>
 }
 
 export interface KibitzerMemorySearchHit {
@@ -65,7 +69,11 @@ export function createKibitzerMemoryTool(
 ): KibitzerSidecarTool<typeof KibitzerMemoryParams | typeof KibitzerMemoryExpansionParams> {
   const queryExpansion = input.queryExpansion === true
   const cache = input.cache ?? new RecallCorpusCache()
-  const corpus = (): Promise<RecallCorpus> => cache.load(input.repo)
+  const corpus = async (): Promise<RecallCorpus> => {
+    const own = await cache.load(input.repo)
+    const projects = await input.projectDocuments?.() ?? []
+    return { ...own, documents: withProjectDocuments(own.documents, projects) }
+  }
   return {
     name: KIBITZER_MEMORY_TOOL_NAME,
     label: "Kibitzer memory",
