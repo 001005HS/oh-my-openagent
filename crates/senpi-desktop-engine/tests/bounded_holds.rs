@@ -54,6 +54,19 @@ fn bounded_holds_are_exec_requests_with_one_audit_and_unit_results() {
 }
 
 #[test]
+fn eof_cancels_a_long_hold_before_draining_waiters() {
+    // Given an admitted session and a 100-second hold request.
+    let mut engine = open();
+    engine.request(4, "holdKeys",
+        json!({"target": "101", "keys": ["shift"], "duration": 100}));
+    // When the connection reaches EOF, before or after delivery starts.
+    let messages = engine.drain();
+    // Then EOF cancels rather than waiting for the duration/request deadline.
+    let reply = messages.iter().find(|message| message["id"] == 4).unwrap();
+    assert_eq!(reply["error"]["data"]["code"], "Cancelled");
+}
+
+#[test]
 fn invalid_bounded_duration_is_invalid_params_before_mutation_over_stdio() {
     let mut engine = open();
     for (id, method, params) in [

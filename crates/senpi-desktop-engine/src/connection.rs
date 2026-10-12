@@ -146,9 +146,6 @@ fn handle_line(
     if request.id.is_none() && method != Method::Cancel {
         return None;
     }
-    if method == Method::SessionClose {
-        in_flight.cancel_all();
-    }
     match (engine.route(method, request.params), request.id) {
         (Route::Cancel(target), id) => {
             in_flight.cancel(&target);
@@ -157,6 +154,9 @@ fn handle_line(
         (Route::Immediate(_) | Route::Session(_), None) => None,
         (Route::Immediate(outcome), Some(id)) => Some(reply_line(id, outcome)),
         (Route::Session(call), Some(id)) => {
+            if matches!(&call, SessionCall::Close) {
+                in_flight.cancel_all();
+            }
             let Some(cancel) = in_flight.register(&id) else {
                 let duplicate = Failure::InvalidRequest("a request with this id is already in flight".into());
                 return Some(failure_line(Some(id), duplicate));
