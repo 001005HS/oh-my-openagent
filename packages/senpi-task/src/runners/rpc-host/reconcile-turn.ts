@@ -1,4 +1,4 @@
-import { sessionTailFinishedText, sessionTailNeedsContinuation, sessionTailReconciliation } from "../../manager/interrupted-turn"
+import { sessionTailReconciliation } from "../../manager/interrupted-turn"
 import type { TaskRecord } from "../../state"
 import type { RunnerOutcome } from "../in-process/child-handle"
 import { reattachContinuationPrompt } from "./reattach"
@@ -52,7 +52,7 @@ export async function reconcileHostTurn(
     port.settle({ status: "cancelled" })
     return "idle_queued"
   }
-  const tail = await sessionTailReconciliation(sessionPath)
+  const tail = await sessionTailReconciliation(sessionPath, [reattachContinuationPrompt(), HOST_RESPAWN_CONTINUATION])
   const outcome = receipt?.state === "done" ? receipt.outcome : undefined
   const deadline = outcome?.kind === "deadline"
     ? outcome.deadline ?? {}
@@ -86,7 +86,7 @@ export async function reconcileHostTurn(
       throw new Error(`Unexpected input outcome: ${exhaustive}`)
     }
   }
-  const finished = await sessionTailFinishedText(sessionPath)
+  const finished = tail?.finishedText
   if (finished !== undefined || outcome?.kind === "completed") {
     // Pre-S1 test transcripts need not carry ids; real message entries always do.
     const entryId = tail?.entryId
@@ -97,8 +97,7 @@ export async function reconcileHostTurn(
     return "adopted"
   }
   if (receipt?.state === "applied" || (tail === undefined && port.interruptedWithoutTranscript === true) ||
-    (await sessionTailNeedsContinuation(sessionPath, reattachContinuationPrompt()) &&
-      await sessionTailNeedsContinuation(sessionPath, HOST_RESPAWN_CONTINUATION))) {
+    tail?.needsContinuation === true) {
     if (tail?.lastMessage.stopReason === "aborted") port.notify({ kind: "interrupted", reason: INTERRUPTED_REASON })
     return "continued"
   }

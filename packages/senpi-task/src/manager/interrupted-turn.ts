@@ -15,10 +15,7 @@ export async function sessionTailNeedsContinuation(
   ignoredUserPrompt?: string,
 ): Promise<boolean> {
   try {
-    const tail = await readConversationTail(sessionPath)
-    if (tail === undefined) return false
-    if (tail.turnUser !== undefined && isIgnoredUserPrompt(tail.turnUser, ignoredUserPrompt)) return false
-    return messageNeedsContinuation(tail.lastMessage)
+    return tailNeedsContinuation(await readConversationTail(sessionPath), ignoredUserPrompt)
   } catch {
     return false
   }
@@ -31,18 +28,27 @@ export async function sessionTailNeedsContinuation(
  */
 export async function sessionTailFinishedText(sessionPath: string): Promise<string | undefined> {
   try {
-    const tail = await readConversationTail(sessionPath)
-    const last = tail?.lastMessage
-    if (last === undefined || last.role !== "assistant" || last.stopReason !== "stop") return undefined
-    if (messageNeedsContinuation(last) || !Array.isArray(last.content)) return undefined
-    const text = last.content
-      .filter((part): part is { type: "text"; text: string } => isRecord(part) && part.type === "text" && typeof part.text === "string")
-      .map((part) => part.text)
-      .join("")
-    return text.length > 0 ? text : undefined
+    return tailFinishedText(await readConversationTail(sessionPath))
   } catch {
     return undefined
   }
+}
+
+function tailNeedsContinuation(tail: ConversationTail | undefined, ignoredUserPrompt?: string): boolean {
+  if (tail === undefined) return false
+  if (tail.turnUser !== undefined && isIgnoredUserPrompt(tail.turnUser, ignoredUserPrompt)) return false
+  return messageNeedsContinuation(tail.lastMessage)
+}
+
+function tailFinishedText(tail: ConversationTail | undefined): string | undefined {
+  const last = tail?.lastMessage
+  if (last === undefined || last.role !== "assistant" || last.stopReason !== "stop") return undefined
+  if (messageNeedsContinuation(last) || !Array.isArray(last.content)) return undefined
+  const text = last.content
+    .filter((part): part is { type: "text"; text: string } => isRecord(part) && part.type === "text" && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("")
+  return text.length > 0 ? text : undefined
 }
 
 function messageNeedsContinuation(message: SessionMessageEntry["message"]): boolean {
@@ -67,9 +73,18 @@ export type ConversationTail = {
   readonly endEvent?: Record<string, unknown>
 }
 
-export async function sessionTailReconciliation(sessionPath: string): Promise<ConversationTail | undefined> {
+export async function sessionTailReconciliation(
+  sessionPath: string,
+  ignoredUserPrompts: readonly string[] = [],
+): Promise<(ConversationTail & { readonly finishedText?: string; readonly needsContinuation: boolean }) | undefined> {
   try {
-    return await readConversationTail(sessionPath)
+    const tail = await readConversationTail(sessionPath)
+    if (tail === undefined) return undefined
+    return {
+      ...tail,
+      finishedText: tailFinishedText(tail),
+      needsContinuation: tailNeedsContinuation(tail) && ignoredUserPrompts.every(prompt => tailNeedsContinuation(tail, prompt)),
+    }
   } catch (error) {
     if (error instanceof SyntaxError || (error instanceof Error && "code" in error && error.code === "ENOENT")) return undefined
     throw error

@@ -1,6 +1,7 @@
 import { appendFileSync, writeFileSync } from "node:fs"
+import * as fsPromises from "node:fs/promises"
 import { join } from "node:path"
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { cleanupProjects, tempProject } from "../../manager/__fixtures__/manager-fakes"
 import type { RunnerOutcome } from "../in-process/child-handle"
 import { reconcileHostTurn, type InputEffectStatus, type ReconciledTurnNotice } from "./reconcile-turn"
@@ -89,6 +90,25 @@ describe("host turn reconciliation authority", () => {
     expect(await reconcileHostTurn(f.port, {}, f.path)).toBe("failed")
     expect(f.outcomes[0]).toMatchObject({ status: "error", failure: { kind: "child-turn-failed" } })
     expect(f.notices).toEqual([])
+  })
+
+  test("the adopted answer and entry identity come from one transcript snapshot", async () => {
+    const f = scenario()
+    const originalOpen = fsPromises.open
+    let reads = 0
+    const opened = spyOn(fsPromises, "open").mockImplementation((...args: Parameters<typeof fsPromises.open>) => {
+      if (args[0] === f.path && ++reads === 2) appendFileSync(f.path, `\n${JSON.stringify({
+        type: "message", id: "answer-2", message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "LATER ANSWER" }] },
+      })}\n`)
+      return originalOpen(...args)
+    })
+    try {
+      expect(await reconcileHostTurn(f.port, {}, f.path)).toBe("adopted")
+      expect(f.notices).toEqual([{ kind: "adopted", entryId: "answer-1" }])
+      expect(f.outcomes).toEqual([{ status: "completed", finalResponse: "ANSWER" }])
+    } finally {
+      opened.mockRestore()
+    }
   })
   for (const receipt of [undefined, { state: "done", outcome: { kind: "deadline", deadline: { kind: "inactivity" } } } satisfies InputEffectStatus]) {
     test(`deadline ${receipt === undefined ? "transcript" : "receipt"} stops without adopting partial text`, async () => {
