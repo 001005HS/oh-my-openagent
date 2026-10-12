@@ -11,9 +11,12 @@ use client::Helper;
 use parking_lot::Mutex;
 use senpi_desktop_core::error::{CoreResult, DesktopError};
 use std::sync::Arc;
+use std::path::Path;
+use std::time::Duration;
 use wire::Command;
 
 pub(crate) use helper::run;
+pub(crate) use coordination::path as lock_path;
 
 /// WindowServer identity shared by every session's private overlay helper.
 pub(crate) const WINDOW_TITLE: &str = "senpi-desktop-cursor-overlay";
@@ -82,7 +85,13 @@ impl Overlay {
 
     /// One hide/ACK scope for every capture route, including fallbacks.
     /// If hiding fails, kill/reap first; refuse pixels if a window remains.
-    pub fn capture<T>(&self, capture: impl FnOnce() -> CoreResult<T>) -> CoreResult<T> {
+    pub fn capture<T>(
+        &self,
+        path: &Path,
+        window_info: impl FnOnce() -> CoreResult<Vec<focus::WindowInfo>>,
+        wait: impl FnMut(Duration),
+        capture: impl FnOnce() -> CoreResult<T>,
+    ) -> CoreResult<T> {
         let token = {
             let mut state = self.0.lock();
             state.token = state.token.wrapping_add(1);
@@ -107,12 +116,15 @@ impl Overlay {
         };
         // A title check alone races another session's next render. The
         // exclusive scope prevents every helper from appearing during pixels.
-        let _capture = coordination::open(&coordination::path())
-            .and_then(coordination::capture)
+        let _capture = coordination::open(path)
+            .and_then(|file| coordination::capture(file, wait))
             .map_err(|error| {
-                DesktopError::capture_failed(format!("cursor exclusion unavailable; capture refused: {error}"))
+                DesktopError::capture_failed(format!(
+                    "cursor exclusion lock '{}' unavailable; capture refused: {error}",
+                    path.display()
+                ))
             })?;
-        let windows = focus::window_info().map_err(|error| {
+        let windows = window_info().map_err(|error| {
             DesktopError::capture_failed(format!("cannot verify cursor exclusion: {error}"))
         })?;
         ensure_hidden(&windows)?;
@@ -152,3 +164,12 @@ mod motion_tests;
 #[cfg(test)]
 #[path = "visibility_tests.rs"]
 mod visibility_tests;
+
+#[cfg(test)]
+mod orchestration_tests;
+
+#[cfg(test)]
+mod capture_budget_tests;
+
+#[cfg(test)]
+mod account_path_tests;

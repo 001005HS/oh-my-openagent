@@ -83,11 +83,11 @@ fn two_helpers_cannot_render_inside_another_sessions_capture() {
     let mut second = Helper::start(&path);
     first.command("show", "visible");
     second.command("show", "visible");
-    assert!(capture(open(&path).unwrap()).is_err());
+    assert!(capture(open(&path).unwrap(), std::thread::sleep).is_err());
     first.command("hide", "hidden");
-    assert!(capture(open(&path).unwrap()).is_err(), "the other session is still visible");
+    assert!(capture(open(&path).unwrap(), std::thread::sleep).is_err(), "the other session is still visible");
     second.command("hide", "hidden");
-    let pixels = capture(open(&path).unwrap()).unwrap();
+    let pixels = capture(open(&path).unwrap(), std::thread::sleep).unwrap();
     first.command("show", "hidden");
     second.command("show", "hidden");
     drop(pixels);

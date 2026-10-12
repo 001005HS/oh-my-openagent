@@ -26,7 +26,7 @@ pub(crate) fn run() -> io::Result<()> {
         ));
     }
     let panel = CursorPanel::new(mtm);
-    let lock_path = coordination::path();
+    let lock_path = coordination::path()?;
     let mut visible = None;
     let (send, receive) = sync_channel(1);
     let reader = std::thread::Builder::new()

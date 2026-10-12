@@ -74,7 +74,10 @@ impl MacCapture {
         self.require_permission()?;
         // The guard surrounds the entire dispatch, not just screencapture.
         // It therefore also covers multi-display batches and CoreGraphics.
-        self.overlay.capture(|| match target {
+        let lock_path = crate::overlay::lock_path().map_err(|error| {
+            DesktopError::capture_failed(format!("cannot locate account cursor-exclusion cache: {error}"))
+        })?;
+        self.overlay.capture(&lock_path, crate::focus::window_info, std::thread::sleep, || match target {
             Target::Desktop | Target::Display(_) => {
                 let selector = target.display_selector().unwrap_or_else(|| self.selector.clone());
                 self.capture_desktop(&selector)
