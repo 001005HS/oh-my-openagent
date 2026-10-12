@@ -12,7 +12,7 @@ The public API is the barrel at `src/index.ts`.
 | Directory | Responsibility |
 |-----------|----------------|
 | `src/git/` | Git command boundary, clean-tree checks, commits, merges, remotes, and typed git errors. |
-| `src/identity/` | Memory identity resolution and the `OMO_MEMORY_HOME` directory layout. |
+| `src/identity/` | Memory identity resolution and the `OMO_MEMORY_HOME` directory layout. `git-layout.ts` backs the opt-in `autoIdentity: "git"` mode: it maps a linked worktree's cwd onto the main working tree by reading the `.git` pointer and `commondir` (no `git` spawn), and any unreadable or malformed pointer keeps the path-derived id. |
 | `src/locks/` | Cross-process locks for memory writes, reflection scheduling, and transcript state, plus the machine-wide `recall-wake` counting lease (`recall-wake.slot-<n>.lock` per slot, FIFO `recall-wake.tickets/`, default 2 slots, proof-based stale recovery for slots and tickets alike, bounded wait ending in `RecallWakeBusyError`). |
 | `src/memfs/` | Memory-path validation, markdown frontmatter parsing, and hook-script installation. |
 | `src/tools/` | `memory` and `memory_apply_patch` operations, patch parsing, typed tool errors, and auto-commit behavior. `leaked-arguments.ts` splits an argument that leaked into its sibling (`summary</description>\n<parameter name="file_text">body`) back apart before `runMemoryTool` validates. |
