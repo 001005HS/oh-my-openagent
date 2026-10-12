@@ -145,5 +145,7 @@ function recordCompletionNudge(directory: string, sessionState: SessionState, wo
     ...(sessionState.boulderCompletionNudgedAt ?? {}),
     [workId]: Date.now(),
   }
-  markCompletionNudged(directory, workId)
+  if (!markCompletionNudged(directory, workId)) {
+    log(`[${HOOK_NAME}] Boulder completion nudge marker not persisted; a restart may repeat the nudge`, { workId })
+  }
 }
