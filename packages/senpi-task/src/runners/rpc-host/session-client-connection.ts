@@ -258,8 +258,8 @@ export class HostSessionClient {
     }
   }
 
-  // Notify the handle first: it must mark itself parked/exited before stop's disconnect callback,
-  // or deliberate release would look like a transport loss and start a replacement attach.
+  // Notify the handle first so it marks itself parked/exited before the client goes; the engine's
+  // deliberate stop() never fires onDisconnect, so this release cannot start a recovery attach.
   // Detach only this session's client; retained transcripts and sibling attach holds stay intact.
   private releaseEndedSession(): void {
     void this.detach().catch((error: unknown) => {
