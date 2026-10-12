@@ -18,6 +18,17 @@ describe("mock provider declared-tool recorder", () => {
     expect(declaredToolNames(context)).toEqual(["computer", "computer_actions"])
   })
 
+  it("#given one system message that removes and re-adds a tool #then the tool stays declared", () => {
+    expect(
+      declaredToolNames({
+        messages: [
+          { role: "system", content: "base", toolsAdded: [tool("computer"), tool("eval")] },
+          { role: "system", content: "", toolsRemoved: [tool("computer")], toolsAdded: [tool("computer")] },
+        ],
+      }),
+    ).toEqual(["eval", "computer"])
+  })
+
   it("#given a context with a direct tools list #then that list is the declaration", () => {
     expect(declaredToolNames({ tools: [tool("computer")], messages: [] })).toEqual(["computer"])
   })
@@ -29,5 +40,6 @@ describe("mock provider declared-tool recorder", () => {
   it("#given no tools list and no system message #then the declaration is unavailable, not empty", () => {
     expect(declaredToolNames({ messages: [{ role: "user", content: "hi" }] })).toBeNull()
     expect(declaredToolNames({})).toBeNull()
+    expect(declaredToolNames({ tools: null as unknown as undefined })).toBeNull()
   })
 })

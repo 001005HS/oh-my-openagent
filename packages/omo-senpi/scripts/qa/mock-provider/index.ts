@@ -187,7 +187,7 @@ let callCount = 0
  * `getCurrentTools`. `null` means the request carried no declaration source at all, which is not "no tools".
  */
 export function declaredToolNames(context: Context): string[] | null {
-  if (context.tools !== undefined) return context.tools.map((tool) => tool.name).filter((name): name is string => typeof name === "string")
+  if (Array.isArray(context.tools)) return context.tools.map((tool) => tool.name).filter((name): name is string => typeof name === "string")
   const systemMessages = (Array.isArray(context.messages) ? (context.messages as TranscriptMessage[]) : []).filter((message) => message?.role === "system")
   if (systemMessages.length === 0) return null
   const current = new Set<string>()
