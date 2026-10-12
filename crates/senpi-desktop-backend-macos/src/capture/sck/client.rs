@@ -115,9 +115,9 @@ impl HelperClient {
         let mut frames = Vec::with_capacity(requests.len());
         for expected in 0..requests.len() {
             let reply = read_header(&mut self.output, &mut self.header, deadline)?;
-            self.has_replied = true;
             match reply {
                 Reply::Error { code, error, reason } => {
+                    self.has_replied = true;
                     return Err(ClientError::Reply(match (code.as_str(), reason) {
                         ("PermissionDenied", _) => super::super::permission_denied(),
                         ("WindowNotFound", _) => DesktopError::window_not_found(error),
@@ -166,6 +166,7 @@ impl HelperClient {
                     )?;
                     frame.pid = pid.filter(|pid| *pid > 0);
                     frames.push(frame);
+                    self.has_replied = true;
                 },
             }
         }

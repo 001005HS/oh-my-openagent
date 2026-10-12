@@ -28,7 +28,7 @@ pixels(1, 1, [56, 34, 12, 255])
     let _program = ProgramGuard::new(helper);
     let requests = [target_window(42)];
     let first = SckWorker::capture(&requests);
-    assert!(matches!(first, Err(SckCaptureError::Failed(_))), "{first:?}");
+    assert!(matches!(first, Err(SckCaptureError::Start(_))), "{first:?}");
     let frames = SckWorker::capture(&requests).unwrap();
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].image.as_raw(), &[12, 34, 56, 255]);
@@ -54,4 +54,37 @@ fn oversized_dimensions_reset_the_worker_before_the_next_capture() {
     })
     pixels(1, 1, [0, 0, 0, 255])",
     );
+}
+
+#[test]
+fn an_established_worker_death_surfaces_error_and_restarts() {
+    let dir = tempfile::tempdir().unwrap();
+    let helper = fake_helper(
+        &dir,
+        &format!(
+            "{PY_PREAMBLE}
+import os, pathlib
+
+marker = pathlib.Path(__file__).with_suffix('.started')
+first_start = not marker.exists()
+marker.touch()
+read_request()
+header({{
+    'kind': 'frame', 'index': 0, 'width': 1, 'height': 1, 'byteLength': 4,
+    'bounds': {{'x': 0.0, 'y': 0.0, 'width': 1.0, 'height': 1.0}}
+}})
+pixels(1, 1, [56, 34, 12, 255])
+if first_start:
+    read_request()
+    os._exit(1)
+"
+        ),
+    );
+    let _program = ProgramGuard::new(helper);
+    let requests = [target_window(42)];
+    assert_eq!(SckWorker::capture(&requests).unwrap().len(), 1);
+    let failure = SckWorker::capture(&requests);
+    assert!(matches!(failure, Err(SckCaptureError::Failed(_))), "{failure:?}");
+    let frames = SckWorker::capture(&requests).unwrap();
+    assert_eq!(frames[0].image.as_raw(), &[12, 34, 56, 255]);
 }
