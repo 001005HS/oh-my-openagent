@@ -10,7 +10,8 @@ import type { MemoryIdentityContext } from "./context"
 // check runs on the canonical path, so a symlink committed into a granted repo cannot reach out of it.
 const grants = new WeakMap<MemoryIdentityContext, Set<string>>()
 
-const CASE_INSENSITIVE = process.platform === "darwin" || process.platform === "win32"
+// Compared case-insensitively on every platform: a `.GIT` or `System` entry in a memory repo is
+// never note content, and on a case-insensitive volume it is the real git metadata.
 const EXCLUDED_TOP_LEVEL = [".git", "system"]
 
 export function grantProjectMemoryRead(context: MemoryIdentityContext, projectRepo: string): void {
@@ -37,8 +38,7 @@ export function isGrantedProjectMemoryRead(context: MemoryIdentityContext, targe
     const rel = relative(root, resolved)
     if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) continue
     const first = rel.split(sep)[0] ?? ""
-    const top = CASE_INSENSITIVE ? first.toLowerCase() : first
-    if (EXCLUDED_TOP_LEVEL.includes(top)) continue
+    if (EXCLUDED_TOP_LEVEL.includes(first.toLowerCase())) continue
     return true
   }
   return false
