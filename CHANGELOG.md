@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Ultrawork tracks task-owned worktrees and runtime caches when they are created.** Cleanup guidance now scopes cache paths before task commands, requires path-specific todos and removal receipts, and preserves worktrees still needed by open PRs without wiping shared caches. Native full and compact directives, Codex, and OpenCode variants carry the same lifecycle; co-loaded workflows refer to it instead of repeating it. ([#9951](https://github.com/code-yeongyu/oh-my-openagent/issues/9951), [#9953](https://github.com/code-yeongyu/oh-my-openagent/pull/9953))
+
 **OpenCode requests now follow the selected model's live capabilities instead of a stale model cache.** When OpenCode passes the live model to `chat.params`, its variants, thinking support, temperature support and output limit take precedence over the cached provider list, and the SDK's `provider.info.id` provider context is accepted alongside `provider.id`; calls that carry only model IDs keep the cached and bundled fallback. Thanks to @MoerAI. ([#10001](https://github.com/code-yeongyu/oh-my-openagent/pull/10001))
 
 **`background_task.taskCleanupDelayMs` now also sets how long finished background tasks stay retrievable.** A delay longer than 30 minutes is no longer cut short; leaving it unset keeps the existing timing. Thanks to @imadal1n. ([#9984](https://github.com/code-yeongyu/oh-my-openagent/pull/9984))
