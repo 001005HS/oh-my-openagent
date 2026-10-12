@@ -561,8 +561,25 @@ Configured under `memory` in `omo.json`, with per-agent overrides under `memory.
 | -------------------- | ---------- | ------------------------------------------------------------------------------- |
 | `enabled`            | `true`     | Master switch for the whole memory component                                     |
 | `agent`              | `"auto"`   | Which agent identity owns the memory repository                                  |
+| `auto_identity`      | `"path"`   | How `agent: "auto"` picks the identity: `"path"` or `"git"` (see below)          |
 | `compile_warn_tokens`| `30000`    | Warn when the compiled memory block exceeds this many tokens                     |
 | `agents`             | `{}`       | Per-agent overrides; any block below may be overridden field by field            |
+
+#### Sharing memory across git worktrees
+
+With `agent: "auto"`, the memory identity comes from the session's directory, so by default every
+git worktree of a repository gets its own, empty memory. Set `auto_identity: "git"` to resolve a
+linked worktree onto its main checkout instead: every worktree of one clone then reads and writes
+the main checkout's memory, and a subdirectory maps onto the same subdirectory of the main checkout.
+The main checkout keeps the identity it has today, so turning this on loses nothing. Worktrees of a
+bare repository share one memory named after the repository. Directories outside git and submodules
+keep the path-derived identity, and an explicit `agent` name always wins.
+
+Put the setting in the user config (`~/.omo/omo.jsonc`). Tools such as Orca create worktrees outside
+the main checkout, where its project `.omo/omo.jsonc` is not found. Sessions that are already bound
+keep their current memory; new sessions pick up the shared one. Git records the real path of the
+main checkout, so a main checkout opened through a symlinked path resolves differently from its
+worktrees; use an explicit `agent` name in that case.
 
 #### Memory file list in the prompt
 

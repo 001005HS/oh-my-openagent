@@ -1,3 +1,7 @@
+## 2026-10-12 - Git worktrees can share the main checkout's memory (#9659)
+
+`memory.agent: "auto"` hashed the session directory, so every git worktree of a repository got its own, empty memory. The new `memory.auto_identity` key (`"path"` by default, so nothing changes unless it is set) accepts `"git"`: memory-core `identity/git-layout.ts` walks up to the nearest `.git` entry and, when it is a linked worktree's `gitdir:` pointer whose admin directory has a `commondir`, maps the session directory onto the same relative path under the main working tree (or under the common dir for a bare repository). The main checkout therefore keeps the identity it already had and every worktree joins it. A `.git` directory, a pointer without `commondir` (submodules, `--separate-git-dir`), or any unreadable or malformed file keeps the path-derived id; nothing spawns `git`. `bindSession` and the side panel pass the mode to the same resolver, and `identity-adoption.ts` is unchanged, so a session already bound to its per-worktree identity is rebound to that record rather than failing closed.
+
 ## 2026-10-11 - The control confirm drops its redundant time floor (#9967)
 
 `control-confirm.ts` no longer refuses a confirm under 3 s of budget: the service facade already throws before asking when under 8 s of run time is left, so the component check never fired in production. The near-duplicate "RPC-mode confirm frame never answered" test is removed; "a client that never answers" keeps that contract.
