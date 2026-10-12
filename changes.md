@@ -2,6 +2,12 @@
 
 OpenCode imports the public generation facade from senpi 2026.10.11, applies one documented host-tool transform, and appends explicit agent roles instead of maintaining duplicate model bodies; runtime model switches preserve task mode and Hephaestus model eligibility, with catalog-wide byte parity and mutation checks covering both construction and reconciliation.
 
+## 2026-10-12 - Session tools read legacy-storage sessions and show the real error (#5854)
+
+Thanks to @crazyrabbit0 for the fresh reproduction on 5.1.30 with OpenCode 1.19.0. A session that exists only in OpenCode's legacy JSON storage is merged into the session list, but the SQLite server answers `NotFoundError` for it. The SDK layer threw that error body unchanged, so every session tool printed `Error: [object Object]`, and a no-match `session_search` or `session_list` failed on that one session.
+
+Per-session readers (`sessionExists`, `readSessionMessages`, `readSessionTodos`, `getSessionInfo`) now treat an SDK `NotFoundError` as "not in the SDK" and read file storage, as they already did for an empty SDK result. The SDK layer throws a real `Error` that keeps the body's name and message (body as `cause`), so the global-route `NotFoundError` check still works and an error body whose message says the server is unreachable now falls back like a thrown network error. Tools describe any non-`Error` by name, message and code, falling back to JSON. `session_search` across sessions and `session_list` without a date filter skip a session that still cannot be read and name up to five of them at the end instead of failing; the date filter keeps failing on such an error.
+
 ## 2026-10-12 - Track task-owned worktrees and runtime caches at creation (#9951)
 
 Ultrawork now scopes runtime caches before task commands, registers path-specific cleanup todos at resource creation, and requires removal receipts. Native full and compact directives, Codex, and the independent OpenCode variants share the same lifecycle: stop owned processes before directory removal, preserve worktrees still needed by open PRs, and leave shared caches untouched. Loop, phase, team, and contribution workflows refer to their bundled directive instead of repeating its rules.
