@@ -1,7 +1,7 @@
 import type { ComponentContext, OmoSenpiComponent, SenpiExtensionAPI } from "../../extension/types"
 import { loadSenpiOmoConfig } from "../config-resolution"
-import { DEFAULT_MODEL_PROFILE_ID } from "./builtin-profiles"
 import { credentialRotationPolicy } from "./credential-policy"
+import { newProbeState, resolveDefaultModelProfile, type ProbeState } from "./default-profile"
 import { authFailedDetails, noticeContent } from "./notice"
 import { type AuthFailure, type ProbeRegistry, probeRequestAuth, probeRuntime, sanitizedAuthErrorDetail } from "./request-auth"
 import { resolveModelProfile, type ModelProfileResolution } from "./resolve"
@@ -159,11 +159,10 @@ async function resolveWithRequestAuth(
   agentDir: string | undefined,
   profiles: Parameters<typeof resolveModelProfile>[0]["profiles"],
   active: string,
+  state: ProbeState = newProbeState(),
 ): Promise<ProbedResolution> {
   const available = availableSelectors(registry)
-  const excludedProviders = new Set<string>()
-  const excludedSelectors = new Set<string>()
-  const failures: AuthFailure[] = []
+  const { excludedProviders, excludedSelectors, failures } = state
   const resolve = () =>
     resolveModelProfile({
       profiles,
@@ -206,8 +205,7 @@ export function createModelProfileComponent(options: ModelProfileComponentOption
 
         const config = loadConfig({ cwd: extractCwd(pi, eventCtx) }).config
         const configured = config.model_profile
-        const active =
-          configured !== undefined && configured.trim().length > 0 ? configured : DEFAULT_MODEL_PROFILE_ID
+        const explicit = configured !== undefined && configured.trim().length > 0 ? configured : undefined
 
         const registry = extractRegistry(eventCtx)
         if (registry === undefined) {
@@ -221,13 +219,11 @@ export function createModelProfileComponent(options: ModelProfileComponentOption
         }
 
         const mode = extractMode(eventCtx)
-        const { resolution, model, failures } = await resolveWithRequestAuth(
-          ctx,
-          registry,
-          extractAgentDir(eventCtx),
-          config.model_profiles,
-          active,
-        )
+        const probes = newProbeState()
+        const resolveFor = (profileId: string) =>
+          resolveWithRequestAuth(ctx, registry, extractAgentDir(eventCtx), config.model_profiles, profileId, probes)
+        const { resolution, model, failures } =
+          explicit === undefined ? await resolveDefaultModelProfile(resolveFor) : await resolveFor(explicit)
         const content = noticeContent(resolution, failures, mode)
 
         if (resolution.kind !== "resolved") {

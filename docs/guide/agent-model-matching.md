@@ -264,7 +264,7 @@ For the main agent, resolution happens once, at session start (`packages/omo-sen
 1. --model flag or scoped model    -> kept as is; the profile never runs
 2. model_profile = provider/model  -> the pin; that exact model, if the registry serves it
 3. model_profile = <profile id>    -> builtins overlaid with model_profiles; first rung the registry serves
-4. model_profile unset            -> Recommended on a fresh desktop/headless session
+4. model_profile unset            -> Daily · Normal, else the first lane that resolves (Daily · Heavy, Geeky · Normal, Geeky · Heavy)
 5. No profile candidate available  -> notice; retain Senpi's selected model
 ```
 

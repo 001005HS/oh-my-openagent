@@ -101,19 +101,36 @@ export const SCENARIOS = {
     registerProviders: ["opengateway", "kimi-coding"],
     expect: { model: "kimi-k3", provider: "kimi-coding", notice: APPLIED_TYPE, thinking: "max" },
   },
+  // Unset starts on Daily · Normal (#10029): with GLM connected beside GPT, its GLM rung wins.
   "unset-gpt-6-1-sol": {
     omoConfig: {},
     mockModels: ["mock-1", "gpt-6-sol", "gpt-6.1-sol", "glm-5.3"],
     cliModel: undefined,
     registerProviders: ["chatgpt-subscription", "zai"],
-    expect: { model: "gpt-6.1-sol", provider: "chatgpt-subscription", notice: APPLIED_TYPE, thinking: "medium" },
+    expect: { model: "glm-5.3", provider: "zai", notice: APPLIED_TYPE, thinking: "max" },
   },
   "unset-copilot-gpt-6-sol": {
     omoConfig: {},
     mockModels: ["mock-1", "gpt-6-sol", "glm-5.3"],
     cliModel: undefined,
     registerProviders: ["github-copilot", "zai"],
-    expect: { model: "gpt-6-sol", provider: "github-copilot", notice: APPLIED_TYPE, thinking: "medium" },
+    expect: { model: "glm-5.3", provider: "zai", notice: APPLIED_TYPE, thinking: "max" },
+  },
+  // No Daily lane resolves on a ChatGPT-only setup: the first lane that does, Geeky · Normal, applies.
+  "unset-chatgpt-only-geeky-normal": {
+    omoConfig: {},
+    mockModels: ["mock-1", "gpt-6.1-sol"],
+    cliModel: undefined,
+    registerProviders: ["chatgpt-subscription"],
+    expect: { model: "gpt-6.1-sol", provider: "chatgpt-subscription", notice: APPLIED_TYPE, thinking: "medium" },
+  },
+  // Recommended is an explicit choice only; selected, its ladder still applies.
+  "explicit-recommended": {
+    omoConfig: { model_profile: "recommended" },
+    mockModels: ["mock-1", "gpt-6-sol", "gpt-6.1-sol", "glm-5.3"],
+    cliModel: undefined,
+    registerProviders: ["chatgpt-subscription", "zai"],
+    expect: { model: "gpt-6.1-sol", provider: "chatgpt-subscription", notice: APPLIED_TYPE, thinking: "medium" },
   },
   "empty-registry": {
     omoConfig: { model_profile: "daily-normal" },

@@ -27,7 +27,10 @@ import type { DelegateFallbackEntry } from "@oh-my-opencode/delegate-core"
  * API/proxy lane, then Copilot and OpenCode where they serve the model. A user
  * overlay that names `openai/` is scoped to that provider.
  *
- * Unset sessions run `recommended`, which is not a lane (no family/tier): the same
+ * Unset sessions start on Daily · Normal, or on the first lane in `DEFAULT_MODEL_PROFILE_ORDER`
+ * that resolves (#10029): Daily is OmO's recommendation, so there is no separate default.
+ * `recommended` stays a builtin a user can select explicitly; it is not a lane (no
+ * family/tier) and carries the same
  * ladder senpi's `recommended-models` builtin ships (`RECOMMENDED_DEFAULT_MODELS`,
  * senpi#2074, with GPT-6.1 Sol in the GPT-6 Sol slot from senpi#2394), so the TUI and the
  * desktop start from one order. OmO carries one extra rung: `gpt-6-sol` (medium) right
@@ -43,14 +46,19 @@ export type ModelProfileTier = "normal" | "heavy"
 export type BuiltinModelProfile = {
   readonly displayName: string
   readonly description: string
-  /** Picker axes; absent on `recommended`, which is the default rather than a lane. */
+  /** Picker axes; absent on `recommended`, which is a named ladder rather than a lane. */
   readonly family?: ModelProfileFamily
   readonly tier?: ModelProfileTier
   readonly models: readonly DelegateFallbackEntry[]
 }
 
-/** Fresh-session default when `model_profile` is unset. Not written back to config. */
-export const DEFAULT_MODEL_PROFILE_ID = "recommended"
+/**
+ * Fresh-session default when `model_profile` is unset, in the order tried: the first lane that
+ * resolves on the connected providers wins; when none does, the first is reported unavailable.
+ * Not written back to config.
+ */
+export const DEFAULT_MODEL_PROFILE_ORDER = ["daily-normal", "daily-heavy", "geeky-normal", "geeky-heavy"] as const
+export const DEFAULT_MODEL_PROFILE_ID = DEFAULT_MODEL_PROFILE_ORDER[0]
 
 const CLAUDE_PROVIDERS = ["anthropic-subscription", "anthropic", "anthropic-api", "github-copilot", "opencode"] as const
 const KIMI_PROVIDERS = ["kimi-coding", "kimi-for-coding", "moonshotai", "opencode-go"] as const

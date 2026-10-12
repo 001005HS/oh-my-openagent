@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "bun:test"
 
-import { BUILTIN_MODEL_PROFILES, DEFAULT_MODEL_PROFILE_ID } from "./builtin-profiles"
+import { BUILTIN_MODEL_PROFILES, DEFAULT_MODEL_PROFILE_ID, DEFAULT_MODEL_PROFILE_ORDER } from "./builtin-profiles"
 import { KNOWN_MODELS } from "../telemetry/model-vocabulary"
 
 const LANE_IDS = ["daily-normal", "daily-heavy", "geeky-normal", "geeky-heavy"] as const
@@ -39,9 +39,11 @@ describe("BUILTIN_MODEL_PROFILES", () => {
     }
   })
 
-  it("uses recommended, which is not a lane, as the unset-config default id", () => {
-    expect(DEFAULT_MODEL_PROFILE_ID).toBe("recommended")
-    const recommended = BUILTIN_MODEL_PROFILES[DEFAULT_MODEL_PROFILE_ID]
+  it("starts unset config on Daily · Normal, then the other lanes in order; recommended is never the default (#10029)", () => {
+    expect(DEFAULT_MODEL_PROFILE_ORDER).toEqual(["daily-normal", "daily-heavy", "geeky-normal", "geeky-heavy"])
+    expect(DEFAULT_MODEL_PROFILE_ID).toBe("daily-normal")
+    expect(DEFAULT_MODEL_PROFILE_ORDER).not.toContain("recommended")
+    const recommended = BUILTIN_MODEL_PROFILES["recommended"]
     expect(recommended?.displayName).toBe("Recommended")
     expect(recommended?.family).toBeUndefined()
     expect(recommended?.tier).toBeUndefined()
