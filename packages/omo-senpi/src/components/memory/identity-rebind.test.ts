@@ -179,6 +179,35 @@ describe("memory identity with auto_identity git (#9659)", () => {
     memoryModuleSupervisor.release()
   })
 
+  test("#given auto_identity git and an explicit agent name #when a session starts in a linked worktree #then it binds the explicit identity", async () => {
+    // given
+    const { worktree } = linkedWorktree()
+    const env = { OMO_MEMORY_HOME: memoryRoot() }
+    const explicit = resolveMemoryIdentity("backend-lead", worktree, env)
+    const pi = new MemoryFakeExtensionAPI()
+    const before = memoryModuleSupervisor.refCount
+    createMemoryComponent({
+      env,
+      loadConfig: () => loadedMemoryConfig(memorySettings({ agent: "backend-lead", auto_identity: "git" })),
+      now: () => 791,
+      resolveCwd: () => worktree,
+      createRuntime: () => {
+        throw new Error("bind-only test does not create an identity runtime")
+      },
+    }).register(pi, componentContext())
+
+    // when
+    await pi.dispatch("session_start", {}, sessionContext({ cwd: worktree }))
+
+    // then
+    expect(pi.entries).toEqual([{
+      customType: MEMORY_BINDING_CUSTOM_TYPE,
+      data: createMemoryBinding({ identity: explicit.id, repoPath: explicit.paths.repo, boundAt: 791 }),
+    }])
+    memoryModuleSupervisor.release()
+    expect(memoryModuleSupervisor.refCount).toBe(before)
+  })
+
   test("#given auto_identity git and a worktree session already bound to its per-worktree identity #when it is rebound #then it keeps that identity without a conflict", async () => {
     // given
     const { worktree } = linkedWorktree()

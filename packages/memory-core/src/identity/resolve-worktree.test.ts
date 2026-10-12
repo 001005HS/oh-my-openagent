@@ -4,10 +4,11 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { MEMORY_ROOT_ENV_VAR } from "./layout"
-import { resolveMemoryIdentity } from "./resolve"
+import { resolveAutoIdentity, resolveMemoryIdentity } from "./resolve"
 
-// Real `git worktree add` output is the platform contract the git auto identity reads, so this
-// suite builds an actual clone with a linked worktree instead of faking the pointer files.
+// Real `git` output (worktree add, --separate-git-dir, bare clones, submodules) is the platform
+// contract the git auto identity reads, so this suite builds actual repositories instead of
+// faking the pointer files.
 const GIT_IDENTITY = ["-c", "user.name=qa", "-c", "user.email=qa@example.invalid", "-c", "commit.gpgsign=false"]
 
 function git(cwd: string, args: readonly string[]): void {
@@ -39,50 +40,94 @@ afterAll(() => {
   rmSync(parent, { recursive: true, force: true })
 })
 
-describe("resolveMemoryIdentity with a real linked worktree", () => {
-  it("#given auto_identity git #when the main checkout and its worktree resolve #then both share the main checkout's existing id", () => {
+describe("resolveAutoIdentity with real git layouts", () => {
+  it("#given git mode #when the main checkout and its worktree resolve #then both share the main checkout's existing id", () => {
     // given
-    const pathModeMain = resolveMemoryIdentity("auto", main, env)
+    const pathModeMain = resolveAutoIdentity(main, env)
     // when
-    const gitModeMain = resolveMemoryIdentity("auto", main, env, undefined, { autoIdentity: "git" })
-    const gitModeWorktree = resolveMemoryIdentity("auto", worktree, env, undefined, { autoIdentity: "git" })
+    const gitModeMain = resolveAutoIdentity(main, env, "git")
+    const gitModeWorktree = resolveAutoIdentity(worktree, env, "git")
     // then
     expect(gitModeMain.id).toBe(pathModeMain.id)
     expect(gitModeWorktree.id).toBe(pathModeMain.id)
     expect(gitModeWorktree.paths.repo).toBe(pathModeMain.paths.repo)
   })
 
-  it("#given auto_identity git #when a worktree subdirectory resolves #then it shares the same subdirectory of the main checkout", () => {
+  it("#given git mode #when a worktree subdirectory resolves #then it shares the same subdirectory of the main checkout", () => {
     // given
-    const pathModeMainSubdir = resolveMemoryIdentity("auto", join(main, "packages", "api"), env)
+    const pathModeMainSubdir = resolveAutoIdentity(join(main, "packages", "api"), env)
     // when
-    const gitModeWorktreeSubdir = resolveMemoryIdentity("auto", join(worktree, "packages", "api"), env, undefined, {
-      autoIdentity: "git",
-    })
+    const gitModeWorktreeSubdir = resolveAutoIdentity(join(worktree, "packages", "api"), env, "git")
     // then
     expect(gitModeWorktreeSubdir.id).toBe(pathModeMainSubdir.id)
   })
 
-  it("#given the default auto_identity #when the worktree resolves #then it keeps its own path-derived id", () => {
+  it("#given path mode or an auto agent value #when the worktree resolves #then it keeps its own path-derived id", () => {
     // given
-    const mainIdentity = resolveMemoryIdentity("auto", main, env)
+    const mainIdentity = resolveAutoIdentity(main, env)
     // when
-    const worktreeIdentity = resolveMemoryIdentity("auto", worktree, env)
-    const explicitPath = resolveMemoryIdentity("auto", worktree, env, undefined, { autoIdentity: "path" })
+    const pathMode = resolveAutoIdentity(worktree, env, "path")
+    const autoAgent = resolveMemoryIdentity("auto", worktree, env)
     // then
-    expect(worktreeIdentity.id).not.toBe(mainIdentity.id)
-    expect(explicitPath.id).toBe(worktreeIdentity.id)
+    expect(pathMode.id).not.toBe(mainIdentity.id)
+    expect(autoAgent.id).toBe(pathMode.id)
   })
 
-  it("#given auto_identity git #when an explicit agent name or a non-git directory resolves #then the result matches path mode", () => {
+  it("#given git mode #when a directory outside git resolves #then the result matches path mode", () => {
     // given
-    const named = resolveMemoryIdentity("backend-lead", worktree, env)
-    const outside = resolveMemoryIdentity("auto", plain, env)
+    const outside = resolveAutoIdentity(plain, env)
     // when
-    const namedGit = resolveMemoryIdentity("backend-lead", worktree, env, undefined, { autoIdentity: "git" })
-    const outsideGit = resolveMemoryIdentity("auto", plain, env, undefined, { autoIdentity: "git" })
+    const outsideGit = resolveAutoIdentity(plain, env, "git")
     // then
-    expect(namedGit.id).toBe(named.id)
     expect(outsideGit.id).toBe(outside.id)
+  })
+
+  it("#given a --separate-git-dir clone with a linked worktree #when both resolve in git mode #then each keeps its path id", () => {
+    // given
+    const root = join(parent, "separate")
+    const sepMain = join(root, "main")
+    const sepWorktree = join(root, "wt")
+    mkdirSync(root)
+    git(root, ["init", "--quiet", "--initial-branch=main", `--separate-git-dir=${join(root, "sep.git")}`, sepMain])
+    git(sepMain, ["commit", "--quiet", "--allow-empty", "-m", "init"])
+    git(sepMain, ["worktree", "add", "--quiet", "-b", "feature", sepWorktree])
+    // when
+    const mainGit = resolveAutoIdentity(sepMain, env, "git")
+    const worktreeGit = resolveAutoIdentity(sepWorktree, env, "git")
+    // then
+    expect(mainGit.id).toBe(resolveAutoIdentity(sepMain, env).id)
+    expect(worktreeGit.id).toBe(resolveAutoIdentity(sepWorktree, env).id)
+  })
+
+  it("#given a bare repository with two linked worktrees #when they resolve in git mode #then they share one id named after the repository", () => {
+    // given
+    const root = join(parent, "bare-layout")
+    const bare = join(root, "lib.git")
+    mkdirSync(root)
+    git(root, ["clone", "--quiet", "--bare", main, bare])
+    git(bare, ["worktree", "add", "--quiet", "-b", "one", join(root, "one")])
+    git(bare, ["worktree", "add", "--quiet", "-b", "two", join(root, "two")])
+    // when
+    const one = resolveAutoIdentity(join(root, "one"), env, "git")
+    const two = resolveAutoIdentity(join(root, "two"), env, "git")
+    // then
+    expect(two.id).toBe(one.id)
+    expect(one.safeSlug).toBe("lib")
+  })
+
+  it("#given a submodule checked out inside a linked worktree #when it resolves in git mode #then it keeps its path id", () => {
+    // given
+    const library = join(parent, "library")
+    mkdirSync(library)
+    git(library, ["init", "--quiet", "--initial-branch=main"])
+    git(library, ["commit", "--quiet", "--allow-empty", "-m", "lib"])
+    const hostWorktree = join(parent, "project-submodule")
+    git(main, ["worktree", "add", "--quiet", "-b", "with-submodule", hostWorktree])
+    git(hostWorktree, ["-c", "protocol.file.allow=always", "submodule", "add", "--quiet", library, "vendor/library"])
+    const submodule = join(hostWorktree, "vendor", "library")
+    // when
+    const gitMode = resolveAutoIdentity(submodule, env, "git")
+    // then
+    expect(gitMode.id).toBe(resolveAutoIdentity(submodule, env).id)
   })
 })

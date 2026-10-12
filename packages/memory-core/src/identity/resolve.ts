@@ -9,9 +9,12 @@
 // so hostile inputs can never escape the layout root and two inputs that
 // sanitize to the same slug still map to distinct directories.
 //
-// With the opt-in `autoIdentity: "git"` mode, a linked git worktree's cwd is
-// first mapped onto the main working tree (see ./git-layout), so every
-// worktree of one clone resolves the main checkout's identity.
+// `resolveAutoIdentity` is the one entry point for the auto identity: with
+// the opt-in `"git"` mode (`memory.auto_identity`), a linked git worktree's
+// cwd is first mapped onto the main working tree (see ./git-layout), so every
+// worktree of one clone resolves the main checkout's identity. Callers that
+// honor that setting use it directly; `resolveMemoryIdentity` keeps the
+// path-derived auto identity for an auto agent value.
 
 import { createHash } from "node:crypto"
 import { basename, join, resolve as resolvePath } from "node:path"
@@ -34,10 +37,6 @@ export interface MemoryIdentity {
 
 export interface DirectoryProbe {
   readonly exists: (path: string) => boolean
-}
-
-export interface ResolveMemoryIdentityOptions {
-  readonly autoIdentity?: AutoIdentityMode | undefined
 }
 
 const defaultDirectoryProbe: DirectoryProbe = { exists: existsSync }
@@ -96,8 +95,8 @@ function derive(hashSource: string, slugSource: string): DerivedIdentity {
   }
 }
 
-function deriveAutoId(cwd: string, options: ResolveMemoryIdentityOptions): DerivedIdentity {
-  if (options.autoIdentity === "git") {
+function deriveAutoId(cwd: string, mode: AutoIdentityMode): DerivedIdentity {
+  if (mode === "git") {
     const linked = resolveLinkedWorktreeSource(cwd)
     if (linked !== undefined) return derive(linked.hashSource, linked.slugSource)
   }
@@ -117,22 +116,41 @@ function chooseDirectory(derived: DerivedIdentity, memoryRoot: string, probe: Di
   return derived
 }
 
+function assertCwd(cwd: string, caller: string): void {
+  if (typeof cwd !== "string" || cwd.trim() === "") {
+    throw new TypeError(`${caller}: cwd must be a non-empty path string`)
+  }
+}
+
+function toIdentity(
+  derived: DerivedIdentity,
+  cwd: string,
+  env: Record<string, string | undefined>,
+  probe: DirectoryProbe,
+): MemoryIdentity {
+  const memoryRoot = resolveMemoryRoot(env, cwd)
+  const chosen = chooseDirectory(derived, memoryRoot, probe)
+  return { id: chosen.id, safeSlug: chosen.safeSlug, paths: buildIdentityPaths(memoryRoot, chosen.id) }
+}
+
+export function resolveAutoIdentity(
+  cwd: string,
+  env: Record<string, string | undefined> = process.env,
+  mode: AutoIdentityMode = "path",
+  probe: DirectoryProbe = defaultDirectoryProbe,
+): MemoryIdentity {
+  assertCwd(cwd, "resolveAutoIdentity")
+  return toIdentity(deriveAutoId(cwd, mode), cwd, env, probe)
+}
+
 export function resolveMemoryIdentity(
   configAgentValue: string | null | undefined,
   cwd: string,
   env: Record<string, string | undefined> = process.env,
   probe: DirectoryProbe = defaultDirectoryProbe,
-  options: ResolveMemoryIdentityOptions = {},
 ): MemoryIdentity {
-  if (typeof cwd !== "string" || cwd.trim() === "") {
-    throw new TypeError("resolveMemoryIdentity: cwd must be a non-empty path string")
-  }
+  assertCwd(cwd, "resolveMemoryIdentity")
   const trimmed = typeof configAgentValue === "string" ? configAgentValue.trim() : ""
-  const derived =
-    trimmed === "" || trimmed === AUTO_AGENT_VALUE
-      ? deriveAutoId(cwd, options)
-      : deriveExplicitId(trimmed)
-  const memoryRoot = resolveMemoryRoot(env, cwd)
-  const chosen = chooseDirectory(derived, memoryRoot, probe)
-  return { id: chosen.id, safeSlug: chosen.safeSlug, paths: buildIdentityPaths(memoryRoot, chosen.id) }
+  if (trimmed === "" || trimmed === AUTO_AGENT_VALUE) return resolveAutoIdentity(cwd, env, "path", probe)
+  return toIdentity(deriveExplicitId(trimmed), cwd, env, probe)
 }
