@@ -17,6 +17,9 @@ use crate::selection::BackendFactory;
 use crate::timeouts::SessionTimeouts;
 use crate::worker::Worker;
 
+#[cfg(test)]
+mod tests;
+
 pub const THREAD_NAME: &str = "senpi-desktop-session";
 
 type Reply = flume::Sender<CoreResult<Response>>;
@@ -114,6 +117,7 @@ impl Session {
     /// Enqueues `op` behind every earlier request.
     pub fn submit(&self, op: Op) -> Pending {
         let budget = self.timeouts.budget_for(&op);
+        let is_hold = matches!(op, Op::HoldKeys(_) | Op::HoldMouse(_));
         let signal = self.supervisor.hold_signal();
         let mut pending = self.enqueue(|reply| {
             let mut holds = self.holds.lock();
@@ -124,6 +128,7 @@ impl Session {
         pending.cancellation = Some(crate::cancel_on_drop::CancelOnDrop(signal));
         pending.budget = budget;
         pending.deadline = Instant::now() + budget;
+        pending.release_budget = is_hold.then_some(self.timeouts.close);
         pending
     }
 
@@ -214,6 +219,7 @@ pub struct Pending {
     kind: PendingKind,
     deadline: Instant,
     budget: Duration,
+    release_budget: Option<Duration>,
 }
 
 enum PendingKind {
@@ -229,11 +235,18 @@ impl Pending {
             kind,
             deadline: Instant::now() + budget,
             budget,
+            release_budget: None,
         }
     }
 
     fn ready(result: CoreResult<Response>) -> Self {
         Self::new(PendingKind::Ready(Box::new(result)), Duration::ZERO)
+    }
+
+    /// The engine cancels a hold without dropping its completion receiver.
+    pub fn hold_signal(&self) -> Option<Arc<senpi_desktop_safety::HoldSignal>> {
+        self.release_budget?;
+        self.cancellation.as_ref().map(|cancel| Arc::clone(&cancel.0))
     }
 
     /// # Errors
@@ -248,7 +261,15 @@ impl Pending {
             PendingKind::Reply(replied) => match timeout_at(self.deadline, replied.recv_async()).await {
                 Ok(Ok(result)) => result,
                 Ok(Err(_)) => Err(lost()),
-                Err(_) => Err(timed_out("desktop operation did not complete")),
+                Err(_) => {
+                    if let (Some(cancel), Some(budget)) = (&_cancellation, self.release_budget) {
+                        cancel.0.cancel();
+                        if tokio::time::timeout(budget, replied.recv_async()).await.is_err() {
+                            return Err(timed_out("held input release did not complete"));
+                        }
+                    }
+                    Err(timed_out("desktop operation did not complete"))
+                }
             },
             PendingKind::Close(acked) => match timeout_at(self.deadline, acked.recv_async()).await {
                 Ok(Ok(())) => Ok(Response::Unit),

@@ -161,6 +161,10 @@ pub struct Started {
 }
 
 impl Started {
+    pub fn hold_signal(&self) -> Option<Arc<senpi_desktop_safety::HoldSignal>> {
+        self.pending.hold_signal()
+    }
+
     /// # Errors
     /// The session's error for this request.
     pub async fn wait(self) -> Result<Value, Failure> {

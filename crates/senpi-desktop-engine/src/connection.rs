@@ -24,7 +24,7 @@ use tokio::task::JoinSet;
 use crate::engine::{Engine, SessionCall};
 use crate::route::Route;
 use crate::rpc::{failure_line, reply_line, Failure};
-use crate::settle::settle;
+use crate::settle::{settle, settle_hold};
 
 /// Reply lines buffered ahead of a slow reader of the output.
 const OUTBOUND_CAPACITY: usize = 256;
@@ -224,7 +224,10 @@ async fn dispatch(
         let started = engine.begin(call);
         let (engine, out, in_flight) = (Arc::clone(&engine), out.clone(), in_flight.clone());
         waiters.spawn(async move {
-            let outcome = settle(started.wait(), cancel, || Err(Failure::cancelled())).await;
+            let outcome = match started.hold_signal() {
+                Some(signal) => settle_hold(started.wait(), cancel, || signal.cancel()).await,
+                None => settle(started.wait(), cancel, || Err(Failure::cancelled())).await,
+            };
             drop(permit);
             in_flight.finish(&id);
             deliver(&engine, &out, reply_line(id, outcome))
