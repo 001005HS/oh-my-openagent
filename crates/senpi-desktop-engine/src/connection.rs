@@ -39,7 +39,10 @@ struct Queued {
 /// Cancel handles of the requests of this connection that await a reply,
 /// each marked whether it holds native input.
 #[derive(Clone, Default)]
-struct InFlight(Arc<Mutex<HashMap<RequestId, (oneshot::Sender<()>, bool)>>>);
+struct InFlight(Arc<Mutex<HashMap<RequestId, InFlightEntry>>>);
+
+/// A request's cancel handle and whether it holds native input.
+type InFlightEntry = (oneshot::Sender<()>, bool);
 
 impl InFlight {
     /// `None` when `id` is already in flight.
