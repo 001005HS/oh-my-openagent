@@ -4,6 +4,7 @@ import {
   createProjectIdentityResolver,
   parseProjectMemoryPath,
   qualifyProjectDocuments,
+  redactSecretLikeMaterial,
   type ProjectIdentity,
   type ProjectIdentityResolver,
   type RecallDocument,
@@ -13,7 +14,7 @@ import { join } from "node:path"
 
 import type { SenpiExtensionAPI } from "../../extension/types"
 import type { MemoryIdentityContext } from "./context"
-import { grantProjectMemoryRead } from "./project-memory-grants"
+import { grantProjectMemoryRead, revokeProjectMemoryReads } from "./project-memory-grants"
 import { isRecord, sessionIdFrom } from "./wiring-context"
 
 export const PROJECT_MEMORY_NUDGE_MAX_NOTES = 30
@@ -111,7 +112,10 @@ export function createProjectMemoryScope(options: ProjectMemoryNudgeOptions): Pr
     const context = options.resolveContext(sessionId)
     if (context === undefined) return undefined
     const switches = options.switches()
-    if (!switches.nudge && !switches.recall) return undefined
+    if (!switches.nudge && !switches.recall) {
+      revokeProjectMemoryReads(context)
+      return undefined
+    }
 
     const scope = scopeFor(sessionId, eventCtx)
     const project = scope.resolver.forPath(touchedPath)
@@ -122,8 +126,14 @@ export function createProjectMemoryScope(options: ProjectMemoryNudgeOptions): Pr
     scope.touched.unshift(project)
 
     if (!switches.nudge || scope.nudged.has(project.identity.id)) return undefined
+    let notes: readonly RecallDocument[]
+    try {
+      notes = await notesOf(project)
+    } catch {
+      // Advice only: a project repo that cannot be read leaves the tool result untouched and is retried on the next touch.
+      return undefined
+    }
     scope.nudged.add(project.identity.id)
-    const notes = await notesOf(project)
     if (notes.length === 0) return undefined
     const content = isRecord(payload) && Array.isArray(payload.content) ? payload.content : []
     return { content: [...content, { type: "text", text: formatProjectMemoryNudge(project, notes), audience: "model" }] }
@@ -137,7 +147,10 @@ export function createProjectMemoryScope(options: ProjectMemoryNudgeOptions): Pr
 
   pi.on("session_shutdown", (_payload: unknown, eventCtx: unknown) => {
     const sessionId = sessionIdFrom(eventCtx)
-    if (sessionId !== undefined) sessions.delete(sessionId)
+    if (sessionId === undefined) return
+    sessions.delete(sessionId)
+    const context = options.resolveContext(sessionId)
+    if (context !== undefined) revokeProjectMemoryReads(context)
   })
   }
 
@@ -156,7 +169,7 @@ export function formatProjectMemoryNudge(project: ProjectIdentity, notes: readon
     `[Project memory: ${project.projectDir}]`,
     "This project keeps its own memory from earlier sessions. Consult it actively: read any note below that bears on the work before relying on assumptions.",
     `Notes live under ${project.identity.paths.repo}; open one with the read tool at that directory plus the path shown.`,
-    ...shown.map((note) => `- ${note.path}: ${note.description}`),
+    ...shown.map((note) => `- ${note.path}: ${redactSecretLikeMaterial(note.description)}`),
     ...(notes.length > shown.length ? [`- +${notes.length - shown.length} more`] : []),
   ]
   return lines.join("\n")

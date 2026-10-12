@@ -6,8 +6,8 @@
 // session's own identity is never returned. Nothing is created: only identities whose repo already
 // exists count.
 
-import { existsSync } from "node:fs"
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
+import { existsSync, realpathSync } from "node:fs"
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 
 import { resolveMemoryIdentity, type MemoryIdentity } from "./resolve"
 
@@ -31,8 +31,27 @@ function isStrictlyInside(dir: string, root: string): boolean {
   return rel !== "" && !rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel)
 }
 
+// Identities are derived from the lexical path, exactly as session binding derives them from the
+// cwd it is given. Containment is ALSO checked on real paths, so a touched path that escapes the
+// session's tree through a symlink is judged by where it really is.
+function realPathOrResolved(path: string): string {
+  let current = resolve(path)
+  const missing: string[] = []
+  for (;;) {
+    try {
+      return join(realpathSync.native(current), ...missing.reverse())
+    } catch {
+      const parent = dirname(current)
+      if (parent === current) return resolve(path)
+      missing.push(basename(current))
+      current = parent
+    }
+  }
+}
+
 export function createProjectIdentityResolver(options: ProjectIdentityResolverOptions): ProjectIdentityResolver {
   const sessionCwd = resolve(options.sessionCwd)
+  const realSessionCwd = realPathOrResolved(sessionCwd)
   const env = options.env ?? process.env
   const exists = options.exists ?? existsSync
   const byDir = new Map<string, ProjectIdentity | null>()
@@ -49,6 +68,7 @@ export function createProjectIdentityResolver(options: ProjectIdentityResolverOp
   return {
     forPath(filePath) {
       let dir = dirname(resolve(sessionCwd, filePath))
+      if (!isStrictlyInside(realPathOrResolved(dir), realSessionCwd)) return undefined
       while (isStrictlyInside(dir, sessionCwd)) {
         const found = identityAt(dir)
         if (found !== null) return found

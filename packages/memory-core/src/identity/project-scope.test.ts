@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test"
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -113,5 +113,15 @@ describe("createProjectIdentityResolver", () => {
 
     // when / then
     expect(resolver.forPath("projects/child/src/index.ts")?.projectDir).toBe(child)
+  })
+
+  it("#given a directory inside the working tree that is a symlink to a project outside it #when a file through it is touched #then nothing is returned", () => {
+    // given
+    const { workspace, sibling, env } = fixture(({ sibling }) => [sibling])
+    symlinkSync(sibling, join(workspace, "linked"))
+    const resolver = createProjectIdentityResolver({ sessionCwd: workspace, env })
+
+    // when / then
+    expect(resolver.forPath(join(workspace, "linked", "notes.md"))).toBeUndefined()
   })
 })

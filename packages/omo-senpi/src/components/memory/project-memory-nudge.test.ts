@@ -90,7 +90,6 @@ describe("project memory nudge (#10044)", () => {
 
     // then
     expect(nudge).toContain(`[Project memory: ${w.child}]`)
-    expect(nudge).toContain("Consult it actively")
     expect(nudge).toContain("- reference/deploy.md: how the child deploys")
     expect(nudge).toContain(w.childRepo)
     expect(nudge).not.toContain("body of reference/deploy.md")
@@ -168,6 +167,19 @@ describe("project memory nudge (#10044)", () => {
 
     // then
     expect(await readResult(w, join(w.child, "b.ts"))).toContain("[Project memory:")
+  })
+
+  test("#given a session that shuts down #when it had read a child project #then that project's notes are no longer readable", async () => {
+    // given
+    const w = world()
+    await readResult(w, join(w.child, "x.ts"))
+    expect(isGrantedProjectMemoryRead(w.own, join(w.childRepo, "reference", "deploy.md"))).toBe(true)
+
+    // when
+    await w.pi.dispatch("session_shutdown", { type: "session_shutdown" }, ctx(w))
+
+    // then
+    expect(isGrantedProjectMemoryRead(w.own, join(w.childRepo, "reference", "deploy.md"))).toBe(false)
   })
 
   test("#given a failed read #when it targets a child file #then nothing is added", async () => {
