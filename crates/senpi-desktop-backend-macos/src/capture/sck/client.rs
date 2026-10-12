@@ -16,12 +16,29 @@ use super::protocol::{Batch, Reply, TargetRequest};
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(5);
 const HEADER_LIMIT: usize = 65_536;
 
+/// Whether a failure leaves the request/reply stream synchronized.
+#[derive(Debug)]
+pub(crate) enum ClientError {
+    Transport(DesktopError),
+    Reply(DesktopError),
+}
+
+impl From<DesktopError> for ClientError {
+    fn from(error: DesktopError) -> Self {
+        Self::Transport(error)
+    }
+}
+
 /// One helper child and its pipe ends. `Drop` reaps the child.
 pub(crate) struct HelperClient {
     child: Child,
     input: BufWriter<ChildStdin>,
     output: BufReader<ChildStdout>,
     header: Vec<u8>,
+    /// Whether the helper has written any reply byte. A transport failure
+    /// before that is a start failure (silent fallback); after it, a capture
+    /// failure the caller sees, so a helper crashing on one target is not hidden.
+    pub(crate) has_replied: bool,
     /// Temp dir the staged helper binary lives in; kept alive until drop.
     _staging: Option<tempfile::TempDir>,
 }
@@ -42,7 +59,9 @@ impl HelperClient {
             .stderr(Stdio::null())
             .spawn()
             .map_err(|error| {
-                DesktopError::capture_failed(format!("cannot start the native capture worker: {error}"))
+                DesktopError::capture_failed(format!(
+                    "cannot start the native capture worker: {error}"
+                ))
             })?;
         let (Some(input), Some(output)) = (child.stdin.take(), child.stdout.take()) else {
             let _ = child.kill();
@@ -67,6 +86,7 @@ impl HelperClient {
             input: BufWriter::new(input),
             output: BufReader::new(output),
             header: Vec::new(),
+            has_replied: false,
             _staging: staging,
         })
     }
@@ -74,7 +94,10 @@ impl HelperClient {
     /// Sends one batch and reads one frame per request. A reply-level error
     /// (PermissionDenied, WindowNotFound, CaptureUnavailable...) does NOT
     /// poison the worker; a transport error leaves it for the owner to reset.
-    pub(crate) fn capture(&mut self, requests: &[TargetRequest]) -> CoreResult<Vec<Frame>> {
+    pub(crate) fn capture(
+        &mut self,
+        requests: &[TargetRequest],
+    ) -> Result<Vec<Frame>, ClientError> {
         let deadline = Instant::now() + CAPTURE_TIMEOUT;
         serde_json::to_writer(
             &mut self.input,
@@ -83,14 +106,26 @@ impl HelperClient {
                 max_pixels: MAX_COMPOSITE_PIXELS,
             },
         )
-        .map_err(|error| DesktopError::internal(format!("cannot encode capture request: {error}")))?;
+        .map_err(|error| {
+            DesktopError::internal(format!("cannot encode capture request: {error}"))
+        })?;
         self.input.write_all(b"\n").map_err(io_error)?;
         self.input.flush().map_err(io_error)?;
         let mut frames = Vec::with_capacity(requests.len());
         for expected in 0..requests.len() {
-            match read_header(&mut self.output, &mut self.header, deadline)? {
+            let reply = match read_header(&mut self.output, &mut self.header, deadline) {
+                Ok(reply) => reply,
+                Err(error) => {
+                    // Any header byte proves the helper started; only a silent
+                    // death counts as a start failure (see `has_replied`).
+                    self.has_replied |= !self.header.is_empty();
+                    return Err(error.into());
+                },
+            };
+            self.has_replied = true;
+            match reply {
                 Reply::Error { code, error, reason } => {
-                    return Err(match (code.as_str(), reason) {
+                    return Err(ClientError::Reply(match (code.as_str(), reason) {
                         ("PermissionDenied", _) => super::super::permission_denied(),
                         ("WindowNotFound", _) => DesktopError::window_not_found(error),
                         ("InvalidTarget", _) => DesktopError::invalid_target(error),
@@ -104,7 +139,7 @@ impl HelperClient {
                             "capture worker sent CaptureUnavailable without a reason: {error}"
                         )),
                         _ => DesktopError::capture_failed(error),
-                    });
+                    }));
                 },
                 Reply::Frame {
                     index,
@@ -118,9 +153,15 @@ impl HelperClient {
                     if index != expected || !bounds.valid() {
                         return Err(DesktopError::capture_failed(
                             "capture worker returned inconsistent frame metadata",
-                        ));
+                        )
+                        .into());
                     }
-                    frame_bytes(width, height)?;
+                    if frame_bytes(width, height)? != byte_length {
+                        return Err(DesktopError::capture_failed(
+                            "capture worker returned inconsistent frame metadata",
+                        )
+                        .into());
+                    }
                     let pixels = read_pixels(&mut self.output, byte_length, deadline)?;
                     let mut frame = decode(
                         width,
@@ -205,8 +246,9 @@ fn read_header(
             Err(error) => return Err(io_error(error)),
         }
     }
-    serde_json::from_slice(header)
-        .map_err(|error| DesktopError::capture_failed(format!("invalid native capture response: {error}")))
+    serde_json::from_slice(header).map_err(|error| {
+        DesktopError::capture_failed(format!("invalid native capture response: {error}"))
+    })
 }
 
 fn read_pixels(

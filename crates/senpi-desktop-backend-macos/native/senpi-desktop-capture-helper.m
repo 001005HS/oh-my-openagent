@@ -128,7 +128,7 @@ static void CaptureNext(SCShareableContent *content, NSArray *requests, NSUInteg
 			NSMutableData *pixels = [NSMutableData dataWithLength:length];
 			CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
 			CGContextRef bitmap = space ? CGBitmapContextCreate(pixels.mutableBytes, pixelWidth, pixelHeight, 8, stride,
-				space, kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big) : NULL;
+				space, kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little) : NULL;
 			if (space) CGColorSpaceRelease(space);
 			if (!bitmap) {
 				Failure(@"CaptureFailed", @"Could not create the screenshot pixel buffer");

@@ -838,8 +838,7 @@
         },
         "legacyCapture": {
           "type": "boolean",
-          "description": "Captures run through the legacy `screencapture` path, not the ScreenCaptureKit worker (B9: macOS < 14, helper missing, or the helper failed to start).",
-          "default": false
+          "description": "Captures run through the legacy `screencapture` path, not the\nScreenCaptureKit worker (B9: macOS < 14, helper missing, or the\nhelper failed to start)."
         }
       },
       "required": [
@@ -857,7 +856,7 @@
         "stopPath",
         "screenLocked"
       ],
-      "description": "Runtime truth about what this host's backend can do right now.\n\nFROZEN field set (IS-2): later todos fill values, never add fields.",
+      "description": "Runtime truth about what this host's backend can do right now.\n\nFROZEN field set (IS-2): later todos fill values, never add fields. B9\n(lead ruling 2026-10-12) amends it with `legacy_capture` only.",
       "additionalProperties": false
     },
     "ControlGrantParams": {
@@ -1021,24 +1020,19 @@
           "type": "boolean",
           "description": "Whether the window currently holds input focus."
         },
+        "isOnScreen": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Whether the window is on the active Space. `None` on backends that\ncannot tell (X11/Win32/Wayland report every listed window on screen)."
+        },
         "elevated": {
           "type": [
             "boolean",
             "null"
           ],
           "description": "Whether the owning process runs above the engine's integrity level\n(Windows); `None` where the platform has no such notion."
-        },
-        "isOnScreen": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Whether the window is on the active Space. `None` on backends that cannot tell (X11/Win32/Wayland report every listed window on screen)."
         }
       },
       "required": [
@@ -1051,7 +1045,7 @@
         "height",
         "focused"
       ],
-      "description": "One capturable top-level window in global logical desktop coordinates.",
+      "description": "One capturable top-level window in global logical desktop coordinates.\n`is_on_screen` distinguishes an on-Space window from a same-app window on\nanother Space: both resolve as capture targets, but only an on-screen one\nis user-visible right now.",
       "additionalProperties": false
     },
     "CaptureParams": {
@@ -1071,25 +1065,20 @@
           ]
         },
         "excludeWindowTitles": {
-          "anyOf": [
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            {
-              "type": "null"
-            }
+          "type": [
+            "array",
+            "null"
           ],
-          "default": null,
+          "items": {
+            "type": "string"
+          },
           "description": "Titles of windows to exclude from a display capture."
         }
       },
       "required": [
         "target"
       ],
-      "description": "`capture`: one target (`desktop` or a window id) under optional caps.",
+      "description": "`capture`: one target (`desktop` or a window id) under optional caps.\n`excludeWindowTitles` applies to display captures only: every window with\na matching title is left out of the screenshot (B9, macOS ScreenCaptureKit;\nempty elsewhere and ignored by older engines).",
       "additionalProperties": false
     },
     "CaptureResult": {
@@ -1173,22 +1162,16 @@
             "null"
           ]
         },
+        "isOnScreen": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "The captured window's on-Screen state (macOS B9; absent for desktop\ncaptures and backends that cannot tell)."
+        },
         "legacyCapture": {
           "type": "boolean",
-          "description": "`true` when this capture ran through the legacy `screencapture` fallback instead of the ScreenCaptureKit worker (B9).",
-          "default": false
-        },
-        "isOnScreen": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The captured window's on-Screen state (macOS B9; absent for desktop captures and backends that cannot tell)."
+          "description": "`true` when this capture ran through the legacy `screencapture`\nfallback instead of the ScreenCaptureKit worker (B9)."
         }
       },
       "required": [
@@ -1421,6 +1404,17 @@
             "string",
             "null"
           ]
+        },
+        "isOnScreen": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "The captured window's on-Screen state (macOS B9; absent for desktop\ncaptures and backends that cannot tell)."
+        },
+        "legacyCapture": {
+          "type": "boolean",
+          "description": "`true` when this capture ran through the legacy `screencapture`\nfallback instead of the ScreenCaptureKit worker (B9)."
         },
         "ax": {
           "type": "string"
@@ -2456,8 +2450,7 @@
             "ScreenLocked",
             "CursorRestoreFailed",
             "FocusRestoreFailed",
-            "TransactionFailed",
-            "CaptureUnavailable"
+            "TransactionFailed"
           ]
         },
         {
@@ -2474,6 +2467,11 @@
           "type": "string",
           "const": "ControlRequired",
           "description": "Foreground delivery without this session's live control grant."
+        },
+        {
+          "type": "string",
+          "const": "CaptureUnavailable",
+          "description": "The capture target exists but cannot be captured right now; `data`\nsays why (e.g. `{ \"reason\": \"minimized\" }`)."
         }
       ],
       "description": "Desktop error vocabulary shared by the engine, the wire, and the host.\n\nFROZEN: oh-my-pi's codes plus the stop-path, suspension, lock-screen,\ncancellation, and restore-transaction codes. Adding a code needs a plan\namendment because the TS protocol and numeric JSON-RPC codes derive from it."
@@ -2675,8 +2673,7 @@
             {
               "type": "null"
             }
-          ],
-          "default": null
+          ]
         }
       },
       "required": [
@@ -2714,6 +2711,19 @@
         "screen_recording",
         "accessibility"
       ]
+    },
+    "CaptureUnavailableData": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "description": "Why a `CaptureUnavailable` capture was refused. `reason` is an open token\nset: B9 introduces `\"minimized\"` and later waves add more.",
+      "additionalProperties": false
     },
     "MethodRejectionData": {
       "type": "object",
@@ -2774,19 +2784,6 @@
         "engine.log"
       ],
       "description": "Every server-to-client notification, by wire name."
-    },
-    "CaptureUnavailableData": {
-      "type": "object",
-      "description": "Why a `CaptureUnavailable` capture was refused. `reason` is an open token set: B9 introduces \"minimized\" and later waves add more.",
-      "properties": {
-        "reason": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "reason"
-      ],
-      "additionalProperties": false
     }
   }
 }

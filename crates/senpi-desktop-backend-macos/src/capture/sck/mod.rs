@@ -9,13 +9,17 @@ mod protocol;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) mod test_support;
+#[cfg(test)]
+mod worker_tests;
 
 use std::cell::RefCell;
 use std::path::PathBuf;
 
 use senpi_desktop_core::error::{CoreResult, DesktopError};
 
-use self::client::HelperClient;
+use self::client::{ClientError, HelperClient};
 use self::protocol::TargetRequest;
 
 /// The frame type `MacCapture` composites.
@@ -70,7 +74,7 @@ pub(crate) enum SckUnavailable {
 pub(crate) enum SckCaptureError {
     /// The helper could not be started on macOS 14+: the caller falls back
     /// to `screencapture` and logs once.
-    Start,
+    Start(DesktopError),
     /// The capture failed; surface this error to the caller.
     Failed(DesktopError),
 }
@@ -92,7 +96,9 @@ impl SckWorker {
     }
 
     /// One batch capture through the persistent helper.
-    pub(crate) fn capture(requests: &[TargetRequest]) -> Result<Vec<frame::Frame>, SckCaptureError> {
+    pub(crate) fn capture(
+        requests: &[TargetRequest],
+    ) -> Result<Vec<frame::Frame>, SckCaptureError> {
         #[cfg(test)]
         if let Some(fake) = TEST_CAPTURE.with(std::cell::Cell::get) {
             return fake(requests);
@@ -101,17 +107,22 @@ impl SckWorker {
             if slot.is_none() {
                 match start_client() {
                     Ok(started) => *slot = Some(started),
-                    Err(_) => return Err(SckCaptureError::Start),
+                    Err(error) => return Err(SckCaptureError::Start(error)),
                 }
             }
             let (client, _) = slot.as_mut().expect("capture client initialized");
             match client.capture(requests) {
                 Ok(frames) => Ok(frames),
-                Err(error) if transport_failed(&error) => {
+                Err(ClientError::Transport(error)) => {
+                    let first_reply = !client.has_replied;
                     *slot = None;
-                    Err(SckCaptureError::Failed(error))
+                    Err(if first_reply {
+                        SckCaptureError::Start(error)
+                    } else {
+                        SckCaptureError::Failed(error)
+                    })
                 },
-                Err(error) => Err(SckCaptureError::Failed(error)),
+                Err(ClientError::Reply(error)) => Err(SckCaptureError::Failed(error)),
             }
         })
     }
@@ -121,6 +132,10 @@ impl SckWorker {
 /// into a fresh private temp dir (returned so the caller can keep it alive
 /// beside the client).
 fn start_client() -> CoreResult<(HelperClient, Option<tempfile::TempDir>)> {
+    #[cfg(test)]
+    if let Some(program) = test_support::program() {
+        return HelperClient::start(&program).map(|client| (client, None));
+    }
     if let Some(program) = std::env::var_os(ENV_HELPER_PROGRAM).map(PathBuf::from) {
         return HelperClient::start(&program).map(|client| (client, None));
     }
@@ -132,34 +147,25 @@ fn start_client() -> CoreResult<(HelperClient, Option<tempfile::TempDir>)> {
     let dir = tempfile::Builder::new()
         .prefix("senpi-desktop-capture-")
         .tempdir()
-        .map_err(|error| DesktopError::internal(format!("cannot stage the capture helper: {error}")))?;
+        .map_err(|error| {
+            DesktopError::internal(format!("cannot stage the capture helper: {error}"))
+        })?;
     let program = dir.path().join("senpi-desktop-capture-helper");
     std::fs::write(&program, HELPER)
-        .map_err(|error| DesktopError::internal(format!("cannot write the capture helper: {error}")))?;
+        .map_err(|error| {
+            DesktopError::internal(format!("cannot write the capture helper: {error}"))
+        })?;
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700))
             .map_err(|error| {
-                DesktopError::internal(format!("cannot mark the capture helper executable: {error}"))
+                DesktopError::internal(format!(
+                    "cannot mark the capture helper executable: {error}"
+                ))
             })?;
     }
     let client = HelperClient::start(&program)?;
     Ok((client, Some(dir)))
-}
-
-/// A failure that poisons the pipe protocol (timeout, truncation, malformed
-/// header, dead child) versus a reply-level capture error the worker
-/// survived. Both surface as `CaptureFailed`/`Timeout`; the distinction is
-/// whether the helper sent a complete typed reply.
-fn transport_failed(error: &DesktopError) -> bool {
-    let message = &error.message;
-    matches!(error.code, senpi_desktop_core::error::ErrorCode::Timeout)
-        || message.contains("transport")
-        || message.contains("exited before returning")
-        || message.contains("truncated")
-        || message.contains("invalid native capture response")
-        || message.contains("inconsistent frame metadata")
-        || message.contains("exceeds its safety limit")
 }
 
 #[cfg(test)]
@@ -167,7 +173,8 @@ type CaptureDouble = fn(&[TargetRequest]) -> Result<Vec<frame::Frame>, SckCaptur
 
 #[cfg(test)]
 thread_local! {
-    static TEST_CAPTURE: std::cell::Cell<Option<CaptureDouble>> = const { std::cell::Cell::new(None) };
+    static TEST_CAPTURE: std::cell::Cell<Option<CaptureDouble>> =
+        const { std::cell::Cell::new(None) };
 }
 
 /// Routes `SckWorker::capture` to a test double.

@@ -10,14 +10,20 @@ use senpi_desktop_core::error::{CoreResult, DesktopError, ErrorCode};
 use senpi_desktop_core::frame::FrameGeometry;
 use senpi_desktop_core::types::{DisplaySelector, Target};
 
-use super::super::sck::{override_capture, SckCaptureError, SckFrame, SckTargetRequest, SckUnavailable};
-use super::test_support::override_availability;
-use super::{note_legacy, note_legacy_into, MacCapture, REASON_START_FAILED};
+use super::super::sck::{
+    override_capture, SckCaptureError, SckFrame, SckTargetRequest, SckUnavailable,
+};
+use super::test_support::{override_availability, ReasonsGuard};
+use super::{note_legacy, note_legacy_into, with_legacy_reasons, MacCapture, REASON_START_FAILED};
 use crate::capture::minimized::override_probe;
 use crate::capture::Screencapture;
 
 fn shooter() -> Screencapture {
-    Screencapture::with(std::path::PathBuf::from("/usr/bin/true"), Duration::from_secs(60), || true)
+    Screencapture::with(
+        std::path::PathBuf::from("/usr/bin/true"),
+        Duration::from_secs(60),
+        || true,
+    )
 }
 
 fn capture() -> MacCapture {
@@ -38,7 +44,7 @@ fn fake_frames(_requests: &[SckTargetRequest]) -> Result<Vec<SckFrame>, SckCaptu
 }
 
 fn fake_start(_requests: &[SckTargetRequest]) -> Result<Vec<SckFrame>, SckCaptureError> {
-    Err(SckCaptureError::Start)
+    Err(SckCaptureError::Start(DesktopError::capture_failed("start failed")))
 }
 
 fn fake_unavailable(_requests: &[SckTargetRequest]) -> Result<Vec<SckFrame>, SckCaptureError> {
@@ -50,6 +56,7 @@ fn fake_unavailable(_requests: &[SckTargetRequest]) -> Result<Vec<SckFrame>, Sck
 
 #[test]
 fn each_reason_logs_exactly_once() {
+    let _reasons = ReasonsGuard::new();
     let store = AtomicU8::new(0);
     let lines = RefCell::new(Vec::new());
     let log = |line: &str| lines.borrow_mut().push(line.to_owned());
@@ -61,6 +68,7 @@ fn each_reason_logs_exactly_once() {
 
 #[test]
 fn unsupported_and_missing_helper_report_legacy() {
+    let _reasons = ReasonsGuard::new();
     for reason in [
         SckUnavailable::Unsupported,
         SckUnavailable::HelperUnavailable,
@@ -73,6 +81,7 @@ fn unsupported_and_missing_helper_report_legacy() {
 
 #[test]
 fn a_start_failure_marks_legacy_after_it_is_noted() {
+    let _reasons = ReasonsGuard::new();
     note_legacy(REASON_START_FAILED, "start failed");
     override_availability(Some(Ok(())));
     assert!(capture().legacy_capture());
@@ -81,6 +90,7 @@ fn a_start_failure_marks_legacy_after_it_is_noted() {
 
 #[test]
 fn a_helper_start_failure_falls_back_without_error() {
+    let _reasons = ReasonsGuard::new();
     override_availability(Some(Ok(())));
     override_capture(Some(fake_start));
     let result = capture().capture_via_sck(&Target::Window("42".to_owned()), &[]);
@@ -92,6 +102,7 @@ fn a_helper_start_failure_falls_back_without_error() {
 
 #[test]
 fn a_reply_level_capture_error_surfaces_without_fallback() {
+    let _reasons = ReasonsGuard::new();
     override_availability(Some(Ok(())));
     override_capture(Some(fake_unavailable));
     let result = capture().capture_via_sck(&Target::Window("42".to_owned()), &[]);
@@ -107,6 +118,7 @@ fn a_reply_level_capture_error_surfaces_without_fallback() {
 
 #[test]
 fn an_sck_window_capture_is_not_legacy_and_carries_is_on_screen() {
+    let _reasons = ReasonsGuard::new();
     override_availability(Some(Ok(())));
     override_capture(Some(fake_frames));
     let result = capture().capture_via_sck(&Target::Window("42".to_owned()), &[]);
@@ -119,7 +131,9 @@ fn an_sck_window_capture_is_not_legacy_and_carries_is_on_screen() {
     assert_eq!(geometry.window_is_on_screen(), Some(false));
 }
 
-fn fake_owned_off_screen(_requests: &[SckTargetRequest]) -> Result<Vec<SckFrame>, SckCaptureError> {
+fn fake_owned_off_screen(
+    _requests: &[SckTargetRequest],
+) -> Result<Vec<SckFrame>, SckCaptureError> {
     Ok(vec![SckFrame { pid: Some(7), ..sck_frame() }])
 }
 
@@ -138,6 +152,7 @@ fn capture_off_screen_window(
 
 #[test]
 fn a_minimized_off_screen_window_is_refused_with_capture_unavailable() {
+    let _reasons = ReasonsGuard::new();
     // Given an off-screen window that Accessibility reports minimized
     let error = capture_off_screen_window(|pid, window| (pid == 7 && window == 42).then_some(true))
         .unwrap_err();
@@ -151,6 +166,7 @@ fn a_minimized_off_screen_window_is_refused_with_capture_unavailable() {
 
 #[test]
 fn an_off_space_window_is_captured_with_is_on_screen_false() {
+    let _reasons = ReasonsGuard::new();
     // Given an off-screen window that is not minimized (another Space)
     let captured = capture_off_screen_window(|_, _| Some(false)).unwrap();
     // Then it is captured and says it is off screen
@@ -160,8 +176,34 @@ fn an_off_space_window_is_captured_with_is_on_screen_false() {
 
 #[test]
 fn an_off_screen_window_is_captured_when_minimized_is_unknown() {
+    let _reasons = ReasonsGuard::new();
     // Given no Accessibility answer
     let captured = capture_off_screen_window(|_, _| None).unwrap();
     // Then the capture is returned rather than refused on a guess
     assert!(captured.is_some());
+}
+
+#[test]
+fn a_successful_sck_capture_clears_start_failure_and_allows_logging_again() {
+    let _reasons = ReasonsGuard::new();
+    override_availability(Some(Ok(())));
+    override_capture(Some(fake_frames));
+    let capture = capture();
+    let lines = RefCell::new(Vec::new());
+    for _ in 0..2 {
+        with_legacy_reasons(|store| {
+            note_legacy_into(store, REASON_START_FAILED, "start failed", |line| {
+                lines.borrow_mut().push(line.to_owned());
+            });
+        });
+        assert!(capture.legacy_capture());
+        let (_, geometry) = capture
+            .capture_with_exclusions(&Target::Window("42".to_owned()), &[])
+            .unwrap();
+        assert!(!geometry.is_legacy_capture());
+        assert!(!capture.legacy_capture());
+    }
+    override_capture(None);
+    override_availability(None);
+    assert_eq!(lines.borrow().len(), 2);
 }
