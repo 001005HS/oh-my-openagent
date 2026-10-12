@@ -68,8 +68,13 @@ fn bounded_keys_append_release_failure_without_replacing_primary() {
 fn invalid_hold_duration_and_empty_keys_send_no_input() {
     for duration in [f64::NAN, f64::INFINITY, -0.1, 100.1] {
         let mut harness = harness(&json!({}));
-        assert_eq!(harness.process(keys(duration)).unwrap_err().code, ErrorCode::InputFailed);
+        let Op::HoldKeys(params) = keys(duration) else { unreachable!() };
+        let parsed = serde_json::from_value::<HoldKeysParams>(serde_json::to_value(&params).unwrap());
+        assert!(parsed.is_err(), "invalid duration reached the session boundary");
+        // In-process callers bypassing serde still fail before mutate/release_all.
+        assert_eq!(harness.process(Op::HoldKeys(params)).unwrap_err().code, ErrorCode::Internal);
         assert!(transitions(&harness).is_empty());
+        assert!(!harness.sink.ops().contains(&SinkOp::ReleaseAll));
     }
     let mut harness = harness(&json!({}));
     let Op::HoldKeys(mut params) = keys(0.0) else { unreachable!() };
