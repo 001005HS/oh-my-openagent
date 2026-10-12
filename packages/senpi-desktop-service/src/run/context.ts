@@ -7,7 +7,7 @@ import type {
 } from "@oh-my-opencode/senpi-desktop-protocol";
 
 /** Why a computer run failed inside the runtime; engine failures surface as `DesktopEngineRpcError`. */
-export type ComputerRunErrorReason = "readOnly" | "timeout" | "aborted" | "ended" | "assertion" | "window" | "wait";
+export type ComputerRunErrorReason = "readOnly" | "timeout" | "aborted" | "ended" | "assertion" | "window" | "wait" | "unavailable";
 
 export class ComputerRunError extends Error {
 	readonly reason: ComputerRunErrorReason;
@@ -61,9 +61,8 @@ export type Resume = <T>(promise: Promise<T>) => Promise<T>;
 
 /**
  * The human confirmation behind `desktop.control.acquire`; absent on a headless run, which then
- * never grants (#9651 B5b).
+ * never grants (#9651 B5b). `budgetMs` is how long the run can still wait for the answer.
  */
-/** The human confirm; `budgetMs` is how long the run can still wait for the answer. */
 export type ConfirmControl = (reason: string, signal: AbortSignal, budgetMs: number) => Promise<boolean>;
 
 /** What every facade method needs: the run it belongs to, its engine channel, and the vm resume hook. */
