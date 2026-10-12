@@ -141,6 +141,33 @@ describe("task start against a busy host (#10042)", () => {
     expect(h.manager.getResidentHandle(started.task_id)).toBeDefined()
   })
 
+  test("#given a start still waiting on the host #when the parent steers it #then the message is queued and delivered once the child is admitted", async () => {
+    // given
+    const held = new BusyHostRunner()
+    const h = makeManager({ inProcess: held })
+    const started = await bounded(h.manager.start(baseSpec({ run_in_background: true })))
+    if (started.kind !== "started") throw new Error("fixture did not start")
+    expect(started.starting).toBe(true)
+    const delivered = Promise.withResolvers<void>()
+    const append = h.store.appendEvent.bind(h.store)
+    spyOn(h.store, "appendEvent").mockImplementation((id, event) => {
+      const result = append(id, event)
+      if (id === started.task_id && event.type === "steered") delivered.resolve()
+      return result
+    })
+
+    // when
+    const sent = await bounded(h.manager.sendToTask({ idOrName: started.task_id, message: "steer while starting", deliverAs: "steer" }))
+    held.release.resolve(undefined)
+    await bounded(delivered.promise)
+
+    // then
+    expect(sent.kind).toBe("queued")
+    const handle = held.handles.get(started.task_id)
+    if (handle === undefined) throw new Error("admitted child has no handle")
+    expect([...handle.steerCalls, ...handle.followUpCalls].join("\n")).toContain("steer while starting")
+  })
+
   test("#given a host that answers at once #when a task starts #then the result is reported as before, not as starting", async () => {
     const h = makeManager()
     const started = await bounded(h.manager.start(baseSpec({ run_in_background: true })))
