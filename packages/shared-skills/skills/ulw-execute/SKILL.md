@@ -53,7 +53,7 @@ Do ALL of this immediately after the plan is selected, BEFORE the first implemen
 
 1. **Set the goal, in detail.** When a goal tool is available (`create_goal`), call it with a DETAILED objective: the plan name and path, the concrete end state, the phase and task counts, the delivery mode (direct, `--make-pr`, or `--ship`), and how completion will be verified. One work session = one registered goal (the goal tool holds one active goal); each phase then carries its own concrete goal — the ledger entry Phase 2 records before the wave's first dispatch, defined from the previous phase's landed and verified evidence. No goal tool -> record the same objective as the first ledger entry.
 2. **Register every phase and task as todos.** Mirror the plan into the todo/plan tool of your harness: one phase per plan wave, one todo per column-zero checkbox (including the final verification wave). Register ALL of them up front - never keep tasks in memory only.
-3. **Keep them current at every moment.** Mark a todo in_progress when its work dispatches and done immediately after its verification passes. Never batch-complete at the end, never execute work that is not a registered todo; discovered work inside the change's blast radius — the request not delivered, a regression this change introduces, an invalid proof, a failing test or stale doc of touched code — is appended to the plan as a checkbox, mirrored as a todo before it runs, and fixed to the ideal state; a defect outside it gets a tracked issue with reproduction and evidence and a line in the final report. A worker that meets a defect outside its assigned files reports it instead of fixing it; only the orchestrator appends the checkbox and dispatches it to a correctly scoped unit. The todo list, Boulder state, and plan checkboxes must always tell the same story.
+3. **Keep them current at every moment.** Mark a todo in_progress when its work dispatches and done immediately after its verification passes. Never batch-complete at the end, never execute work that is not a registered todo; discovered work inside the change's blast radius — the request not delivered, a regression this change introduces, an invalid proof, a failing test or stale doc of touched code — is appended to the plan as a follow-up checkbox after the checkpoint in progress, mirrored as a todo, and fixed to the ideal state once that checkpoint closes; it joins the open checkpoint only when it blocks that checkpoint's acceptance; a defect outside it gets a tracked issue with reproduction and evidence and a line in the final report. A worker that meets a defect outside its assigned files reports it instead of fixing it; only the orchestrator appends the checkbox and dispatches it to a correctly scoped unit. The todo list, Boulder state, and plan checkboxes must always tell the same story.
 
 ## Phase 1: Select the plan
 
@@ -181,7 +181,7 @@ For each checkbox, complete all five gates before marking it done:
 4. Adversarial QA: exercise every class the Phase 3 trigger map marks applicable and capture the observable result for each.
 5. Cleanup: register every QA resource teardown as its own todo when spawned (QA scripts, tmux assets, browser sessions, PIDs, ports, containers, temp dirs), execute each, and capture the receipt. No QA asset is left running.
 
-Append evidence to `.omo/ulw-execute/ledger.jsonl`, one JSON object per line. Include at least `event`, `plan`, `task`, `session_id`, `commands`, `artifact`, `adversarial_classes`, and `cleanup` fields. `adversarial_classes` lists each probed class with its observable result and each ruled-out class with a one-line reason.
+Append evidence to `.omo/ulw-execute/ledger.jsonl`, one JSON object per line. Include at least `event`, `plan`, `task`, `attempt`, `checkpoint_opened_at`, `session_id`, `commands`, `artifact`, `adversarial_classes`, and `cleanup` fields. `adversarial_classes` lists each probed class with its observable result and each ruled-out class with a one-line reason.
 
 ### Completion contract
 
@@ -199,6 +199,7 @@ A worker done claim is never final: each implementation sub-task returns a `Done
   },
   "AdversarialVerify": {
     "verdict": "confirmed | false-positive | needs-fix | needs-human-review",
+    "failure_class": "none | product | harness",
     "evidence": ["file path, command, log, artifact, or explicit not inspected"],
     "repro": "exact command or manual steps when available",
     "confidence": 0.0
@@ -210,7 +211,8 @@ Rules:
 - `confirmed` is the only pass verdict. `false-positive`, `needs-fix`, and `needs-human-review` all block checkbox completion.
 - The verifier must be independent from the executor: use the harness's gate reviewer (see the harness compatibility section) or a fresh reviewer worker on a strong model, or root only when root did not implement or materially rewrite that task.
 - A worker done claim must be independently verified before it becomes checkbox completion.
-- On any non-confirmed verdict, append the feedback to the ledger, reset the checkbox work to in-progress, and re-dispatch the executor with the exact failure.
+- On a non-confirmed verdict, append the feedback to the ledger with the attempt number and its failure signature (the failing check plus its first error line), reset the checkbox to in-progress, and re-dispatch the executor with the exact failure. STOP after the same signature twice in a row, the third attempt, or 4 hours open, unless the plan sets its own limits: mark the checkbox `- [~]` (the plan grammar's blocked state, which never keeps the continuation alive) with a one-line gap naming what is unmet and the last evidence, append an `unmet` ledger entry listing what each attempt changed, name it in the `ORCHESTRATION COMPLETE` block, and continue with the next checkpoint that does not depend on it.
+- A `harness` failure (the runner, fixture, CI job or environment failed and the product behavior was never exercised) gets one repair dispatch inside the checkpoint; when it recurs, stop as above with the harness gap named and append the harness repair as a follow-up checkbox.
 - The verifier must probe the applicable adversarial keys, including `stale_state`, `dirty_worktree`, and `misleading_success_output`, before allowing `FullyDone`.
 
 ## Phase 5: Mark progress
