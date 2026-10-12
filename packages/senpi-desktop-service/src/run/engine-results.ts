@@ -83,6 +83,13 @@ export interface CaptureRegion {
 	readonly height: number;
 }
 
+/** Screenshot and AX text from one serialized, committed observation. */
+export interface ObserveResult extends CaptureResult {
+	readonly ax: string;
+	readonly nodeCount: number;
+	readonly truncated: boolean;
+}
+
 const DISPLAY: FieldSpec = {
 	id: "string",
 	name: "string",
@@ -177,6 +184,9 @@ export const isMenuItem: Guard<MenuItem> = (value): value is MenuItem =>
 export const isCaptureResult: Guard<CaptureResult> = (value): value is CaptureResult =>
 	matches(value, CAPTURE) && (value.region == null ||
 		matches(value.region, { x: "number", y: "number", width: "number", height: "number" }));
+
+export const isObserveResult: Guard<ObserveResult> = (value): value is ObserveResult =>
+	isCaptureResult(value) && matches(value, { ax: "string", nodeCount: "number", truncated: "boolean" });
 
 export const isText: Guard<{ readonly text: string }> = (value): value is { readonly text: string } =>
 	isRecord(value) && typeof value.text === "string";
