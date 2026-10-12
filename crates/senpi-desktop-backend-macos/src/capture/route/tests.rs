@@ -52,9 +52,9 @@ fn fake_unavailable(_requests: &[SckTargetRequest]) -> Result<Vec<SckFrame>, Sck
 fn each_reason_logs_exactly_once() {
     let store = AtomicU8::new(0);
     let lines = RefCell::new(Vec::new());
-    let mut log = |line: &str| lines.borrow_mut().push(line.to_owned());
+    let log = |line: &str| lines.borrow_mut().push(line.to_owned());
     for _ in 0..3 {
-        note_legacy_into(&store, REASON_START_FAILED, "start failed", &mut log);
+        note_legacy_into(&store, REASON_START_FAILED, "start failed", log);
     }
     assert_eq!(lines.borrow().as_slice(), &["start failed".to_owned()]);
 }

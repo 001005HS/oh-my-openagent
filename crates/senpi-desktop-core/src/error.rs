@@ -104,7 +104,7 @@ pub struct DesktopError {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission: Option<PermissionDeniedData>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub capture_unavailable: Option<CaptureUnavailableData>,
+    pub capture_unavailable: Option<Box<CaptureUnavailableData>>,
 }
 
 impl DesktopError {
@@ -142,9 +142,9 @@ impl DesktopError {
     /// Attaches `CaptureUnavailable` data; only meaningful on that code.
     #[must_use]
     pub fn with_capture_unavailable_reason(mut self, reason: impl Into<String>) -> Self {
-        self.capture_unavailable = Some(CaptureUnavailableData {
+        self.capture_unavailable = Some(Box::new(CaptureUnavailableData {
             reason: reason.into(),
-        });
+        }));
         self
     }
 

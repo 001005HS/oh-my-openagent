@@ -163,16 +163,15 @@ fn transport_failed(error: &DesktopError) -> bool {
 }
 
 #[cfg(test)]
+type CaptureDouble = fn(&[TargetRequest]) -> Result<Vec<frame::Frame>, SckCaptureError>;
+
+#[cfg(test)]
 thread_local! {
-    static TEST_CAPTURE: std::cell::Cell<
-        Option<fn(&[TargetRequest]) -> Result<Vec<frame::Frame>, SckCaptureError>>,
-    > = const { std::cell::Cell::new(None) };
+    static TEST_CAPTURE: std::cell::Cell<Option<CaptureDouble>> = const { std::cell::Cell::new(None) };
 }
 
 /// Routes `SckWorker::capture` to a test double.
 #[cfg(test)]
-pub(crate) fn override_capture(
-    fake: Option<fn(&[TargetRequest]) -> Result<Vec<frame::Frame>, SckCaptureError>>,
-) {
+pub(crate) fn override_capture(fake: Option<CaptureDouble>) {
     TEST_CAPTURE.with(|cell| cell.set(fake));
 }

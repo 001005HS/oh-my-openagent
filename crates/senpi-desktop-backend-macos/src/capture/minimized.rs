@@ -21,12 +21,14 @@ pub(crate) fn window_minimized(pid: i32, window_id: u32) -> Option<bool> {
 }
 
 #[cfg(test)]
+type MinimizedProbe = fn(i32, u32) -> Option<bool>;
+
+#[cfg(test)]
 thread_local! {
-    static TEST_PROBE: std::cell::Cell<Option<fn(i32, u32) -> Option<bool>>> =
-        const { std::cell::Cell::new(None) };
+    static TEST_PROBE: std::cell::Cell<Option<MinimizedProbe>> = const { std::cell::Cell::new(None) };
 }
 
 #[cfg(test)]
-pub(crate) fn override_probe(probe: Option<fn(i32, u32) -> Option<bool>>) {
+pub(crate) fn override_probe(probe: Option<MinimizedProbe>) {
     TEST_PROBE.with(|cell| cell.set(probe));
 }
