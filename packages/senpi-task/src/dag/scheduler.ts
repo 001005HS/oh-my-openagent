@@ -569,11 +569,12 @@ async function runFrontier(context: SchedulerContext): Promise<DagRunRecordV1> {
 }
 
 // One admission pass over the frontier: the ordered residency-denied queue first (oldest denial
-// gets the first freed slot), then every newly ready node. startOwned runs as one batch; denials
-// park in the queue and retry after ANY slot-freeing event in the parent session - one of this
-// run's own children settling, or a resident child of another owner (a sibling run, a team, a task
-// spawn) settling or being evicted (#8396). A denial that names no resident can never be helped by
-// waiting and fails the node. Cancellation aborts the pass without admitting more.
+// gets the first freed slot), then every newly ready node. The pass stays open while any start is
+// in flight; a fold during it re-probes the parked denials first, then admits what it unblocked.
+// Denials still parked when the pass ends retry after ANY slot-freeing event in the parent session -
+// one of this run's own children settling, or a resident child of another owner (a sibling run, a
+// team, a task spawn) settling or being evicted (#8396). A denial that names no resident can never be
+// helped by waiting and fails the node. Cancellation aborts the pass without admitting more.
 async function admitFrontier(context: SchedulerContext): Promise<boolean> {
   for (;;) {
     if (context.suspended || context.cancellationStarted) return false
@@ -662,6 +663,10 @@ async function admitFrontier(context: SchedulerContext): Promise<boolean> {
           foldSettlement(context, next.settled)
           folded = true
           emitCompletedWaves(context)
+          // The slot a fold may free goes to the oldest denial first, before the nodes it unblocks.
+          const retry = admissionOrder.filter((nodeId) => parked.has(nodeId))
+          for (const nodeId of retry) parked.delete(nodeId)
+          launch(retry)
         }
         if (next.kind !== "start") admitReady()
       }
@@ -670,7 +675,7 @@ async function admitFrontier(context: SchedulerContext): Promise<boolean> {
       resolveAdmissionIdle(context)
     }
     if (context.suspended || context.cancellationStarted) return false
-    const nextDenied = admissionOrder.filter((nodeId) => parked.has(nodeId))
+    const nextDenied = [...new Set(admissionOrder)].filter((nodeId) => parked.has(nodeId))
     context.pendingAdmission.push(...nextDenied)
     // A fold during the batch may have freed a slot for a parked node: probe again at once.
     if (folded) continue

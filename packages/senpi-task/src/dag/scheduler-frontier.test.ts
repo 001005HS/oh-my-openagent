@@ -595,6 +595,33 @@ describe("DAG scheduler folds settled children while admission is busy (#8934)",
     expect((await running).status).toBe("completed")
   })
 
+  test("#given a denied node parked while a slow start keeps the batch open #when a fold frees a slot and unblocks a dependent #then the older denial takes the slot first", async () => {
+    // given - cap 1: a runs, p is denied, slow's start hangs; dependent waits on a.
+    const hostBusy = deferred<void>()
+    const manager = new FrontierFakeManager({
+      residencyLimit: 1,
+      beforeStart: (nodeId, attempt) => (nodeId === "slow" && attempt === 1 ? hostBusy.promise : undefined),
+    })
+    const { scheduler } = frontierFixture(definition([node("a"), node("p"), node("slow"), node("dependent", ["a"])]), manager)
+    const running = scheduler.run()
+    await Promise.race([Promise.all([manager.whenStarted("a"), manager.whenDenied("p")]), timeout("a to start and p to be denied")])
+
+    // when - a completes while slow's start is still pending.
+    manager.complete("a")
+
+    // then - the freed slot goes to p, the oldest denial, not to the newly unblocked dependent.
+    await Promise.race([manager.whenStarted("p"), timeout("p to take the freed slot")])
+    expect(manager.starts).toEqual(["a", "p"])
+
+    // cleanup - finish every node as it starts until the run settles.
+    hostBusy.resolve()
+    for (const nodeId of ["p", "slow", "dependent"]) {
+      await Promise.race([manager.whenStarted(nodeId), timeout(`${nodeId} to start during cleanup`)])
+      manager.complete(nodeId)
+    }
+    expect((await running).status).toBe("completed")
+  })
+
   test("#given admission re-probing a contended lease #when an attached child completes #then its node folds while the lease is still denied", async () => {
     // given - b's admission lease stays contended; a is attached and running.
     let leaseContended = true
