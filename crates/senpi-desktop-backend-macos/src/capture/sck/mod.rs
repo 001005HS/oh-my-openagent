@@ -165,7 +165,7 @@ fn transport_failed(error: &DesktopError) -> bool {
 thread_local! {
     static TEST_CAPTURE: std::cell::Cell<
         Option<fn(&[TargetRequest]) -> Result<Vec<frame::Frame>, SckCaptureError>>,
-    > = const { None };
+    > = const { std::cell::Cell::new(None) };
 }
 
 /// Routes `SckWorker::capture` to a test double.

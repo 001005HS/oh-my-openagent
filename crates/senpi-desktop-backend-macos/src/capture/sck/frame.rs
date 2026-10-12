@@ -6,6 +6,7 @@ use senpi_desktop_core::error::{CoreResult, DesktopError};
 use senpi_desktop_core::frame::MAX_COMPOSITE_PIXELS;
 
 /// One decoded helper frame.
+#[derive(Debug)]
 pub(crate) struct Frame {
     pub image: RgbaImage,
     pub bounds: (f64, f64, f64, f64),

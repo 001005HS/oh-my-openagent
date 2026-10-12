@@ -165,6 +165,7 @@ fn active_display_composite_preserves_negative_origin_in_its_frame() {
     let focused = senpi_desktop_core::types::DesktopWindow {
         id: "window".into(), title: String::new(), app: String::new(), pid: None,
         x: -90, y: 0, width: 50, height: 40, focused: true, elevated: None,
+        is_on_screen: None,
     };
     let selected = DisplaySelector::Active.select(vec![primary, left], Some(&focused)).unwrap();
     let regions = selected.into_iter().map(|display| {

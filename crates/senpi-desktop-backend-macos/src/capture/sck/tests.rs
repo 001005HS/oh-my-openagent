@@ -2,7 +2,6 @@
 //! breaking) the helper protocol, so transport, reset, and error mapping all
 //! run against the actual pipe code.
 
-use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 

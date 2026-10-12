@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use image::RgbaImage;
 use senpi_desktop_core::error::{CoreResult, DesktopError};
 use senpi_desktop_core::frame::FrameGeometry;
-use senpi_desktop_core::types::{DesktopDisplay, DesktopWindow, DisplaySelector, Target};
+use senpi_desktop_core::types::{DesktopDisplay, DesktopWindow, Target};
 
 use super::sck::{SckCaptureError, SckFrame, SckUnavailable, SckWorker};
 use super::{parse_window_id, MacCapture};
@@ -199,7 +199,7 @@ pub(crate) mod test_support {
     use std::cell::Cell;
 
     thread_local! {
-        pub(crate) static AVAILABILITY: Cell<Option<Result<(), SckUnavailable>>> = const { None };
+        pub(crate) static AVAILABILITY: Cell<Option<Result<(), SckUnavailable>>> = const { Cell::new(None) };
     }
 
     pub(crate) fn override_availability(value: Option<Result<(), SckUnavailable>>) {
