@@ -7,6 +7,9 @@ export const CLOSE_TIMEOUT_MS = 1_500;
 /** How long a timed-out or aborted request may take to answer `$/cancel` before the child is killed. */
 export const GRACE_MS = 750;
 
+/** Grace for a cancelled hold: longer than the engine's 2 s wait for the held input's release, so the child is never killed mid-release. */
+export const HOLD_RELEASE_GRACE_MS = 2_500;
+
 /** Bounds a `capabilities` request. */
 export const CAPABILITIES_TIMEOUT_MS = 10_000;
 

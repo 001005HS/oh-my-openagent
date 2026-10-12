@@ -3,7 +3,7 @@ import type { AuditEvent, StopPathStatus } from "@oh-my-opencode/senpi-desktop-p
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesktopServiceError } from "../src/service/rpc-client";
 import { DesktopService } from "../src/service/service";
-import { GRACE_MS, HEARTBEAT_MS, RESTART_MESSAGE, START_TIMEOUT_MS } from "../src/service/timeouts";
+import { GRACE_MS, HEARTBEAT_MS, HOLD_RELEASE_GRACE_MS, RESTART_MESSAGE, START_TIMEOUT_MS } from "../src/service/timeouts";
 import { exitOf, fakeEngineFactory, rejectionOf, type SpawnLog } from "./harness";
 
 // Every case waits on real child-process I/O; the guard only catches a hang, it never times behavior.
@@ -150,6 +150,28 @@ describe("DesktopService", HANG_GUARD, () => {
 		const replayed = log.requests.filter((request) => request.child === 1).map((request) => request.method);
 		expect(replayed.slice(0, 3)).toEqual(["engine.hello", "session.open", "stopPath.start"]);
 		expect((await log.nthRequest("session.open", 2)).params).toEqual({ display: "all" });
+	});
+
+	it("gives a cancelled hold the longer release grace before killing the engine", async () => {
+		// Given
+		vi.useFakeTimers(TIMERS);
+		const log = fakeEngineFactory();
+		const service = serviceOver(log);
+		await service.open({});
+		const hung = rejectionOf(service.call("holdKeys", { keys: ["shift"], duration: 1, fake: "hang" }, { timeoutMs: 100 }));
+		await log.nthRequest("holdKeys", 1);
+		await vi.advanceTimersByTimeAsync(100);
+		await log.nthRequest("$/cancel", 1);
+
+		// When the ordinary grace has passed, the engine may still be releasing the held input
+		await vi.advanceTimersByTimeAsync(GRACE_MS);
+		const killedDuringRelease = log.kills();
+		await vi.advanceTimersByTimeAsync(HOLD_RELEASE_GRACE_MS - GRACE_MS);
+		await hung;
+
+		// Then
+		expect(killedDuringRelease).toBe(0);
+		expect(log.kills()).toBe(1);
 	});
 
 	it("closes quietly right after a grace kill, before the killed child has exited", async () => {

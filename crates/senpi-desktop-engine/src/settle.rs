@@ -2,6 +2,7 @@
 
 use std::future::Future;
 use senpi_desktop_core::error::DesktopError;
+use senpi_desktop_core::holds::reports_release_failure;
 use crate::rpc::Failure;
 
 /// Holds keep their receiver alive until cleanup replies, bounded by the
@@ -18,6 +19,9 @@ pub(crate) async fn settle_hold<T>(
         _ = cancel => {
             interrupt();
             match tokio::time::timeout(senpi_desktop_session::CLOSE_TIMEOUT, &mut outcome).await {
+                Ok(Err(Failure::Engine(error))) if reports_release_failure(&error) => {
+                    Err(Failure::Engine(error))
+                }
                 Ok(_) => Err(Failure::cancelled()),
                 Err(_) => Err(Failure::Engine(DesktopError::timeout("held input release did not complete"))),
             }
@@ -89,5 +93,28 @@ mod tests {
         // Then settlement requires the worker's actual reply.
         released.send(()).unwrap();
         assert_eq!(result.await, Err(crate::rpc::Failure::cancelled()));
+    }
+
+    #[tokio::test]
+    async fn a_release_failure_after_cancel_is_reported_not_hidden() {
+        use senpi_desktop_core::error::{CoreResult, DesktopError, ErrorCode};
+        use senpi_desktop_core::holds::merge_release;
+        // Given a cancelled hold whose worker also failed to release the input.
+        let mut outcome: CoreResult<()> =
+            Err(DesktopError::new(ErrorCode::Cancelled, "the hold request was cancelled"));
+        merge_release(&mut outcome, Err(DesktopError::input_failed("key up failed")));
+        let reported = outcome.unwrap_err();
+        // When the cancel lands first.
+        let result = super::settle_hold(
+            async move { Err::<(), _>(crate::rpc::Failure::Engine(reported)) },
+            ready(()),
+            || {},
+        )
+        .await;
+        // Then the release failure reaches the caller instead of a plain Cancelled.
+        let Err(crate::rpc::Failure::Engine(error)) = result else {
+            panic!("expected an engine failure, got {result:?}");
+        };
+        assert!(error.message.contains("key up failed"), "{}", error.message);
     }
 }

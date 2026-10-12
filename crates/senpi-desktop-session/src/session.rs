@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use parking_lot::Mutex;
 use senpi_desktop_core::error::{CoreResult, DesktopError};
+use senpi_desktop_core::holds::reports_release_failure;
 use senpi_desktop_core::types::{DesktopCapabilities, DesktopSessionOptions};
 use tokio::time::{timeout_at, Instant};
 
@@ -264,8 +265,10 @@ impl Pending {
                 Err(_) => {
                     if let (Some(cancel), Some(budget)) = (&_cancellation, self.release_budget) {
                         cancel.0.cancel();
-                        if tokio::time::timeout(budget, replied.recv_async()).await.is_err() {
-                            return Err(timed_out("held input release did not complete"));
+                        match tokio::time::timeout(budget, replied.recv_async()).await {
+                            Err(_) => return Err(timed_out("held input release did not complete")),
+                            Ok(Ok(Err(error))) if reports_release_failure(&error) => return Err(error),
+                            Ok(_) => {}
                         }
                     }
                     Err(timed_out("desktop operation did not complete"))

@@ -2,7 +2,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { EngineMethod, ErrorCode, JsonRpcErrorData } from "@oh-my-opencode/senpi-desktop-protocol";
 import { EngineChild } from "./child";
 import { isRecord, parseErrorData } from "./parse";
-import { GRACE_MS, RESTART_MESSAGE } from "./timeouts";
+import { GRACE_MS, HOLD_RELEASE_GRACE_MS, RESTART_MESSAGE } from "./timeouts";
 
 /** Failures the service itself produces; engine failures are `DesktopEngineRpcError`. */
 export type DesktopServiceErrorCode = Extract<ErrorCode, "Timeout" | "Cancelled" | "Closed" | "Internal">;
@@ -143,7 +143,7 @@ export class RpcClient {
 			this.#settle(id);
 			pending.reject(new DesktopServiceError(reason.code, `${reason.message}; ${RESTART_MESSAGE}`, true));
 			this.#child.kill();
-		}, GRACE_MS);
+		}, pending.method === "holdKeys" || pending.method === "holdMouse" ? HOLD_RELEASE_GRACE_MS : GRACE_MS);
 		pending.release = () => clearTimeout(grace);
 		this.#child.write({ method: "$/cancel", params: { id } });
 	}
