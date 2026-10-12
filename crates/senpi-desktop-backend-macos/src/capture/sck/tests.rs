@@ -181,7 +181,12 @@ fn a_garbage_header_is_a_transport_failure() {
     let dir = tempfile::tempdir().unwrap();
     let helper = fake_helper(
         &dir,
-        "#!/usr/bin/env python3\nimport sys\nsys.stdout.write('not json\\n')\nsys.stdout.flush()\n",
+        concat!(
+            "#!/usr/bin/env python3\n",
+            "import sys\n",
+            "sys.stdout.write('not json\\n')\n",
+            "sys.stdout.flush()\n",
+        ),
     );
     let mut client = HelperClient::start(&helper).unwrap();
     let error = client.capture(&request_batch(&[TargetRequest::window(1)])).unwrap_err();
