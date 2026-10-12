@@ -97,4 +97,18 @@ describe("receipt-driven host respawn lifecycle", () => {
     unsubscribe()
     await f.result.handle.dispose()
   })
+
+  test("a deadline stays interrupted when a host wake arrives without task_send", async () => {
+    const f = await stoppedChild({ state: "done", outcome: { kind: "deadline", deadline: { kind: "inactivity" } } })
+    await f.manager.reattach(f.record, f.result.handle)
+    const started = Promise.withResolvers<void>()
+    const unsubscribe = f.result.handle.subscribe(event => { if (event.type === "agent_start") started.resolve() })
+    f.startContinuation()
+    await started.promise
+    expect(f.store.load(f.record.task_id)?.status).toBe("interrupted")
+    expect(f.store.load(f.record.task_id)?.notification.run_epoch).toBe(0)
+    expect(f.events.filter(type => type === "task_self_resumed")).toEqual([])
+    unsubscribe()
+    await f.result.handle.dispose()
+  })
 })
