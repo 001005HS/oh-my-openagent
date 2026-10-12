@@ -65,6 +65,44 @@ fn bounded_keys_append_release_failure_without_replacing_primary() {
 }
 
 #[test]
+fn bounded_keys_release_all_attempts_when_second_press_panics() {
+    // Given a native panic after the second press may have been delivered.
+    let mut harness = harness(&json!({}));
+    harness.faults.panic_after(FakeMethod::KeyPress, 1);
+    // When the real shared hold guard handles that backend unwind.
+    let error = harness.process(keys(0.0)).unwrap_err();
+    // Then both attempted keys release in reverse and the third is untouched.
+    assert_eq!(error.code, ErrorCode::Internal);
+    assert_eq!(transitions(&harness), [
+        (KeyName::Ctrl, true), (KeyName::Shift, true),
+        (KeyName::Shift, false), (KeyName::Ctrl, false),
+    ]);
+}
+
+#[test]
+fn bounded_keys_release_first_press_when_interrupted_between_presses() {
+    for stop in [false, true] {
+        // Given an interruption fired inside the first backend press.
+        let mut harness = harness(&json!({}));
+        let signal = harness.supervisor.hold_signal();
+        harness.worker.hold_signal = Some(signal.clone());
+        let supervisor = harness.supervisor.clone();
+        harness.faults.on_next(FakeMethod::KeyPress, move || {
+            if stop {
+                supervisor.trigger_stop(senpi_desktop_safety::StopSource::Hotkey);
+            } else {
+                signal.cancel();
+            }
+        });
+        // When the next press checks the real request signal.
+        let error = harness.process(keys(0.0)).unwrap_err();
+        // Then neither later key is pressed, and the first one releases.
+        assert_eq!(error.code, if stop { ErrorCode::Suspended } else { ErrorCode::Cancelled });
+        assert_eq!(transitions(&harness), [(KeyName::Ctrl, true), (KeyName::Ctrl, false)]);
+    }
+}
+
+#[test]
 fn invalid_hold_duration_and_empty_keys_send_no_input() {
     for duration in [f64::NAN, f64::INFINITY, -0.1, 100.1] {
         let mut harness = harness(&json!({}));
