@@ -57,6 +57,8 @@ export interface SenpiExtensionAPI {
     },
   ): void
   getFlag(name: string): boolean | string | undefined
+  /** The session's merged settings (global and project); absent on test hosts. */
+  getSettings?(): unknown
   /** The session's current name (`/name`, `set_session_name`); undefined when it has none. */
   getSessionName?(): string | undefined
   sendMessage(message: Record<string, unknown>, options?: Record<string, unknown>): void | Promise<void>
