@@ -55,8 +55,8 @@ impl Backend for PanickyFake {
     fn windows(&mut self) -> CoreResult<Vec<DesktopWindow>> {
         self.inner.windows()
     }
-    fn capture(&mut self, target: &Target, caps: &CaptureCaps, _exclude_window_titles: &[String]) -> CoreResult<(RgbaImage, FrameGeometry)> {
-        self.inner.capture(target, caps)
+    fn capture(&mut self, target: &Target, caps: &CaptureCaps, exclude_window_titles: &[String]) -> CoreResult<(RgbaImage, FrameGeometry)> {
+        self.inner.capture(target, caps, exclude_window_titles)
     }
     fn pointer(
         &mut self,

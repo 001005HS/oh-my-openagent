@@ -20,6 +20,7 @@ use self::protocol::TargetRequest;
 
 /// The frame type `MacCapture` composites.
 pub(crate) use self::frame::Frame as SckFrame;
+#[cfg(test)]
 pub(crate) use self::protocol::TargetRequest as SckTargetRequest;
 
 /// A window capture request (off-Space ids resolve; minimized is refused).

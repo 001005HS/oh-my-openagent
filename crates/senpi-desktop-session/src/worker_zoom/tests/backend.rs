@@ -79,6 +79,7 @@ impl Backend for ZoomBackend {
         &mut self,
         target: &Target,
         caps: &CaptureCaps,
+        _exclude_window_titles: &[String],
     ) -> CoreResult<(RgbaImage, FrameGeometry)> {
         let mut state = self.0.lock();
         state.captures.push(target.clone());

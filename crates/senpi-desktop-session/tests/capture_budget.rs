@@ -53,8 +53,8 @@ impl Backend for NoisyFake {
     fn windows(&mut self) -> CoreResult<Vec<DesktopWindow>> {
         self.fake.windows()
     }
-    fn capture(&mut self, target: &Target, caps: &CaptureCaps, _exclude_window_titles: &[String]) -> CoreResult<(RgbaImage, FrameGeometry)> {
-        let (_, geometry) = self.fake.capture(target, caps)?;
+    fn capture(&mut self, target: &Target, caps: &CaptureCaps, exclude_window_titles: &[String]) -> CoreResult<(RgbaImage, FrameGeometry)> {
+        let (_, geometry) = self.fake.capture(target, caps, exclude_window_titles)?;
         Ok(((*self.noise).clone(), geometry))
     }
     fn pointer(

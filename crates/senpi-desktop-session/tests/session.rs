@@ -274,7 +274,7 @@ impl Backend for PanicsOnDisplays {
     fn windows(&mut self) -> CoreResult<Vec<DesktopWindow>> {
         Ok(Vec::new())
     }
-    fn capture(&mut self, _: &Target, _: &CaptureCaps) -> CoreResult<(RgbaImage, FrameGeometry)> {
+    fn capture(&mut self, _: &Target, _: &CaptureCaps, _: &[String]) -> CoreResult<(RgbaImage, FrameGeometry)> {
         unreachable!("capture is not exercised")
     }
     fn pointer(&mut self, _: &Target, _: PointerEvent, _: &FrameGeometry, _: DeliveryMode) -> CoreResult<()> {

@@ -235,17 +235,3 @@ fn read_pixels(
 fn io_error(error: io::Error) -> DesktopError {
     DesktopError::capture_failed(format!("native capture transport failed: {error}"))
 }
-
-/// The staged helper's sibling path next to the running executable, used in
-/// release layout (`native/prebuilds/<host>/senpi-desktop-capture-helper`).
-pub(crate) fn staged_helper_path(executable: &PathBuf) -> PathBuf {
-    executable
-        .parent()
-        .map(|dir| dir.join("senpi-desktop-capture-helper"))
-        .unwrap_or_else(|| PathBuf::from("senpi-desktop-capture-helper"))
-}
-
-/// A readable debug name for the helper spawn, for logs.
-pub(crate) fn describe(program: &PathBuf) -> String {
-    program.display().to_string()
-}
