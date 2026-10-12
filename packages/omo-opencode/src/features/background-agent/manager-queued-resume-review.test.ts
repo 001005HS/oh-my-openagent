@@ -17,6 +17,7 @@ type Internals = {
   concurrencyManager: ConcurrencyManager
   pendingByParent: Map<string, Set<string>>
   startResumedTask: (...args: unknown[]) => Promise<BackgroundTask>
+  updateBackgroundTaskMarker: (parentSessionID: string | undefined) => void
 }
 
 const fixtures: Array<{ manager: BackgroundManager; directory: string }> = []
@@ -123,6 +124,32 @@ describe("queued resume review regressions", () => {
     expect(manager.taskHistory.getByParentSession("new-parent").map(entry => entry.status)).toEqual(["running"])
   })
 
+  test("writes the queued parent's marker once during shutdown", async () => {
+    // given
+    const { manager, internals, directory } = await queueResume()
+    const markerUpdates = spyOn(internals, "updateBackgroundTaskMarker")
+    // when
+    await manager.shutdown()
+    // then
+    const queuedParentUpdates = markerUpdates.mock.calls.filter(call => call[0] === "new-parent")
+    expect(queuedParentUpdates.length).toBe(1)
+    expect(readContinuationMarker(directory, "new-parent")?.sources["background-task"]?.state).toBe("idle")
+  })
+
+  test("logs an admission failure even after the resume token was consumed", async () => {
+    // given
+    const { internals, task, log } = await queueResume()
+    spyOn(internals, "startResumedTask").mockImplementation(async () => {
+      task.pendingResume = undefined
+      throw new Error("admission-dispatch-failure")
+    })
+    // when
+    internals.concurrencyManager.release("explore")
+    await settleAdmission()
+    // then
+    expect(log.mock.calls.some(call => JSON.stringify(call).includes("admission-dispatch-failure"))).toBe(true)
+  })
+
   test("refuses a second continuation while one is queued", async () => {
     // given
     const { manager } = await queueResume("new-parent", true)
@@ -162,19 +189,5 @@ describe("queued resume review regressions", () => {
     expect(internals.pendingByParent.has("new-parent")).toBe(false)
     expect(manager.taskHistory.getByParentSession("new-parent").map(entry => entry.status)).toEqual(["cancelled"])
     expect(readContinuationMarker(directory, "new-parent")?.sources["background-task"]?.state).toBe("idle")
-  })
-
-  test("logs an admission failure even after the resume token was consumed", async () => {
-    // given
-    const { internals, task, log } = await queueResume()
-    spyOn(internals, "startResumedTask").mockImplementation(async () => {
-      task.pendingResume = undefined
-      throw new Error("admission-dispatch-failure")
-    })
-    // when
-    internals.concurrencyManager.release("explore")
-    await settleAdmission()
-    // then
-    expect(log.mock.calls.some(call => JSON.stringify(call).includes("admission-dispatch-failure"))).toBe(true)
   })
 })

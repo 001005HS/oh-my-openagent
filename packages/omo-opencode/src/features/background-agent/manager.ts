@@ -3271,11 +3271,7 @@ The task was re-queued on a fallback model after a retryable failure.
         this.concurrencyManager.cancelWaiter(task.concurrencyGroup ?? task.agent, task.id)
         this.cleanupPendingByParent(task)
         removeTaskToastTracking(task.id)
-        this.taskHistory.record(task.parentSessionId, {
-          id: task.id, sessionID: task.sessionId, agent: task.agent,
-          description: task.description, status: "cancelled", completedAt: task.completedAt,
-        })
-        this.updateBackgroundTaskMarker(task.parentSessionId)
+        // Shutdown clears task history and rewrites these markers below; recording either here would be wiped by the same call.
       }
       if (task.sessionId) {
         trackedSessionIDs.add(task.sessionId)
