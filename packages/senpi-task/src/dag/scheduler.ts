@@ -578,71 +578,102 @@ async function admitFrontier(context: SchedulerContext): Promise<boolean> {
   for (;;) {
     if (context.suspended || context.cancellationStarted) return false
     const denied = context.pendingAdmission.splice(0)
-    const deniedIds = new Set(denied)
-    const snapshot = context.journal.snapshot()
-    const runnable = snapshot.nodes
-      .filter((node) =>
-        (node.state === "pending" || node.state === "blocked") &&
-        !deniedIds.has(node.id) &&
-        isRunnable(snapshot, node.id))
-      .map((node) => node.id)
-    if (denied.length === 0 && runnable.length === 0) return true
-
-    for (const nodeId of runnable) transition(context, nodeId, "scheduled", { kind: "scheduled" })
-    emitWaveAdmissions(context, runnable)
-
     // Armed BEFORE the probe: the wake is edge-triggered, and a sibling child that settles while
     // this batch is in flight must still be seen, or a run whose last chance passed in that gap
     // parks until an unrelated resident settles.
-    const residencyReleased = context.taskManager.residencyChanged(snapshot.parentSessionId)
-    const awaitingAdmission = [...denied, ...runnable]
+    const residencyReleased = context.taskManager.residencyChanged(context.journal.snapshot().parentSessionId)
+    // #8934: a start can take minutes against a busy task host, so the batch is open-ended. Each
+    // start is handled the moment it returns (a node whose child started is attached at once), the
+    // run's own children fold the moment they settle, and nodes a fold unblocks join the batch.
+    // Denials are collected in admission order, which keeps the residency FIFO.
+    const admissionOrder: DagNodeId[] = []
+    const parked = new Set<DagNodeId>()
+    const inFlight = new Map<DagNodeId, Promise<void>>()
+    let leaseDenied = false
+    let folded = false
+    const admitOne = (nodeId: DagNodeId, settled: PromiseSettledResult<OwnedStartResult>): void => {
+      // The task owner record is durable even when admission finishes after suspension. Recovery
+      // resolves it by owner; this retired controller must not attach, fail, or promote the node.
+      if (context.suspended && !context.cancellationStarted) return
+      if (settled.status === "rejected") {
+        if (!context.cancellationStarted) failNode(context, nodeId, "start_failed", errorMessage(settled.reason))
+        return
+      }
+      const result = settled.value
+      if (context.cancellationStarted) {
+        if (result.kind === "started") attachStarted(context, nodeId, result)
+        return
+      }
+      if (result.kind === "residency_denied") {
+        const park = parkResidencyDenied(context, nodeId, result)
+        if (park === "queued" || park === "lease") parked.add(nodeId)
+        if (park === "lease") leaseDenied = true
+        return
+      }
+      context.residencyQueued.delete(nodeId)
+      attachOrFail(context, nodeId, result)
+    }
+    const launch = (nodeIds: readonly DagNodeId[]): void => {
+      for (const nodeId of nodeIds) {
+        admissionOrder.push(nodeId)
+        const started = (async () => {
+          let settled: PromiseSettledResult<OwnedStartResult>
+          try {
+            settled = { status: "fulfilled", value: await context.taskManager.startOwned(startSpec(context, nodeId), owner(context, nodeId)) }
+          } catch (reason) {
+            settled = { status: "rejected", reason }
+          }
+          admitOne(nodeId, settled)
+        })()
+        inFlight.set(nodeId, started.finally(() => inFlight.delete(nodeId)))
+      }
+    }
+    const admitReady = (): void => {
+      const snapshot = context.journal.snapshot()
+      const runnable = snapshot.nodes
+        .filter((node) =>
+          (node.state === "pending" || node.state === "blocked") &&
+          !inFlight.has(node.id) &&
+          isRunnable(snapshot, node.id))
+        .map((node) => node.id)
+      if (runnable.length === 0) return
+      for (const nodeId of runnable) transition(context, nodeId, "scheduled", { kind: "scheduled" })
+      emitWaveAdmissions(context, runnable)
+      launch(runnable)
+    }
+
+    launch(denied)
+    admitReady()
+    if (inFlight.size === 0) return true
     context.admissionInProgress = true
-    let results: PromiseSettledResult<{ readonly nodeId: DagNodeId; readonly result: OwnedStartResult }>[]
-    let foldedDuringBatch = false
     try {
-      const batch = await foldSettlementsUntil(context, Promise.allSettled(awaitingAdmission.map(async (nodeId) => ({
-        nodeId,
-        result: await context.taskManager.startOwned(startSpec(context, nodeId), owner(context, nodeId)),
-      }))))
-      results = batch.value
-      foldedDuringBatch = batch.folded
+      while (inFlight.size > 0) {
+        const next = await Promise.race([
+          Promise.race(inFlight.values()).then(() => ({ kind: "start" as const })),
+          nextOwnSettlement(context).then((settled) => ({ kind: "settled" as const, settled })),
+          // A child attached (or a foreign commit) mid-batch re-arms the race above.
+          context.settlementChanged().then(() => ({ kind: "wake" as const })),
+        ])
+        if (context.suspended || context.cancellationStarted) {
+          await Promise.all(inFlight.values())
+          break
+        }
+        if (next.kind === "settled") {
+          foldSettlement(context, next.settled)
+          folded = true
+          emitCompletedWaves(context)
+        }
+        if (next.kind !== "start") admitReady()
+      }
     } finally {
       context.admissionInProgress = false
       resolveAdmissionIdle(context)
     }
-    // The task owner record is durable even when admission finishes after suspension. Recovery
-    // resolves it by owner; this retired controller must not attach, fail, or promote the node.
-    if (context.suspended && !context.cancellationStarted) return false
-    const nextDenied: DagNodeId[] = []
-    let leaseDenied = false
-    for (let index = 0; index < results.length; index += 1) {
-      const settled = results[index]
-      const nodeId = awaitingAdmission[index]
-      if (settled === undefined || nodeId === undefined) throw new Error("DAG admission result lost its node")
-      if (settled.status === "rejected") {
-        if (!context.cancellationStarted) failNode(context, nodeId, "start_failed", errorMessage(settled.reason))
-        continue
-      }
-      const { result } = settled.value
-      if (context.cancellationStarted) {
-        if (result.kind === "started") attachStarted(context, nodeId, result)
-      } else if (result.kind === "residency_denied") {
-        const parked = parkResidencyDenied(context, nodeId, result)
-        if (parked === "queued") nextDenied.push(nodeId)
-        if (parked === "lease") {
-          nextDenied.push(nodeId)
-          leaseDenied = true
-        }
-      } else {
-        context.residencyQueued.delete(nodeId)
-        attachOrFail(context, nodeId, result)
-      }
-    }
-    if (context.cancellationStarted) return false
+    if (context.suspended || context.cancellationStarted) return false
+    const nextDenied = admissionOrder.filter((nodeId) => parked.has(nodeId))
     context.pendingAdmission.push(...nextDenied)
-    // A child folded during the batch may have unblocked dependents or freed a slot: scan again now,
-    // since no further settlement may ever arrive to wake the run (#8934).
-    if (foldedDuringBatch) continue
+    // A fold during the batch may have freed a slot for a parked node: probe again at once.
+    if (folded) continue
     if (nextDenied.length === 0) return true
     // A contended or displaced admission lease is a bounded wait inside acquisition itself, so the
     // next probe is already paced; only a cap denial has to wait for a slot to free.
@@ -884,29 +915,6 @@ async function settleOne(context: SchedulerContext, residencyReleased?: Promise<
 // Pending forever while nothing is attached, which is what every caller's race wants.
 function nextOwnSettlement(context: SchedulerContext): Promise<AttachedTaskSettlement> {
   return Promise.race([...context.attachedTasks.values()].map((entry) => entry.settled))
-}
-
-// #8934: an admission batch can stay in flight for minutes (a start against a busy task host), and a
-// lease-denied sibling sends the pass straight into another batch. Folding only between batches left
-// every child that finished meanwhile `running` (dag_8e7feddb: 16 completions, 0 folded), so this
-// run's own children fold the moment they settle while the batch is awaited. Their nodes are never
-// part of the batch: only scheduled, unattached nodes are admitted.
-async function foldSettlementsUntil<T>(
-  context: SchedulerContext,
-  work: Promise<T>,
-): Promise<{ readonly value: T; readonly folded: boolean }> {
-  const done = work.then((value) => ({ done: true as const, value }))
-  let folded = false
-  for (;;) {
-    const next = await Promise.race([
-      done,
-      nextOwnSettlement(context).then((settled) => ({ done: false as const, settled })),
-    ])
-    if (next.done) return { value: next.value, folded }
-    if (context.suspended || context.cancellationStarted) return { value: await work, folded }
-    foldSettlement(context, next.settled)
-    folded = true
-  }
 }
 
 function foldSettlement(context: SchedulerContext, settled: AttachedTaskSettlement): void {

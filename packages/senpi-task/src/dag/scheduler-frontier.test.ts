@@ -538,22 +538,20 @@ describe("DAG scheduler folds settled children while admission is busy (#8934)",
   test("#given an admission batch held open by a slow start #when an attached child completes #then its node folds before the batch returns", async () => {
     // given - cap 2: a and b start, c is denied; once b settles, c's retry hangs on a busy host.
     const hostBusy = deferred<void>()
+    const cRetried = deferred<void>()
     const manager = new FrontierFakeManager({
       residencyLimit: 2,
-      beforeStart: (nodeId, attempt) => (nodeId === "c" && attempt >= 2 ? hostBusy.promise : undefined),
+      beforeStart: (nodeId, attempt) => {
+        if (nodeId !== "c" || attempt < 2) return undefined
+        cRetried.resolve()
+        return hostBusy.promise
+      },
     })
     const { scheduler } = frontierFixture(definition([node("a"), node("b"), node("c")]), manager)
     const running = scheduler.run()
     await Promise.all([manager.whenStarted("a"), manager.whenStarted("b"), manager.whenDenied("c")])
-    const cRetried = new Promise<void>((resolve) => {
-      const unsubscribe = scheduler.subscribe(() => {
-        if (manager.attempts.filter((attempt) => attempt === "c").length < 2) return
-        unsubscribe()
-        resolve()
-      })
-    })
     manager.complete("b")
-    await Promise.race([cRetried, timeout("c's second admission attempt")])
+    await Promise.race([cRetried.promise, timeout("c's second admission attempt")])
 
     // when - a completes while c's start is still in flight.
     const aFolded = whenNodeState(scheduler, "a", "completed")
@@ -567,6 +565,33 @@ describe("DAG scheduler folds settled children while admission is busy (#8934)",
     hostBusy.resolve()
     await manager.whenStarted("c")
     manager.complete("c")
+    expect((await running).status).toBe("completed")
+  })
+
+  test("#given two nodes admitted in one batch #when one start returns at once and the other hangs #then the fast node attaches, folds, and unblocks its dependent before the slow start returns", async () => {
+    // given - fast and slow share the first batch; dependent waits on fast only.
+    const hostBusy = deferred<void>()
+    const manager = new FrontierFakeManager({
+      beforeStart: (nodeId) => (nodeId === "slow" ? hostBusy.promise : undefined),
+    })
+    const { scheduler } = frontierFixture(definition([node("fast"), node("slow"), node("dependent", ["fast"])]), manager)
+    const running = scheduler.run()
+    await Promise.race([manager.whenStarted("fast"), timeout("fast to start")])
+
+    // when
+    const fastFolded = whenNodeState(scheduler, "fast", "completed")
+    manager.complete("fast")
+
+    // then - slow's start is still pending, yet fast folded and its dependent started.
+    await Promise.race([fastFolded, timeout("fast to fold while slow's start was pending")])
+    await Promise.race([manager.whenStarted("dependent"), timeout("dependent to start before slow's start returned")])
+    expect(manager.starts).not.toContain("slow")
+
+    // cleanup
+    hostBusy.resolve()
+    await manager.whenStarted("slow")
+    manager.complete("slow")
+    manager.complete("dependent")
     expect((await running).status).toBe("completed")
   })
 
