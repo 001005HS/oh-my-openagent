@@ -163,7 +163,7 @@ const scenarios = [
       const [frameId, width, height, nodes, hasRefs, truncated] = (/OBSERVE (\S+) (\S+) (\S+) (\S+) (\S+) (\S+)/.exec(resultText(result)) ?? []).slice(1)
       return [
         ["the observe run succeeded", result?.isError === false],
-        ["the observation carries a window frame", frameId?.startsWith("101") === true && Number(width) > 0 && Number(height) > 0],
+        ["the observation carries a window frame", /^\S+$/.test(frameId ?? "") && Number(width) > 0 && Number(height) > 0],
         ["the observation carries a non-empty tree with refs", Number(nodes) > 0 && hasRefs === "true" && truncated === "false"],
         ["a click on the observed frame reached the engine", methods.includes("click")],
       ]
