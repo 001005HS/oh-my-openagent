@@ -15,6 +15,7 @@ export interface HandleRecoveryHost {
   readonly reattach: HostSessionReattach | undefined
   readonly events: HostShardEvents | undefined
   readonly bound: TransportRecoveryOptions | undefined
+  readonly closeGraceMs: number
   port(): HostSessionPort
   identity(): HostSessionIdentity
   alive(): boolean
@@ -139,7 +140,8 @@ export function createHandleRecovery(host: HandleRecoveryHost): HandleRecovery {
     )
       .catch((error: unknown) => {
         log("senpi-task host session reattach continuation failed", { taskId: host.taskId, error: String(error) })
-        if (isTransportLossError(error) || isTransportRecoveryExpired(error)) {
+        if (isTransportLossError(error) || isTransportRecoveryExpired(error)
+          || (error instanceof Error && error.message.startsWith("Timeout waiting for response to "))) {
           if (host.alive() && !host.stopRequested()) host.park("daemon_unavailable")
         } else host.continuationFailed(error)
       })
@@ -149,8 +151,10 @@ export function createHandleRecovery(host: HandleRecoveryHost): HandleRecovery {
         // A parked adopted port is no longer owned by this handle. Leave the session intact for
         // contextual revival, but release this connection before another handle reattaches.
         if (adopted && !host.alive() && !host.stopRequested()) {
-          try { await host.port().detach() }
+          const cleanupBound = armRecoveryBound({ ...host.bound, boundMs: host.closeGraceMs })
+          try { await withinBound(cleanupBound, host.port().detach()) }
           catch (error) { log("senpi-task parked recovery detach failed", { taskId: host.taskId, error: String(error) }) }
+          finally { cleanupBound.settle() }
         }
         reattaching = undefined
       })

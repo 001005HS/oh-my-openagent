@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test"
 
 import { HOST_SESSION_REATTACH_TAG } from "./rpc-host/reattach"
 import { HostSessionClient } from "./rpc-host/session-client"
-import { TransportRecoveryExpiredError } from "./rpc-host/transport-recovery"
 import { isHostSessionHandle } from "./rpc-host"
 import { childSpec, fakeFallbackRunner, hostRunnerHarness } from "./rpc-host.test-support"
 import type { RpcRunnerSpec } from "./types"
@@ -90,6 +89,7 @@ describe("RpcHostRunner transport recovery", () => {
   })
 
   test("#given a reattached child whose continuation times out #when recovery cannot deliver #then it parks for contextual respawn without a terminal result", async () => {
+    const failureMessage = "Timeout waiting for response to prompt. Stderr: "
     // given - the client the runner creates for the new host never answers a prompt
     const host = await fakeHost()
     let created = 0
@@ -104,7 +104,7 @@ describe("RpcHostRunner transport recovery", () => {
           const send = client.send.bind(client)
           client.send = (command) =>
             command.type === "prompt"
-              ? Promise.reject(new TransportRecoveryExpiredError())
+              ? Promise.reject(new Error(failureMessage))
               : send(command)
         }
         return client

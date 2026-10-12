@@ -147,6 +147,7 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
 
   const recovery = createHandleRecovery({
     taskId,
+    closeGraceMs,
     reattach,
     events: shardEvents,
     bound: transportRecovery,

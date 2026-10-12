@@ -36,7 +36,7 @@ describe("reattached continuation failure", () => {
     } finally { await handle.dispose() }
   })
 
-  for (const failure of ["transport", "expiry"] as const) {
+  for (const failure of ["transport", "expiry", "client-timeout", "detach-stall"] as const) {
     test(`${failure} after adoption parks for recovery and releases the adopted connection`, async () => {
       // given
       const original = fakeSessionPort()
@@ -47,6 +47,16 @@ describe("reattached continuation failure", () => {
         promptSent.resolve()
         return acknowledgement.promise
       })
+      const detachAsked = Promise.withResolvers<void>()
+      const detachFinished = Promise.withResolvers<void>()
+      if (failure === "detach-stall") {
+        const detach = reopened.detach
+        reopened.detach = async () => {
+          await detach()
+          detachAsked.resolve()
+          await detachFinished.promise
+        }
+      }
       const handle = createHostSessionHandle({
         client: original, session: FAKE_SESSION, taskId: "st_parked_continuation",
         heartbeatIntervalMs: 60_000, now: () => 0, closeGraceMs: 0, openDisposition: "attached",
@@ -61,9 +71,14 @@ describe("reattached continuation failure", () => {
         original.loseTransport()
         await bounded(promptSent.promise)
         if (failure === "expiry") clock.expire()
+        else if (failure === "client-timeout") acknowledgement.reject(new Error("Timeout waiting for response to prompt. Stderr: "))
         else acknowledgement.reject(Object.assign(new Error("connection closed"), { code: "rpc_transport_gone" }))
         await bounded(parked.promise)
-        await handle.getEntries()
+        if (failure === "detach-stall") {
+          await bounded(detachAsked.promise)
+          clock.expire()
+        }
+        await bounded(handle.getEntries())
         // then: detach the connection, not the session needed by contextual recovery
         expect(await parked.promise).toBe("daemon_unavailable")
         expect(reopened.detaches).toBe(1)
@@ -72,6 +87,7 @@ describe("reattached continuation failure", () => {
         expect(clock.pending()).toBe(0)
       } finally {
         acknowledgement.resolve()
+        detachFinished.resolve()
         await handle.dispose()
       }
     })
