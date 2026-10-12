@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { PluginInput } from "@opencode-ai/plugin"
-import { formatSessionList } from "./session-formatter"
 import { getSdkSessionMessages } from "./sdk-storage"
-import { describeSessionError } from "./session-error"
+import { describeSessionError, formatSkippedSessions } from "./session-error"
 
 const notFoundBody = { name: "NotFoundError", data: { message: "Session not found: ses_gone" } }
 
@@ -42,20 +41,17 @@ describe("sdk session reads", () => {
   })
 })
 
-describe("formatSessionList", () => {
-  test("#given one session whose info read rejects with an error body #when listed #then the others are listed and the skipped one is named", async () => {
+describe("formatSkippedSessions", () => {
+  test("#given more skipped sessions than the cap #when formatted #then five are named and the rest counted", () => {
     //#given
-    const getInfo = async (id: string) => {
-      if (id === "ses_gone") throw notFoundBody
-      return { id, message_count: 1, agents_used: [], has_todos: false, has_transcript: false }
-    }
+    const skipped = Array.from({ length: 7 }, (_, index) => ({ id: `ses_${index}`, reason: "NotFoundError: gone" }))
 
     //#when
-    const output = await formatSessionList(["ses_ok", "ses_gone"], getInfo)
+    const text = formatSkippedSessions(skipped)
 
     //#then
-    expect(output).toContain("ses_ok")
-    expect(output).toContain("Skipped 1 session that could not be read: ses_gone (NotFoundError: Session not found: ses_gone)")
-    expect(output).not.toContain("[object Object]")
+    expect(text).toBe(
+      "\n\nSkipped 7 sessions that could not be read: ses_0 (NotFoundError: gone), ses_1 (NotFoundError: gone), ses_2 (NotFoundError: gone), ses_3 (NotFoundError: gone), ses_4 (NotFoundError: gone), and 2 more",
+    )
   })
 })

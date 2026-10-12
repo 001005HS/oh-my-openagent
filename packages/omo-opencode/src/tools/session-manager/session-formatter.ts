@@ -2,10 +2,7 @@ import type { SessionInfo, SessionMessage, SearchResult } from "./types"
 import { getSessionInfo, readSessionMessages } from "./storage"
 import { describeSessionError, formatSkippedSessions, type SkippedSession } from "./session-error"
 
-export async function formatSessionList(
-  sessionIDs: string[],
-  readInfo: (sessionID: string) => Promise<SessionInfo | null> = getSessionInfo,
-): Promise<string> {
+export async function formatSessionList(sessionIDs: string[]): Promise<string> {
   if (sessionIDs.length === 0) {
     return "No sessions found."
   }
@@ -13,7 +10,7 @@ export async function formatSessionList(
   const skipped: SkippedSession[] = []
   const reads = await Promise.all(
     sessionIDs.map((id) =>
-      readInfo(id).catch((error: unknown) => {
+      getSessionInfo(id).catch((error: unknown) => {
         skipped.push({ id, reason: describeSessionError(error) })
         return null
       }),

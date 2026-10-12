@@ -35,9 +35,13 @@ export function toSessionError(error: unknown): Error {
 
 export type SkippedSession = { readonly id: string; readonly reason: string }
 
+const SKIPPED_SESSIONS_SHOWN = 5
+
 export function formatSkippedSessions(skipped: readonly SkippedSession[]): string {
   if (skipped.length === 0) return ""
   const noun = skipped.length === 1 ? "session" : "sessions"
-  const entries = skipped.map((entry) => `${entry.id} (${entry.reason})`).join(", ")
-  return `\n\nSkipped ${skipped.length} ${noun} that could not be read: ${entries}`
+  const shown = skipped.slice(0, SKIPPED_SESSIONS_SHOWN).map((entry) => `${entry.id} (${entry.reason})`)
+  const hidden = skipped.length - shown.length
+  const entries = hidden > 0 ? [...shown, `and ${hidden} more`] : shown
+  return `\n\nSkipped ${skipped.length} ${noun} that could not be read: ${entries.join(", ")}`
 }

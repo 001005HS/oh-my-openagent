@@ -1,8 +1,8 @@
-## 2026-10-12 - Session tools show the real error and skip unreadable sessions (#5854)
+## 2026-10-12 - Session tools read legacy-storage sessions and show the real error (#5854)
 
-Thanks to @crazyrabbit0 for the fresh reproduction on 5.1.30 with OpenCode 1.19.0. When OpenCode answered a session read with an error body, the SDK layer threw that plain object, and every session tool printed `Error: [object Object]`. A no-match `session_search` scans up to 50 sessions and `session_list` reads every session's info, so one unreadable session hid the whole result.
+Thanks to @crazyrabbit0 for the fresh reproduction on 5.1.30 with OpenCode 1.19.0. A session that exists only in OpenCode's legacy JSON storage is merged into the session list, but the SQLite server answers `NotFoundError` for it. The SDK layer threw that error body unchanged, so every session tool printed `Error: [object Object]`, and a no-match `session_search` or `session_list` failed on that one session.
 
-The SDK layer now throws a real `Error` that keeps the body's name and message (for example `NotFoundError: Session not found: …`), with the body as its `cause`, and the tools describe any non-`Error` value by its name, message and code, falling back to JSON. `session_search` across sessions and `session_list` skip a session they cannot read and name it with its reason at the end of the output instead of failing.
+Per-session readers (`sessionExists`, `readSessionMessages`, `readSessionTodos`, `getSessionInfo`) now treat an SDK `NotFoundError` as "not in the SDK" and read file storage, as they already did for an empty SDK result. The SDK layer throws a real `Error` that keeps the body's name and message (body as `cause`), so the global-route `NotFoundError` check still works and an error body whose message says the server is unreachable now falls back like a thrown network error. Tools describe any non-`Error` by name, message and code, falling back to JSON. `session_search` across sessions and `session_list` skip a session that still cannot be read and name up to five of them at the end instead of failing.
 
 ## 2026-10-12 - Track task-owned worktrees and runtime caches at creation (#9951)
 
