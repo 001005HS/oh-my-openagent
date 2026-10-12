@@ -66,4 +66,15 @@ describe("receipt-driven host respawn lifecycle", () => {
     expect(f.store.load(f.record.task_id)?.stop_reason).toBeUndefined()
     await f.result.handle.dispose()
   })
+
+  test("a failed turn receipt enters the existing child-turn failure path and renders its reason", async () => {
+    const f = await stoppedChild({ state: "done", outcome: { kind: "error", reason: "provider_unavailable", detail: "Synthetic provider was unavailable.", action: "Retry the child after the provider recovers." } })
+    await f.manager.reattach(f.record, f.result.handle)
+    const failed = await f.manager.waitFor(f.record.task_id, { signal: AbortSignal.timeout(5_000) })
+    expect(failed.status).toBe("error")
+    expect(failed.final_response).toBeUndefined()
+    await assertRenderedReason(f)
+    expect(f.host.commands.filter((command) => command.type === "prompt")).toHaveLength(1)
+    await f.result.handle.dispose()
+  })
 })

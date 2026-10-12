@@ -155,6 +155,7 @@ type SessionMessageEntry = {
     readonly role?: string
     readonly content?: unknown
     readonly stopReason?: string
+    readonly errorMessage?: string
   }
 }
 

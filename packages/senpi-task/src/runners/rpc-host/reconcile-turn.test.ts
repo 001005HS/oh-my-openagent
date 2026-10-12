@@ -12,11 +12,12 @@ function scenario(options: {
   readonly receipt?: InputEffectStatus
   readonly aborted?: boolean
   readonly deadline?: boolean
+  readonly error?: boolean
 } = {}) {
   const path = join(tempProject(), "session.jsonl")
   writeFileSync(path, [
     { type: "message", id: "user-1", message: { role: "user", content: "work" } },
-    { type: "message", id: "answer-1", message: { role: "assistant", stopReason: options.aborted ? "aborted" : "stop", content: [{ type: "text", text: "ANSWER" }] } },
+    { type: "message", id: "answer-1", message: { role: "assistant", stopReason: options.error ? "error" : options.aborted ? "aborted" : "stop", errorMessage: "fixture_stream_error", content: [{ type: "text", text: "ANSWER" }] } },
     ...(options.deadline ? [{ type: "agent_end", aborted: true, abortSource: "system", deadline: { kind: "inactivity" } }] : []),
   ].map((row) => JSON.stringify(row)).join("\n"))
   const outcomes: RunnerOutcome[] = []
@@ -81,6 +82,13 @@ describe("host turn reconciliation authority", () => {
     expect(await reconcileHostTurn(f.port, record, f.path)).toBe("adopted")
     expect(f.notices).toEqual([])
     expect(f.outcomes).toEqual([{ status: "completed", finalResponse: "ANSWER" }])
+  })
+
+  test("a pre-S1 failed transcript settles as a turn failure instead of adopting partial text", async () => {
+    const f = scenario({ error: true })
+    expect(await reconcileHostTurn(f.port, {}, f.path)).toBe("failed")
+    expect(f.outcomes[0]).toMatchObject({ status: "error", failure: { kind: "child-turn-failed" } })
+    expect(f.notices).toEqual([])
   })
   for (const receipt of [undefined, { state: "done", outcome: { kind: "deadline", deadline: { kind: "inactivity" } } } satisfies InputEffectStatus]) {
     test(`deadline ${receipt === undefined ? "transcript" : "receipt"} stops without adopting partial text`, async () => {

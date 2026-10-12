@@ -1,6 +1,5 @@
 import { sessionTailFinishedText, sessionTailNeedsContinuation, sessionTailReconciliation } from "../../manager/interrupted-turn"
 import type { TaskRecord } from "../../state"
-import { agentEndOutcome } from "../rpc/turn-outcome"
 import type { RunnerOutcome } from "../in-process/child-handle"
 import { reattachContinuationPrompt } from "./reattach"
 import type { HostSessionLiveness } from "./handle-port"
@@ -11,6 +10,9 @@ export type InputEffectStatus = {
   readonly outcome?: {
     readonly kind: "completed" | "aborted" | "interrupted_by_reopen" | "deadline" | "error"
     readonly deadline?: Readonly<Record<string, unknown>>
+    readonly reason?: string
+    readonly detail?: string
+    readonly action?: string
   }
 }
 
@@ -64,15 +66,18 @@ export async function reconcileHostTurn(
     port.notify({ kind: "interrupted", reason: INTERRUPTED_REASON })
     return "continued"
   }
-  const outcomeKind = outcome?.kind
+  const outcomeKind = outcome?.kind ?? (tail?.lastMessage.stopReason === "error" ? "error" : undefined)
   switch (outcomeKind) {
     case "aborted":
     case "interrupted_by_reopen":
       port.notify({ kind: "interrupted", reason: INTERRUPTED_REASON })
       return "continued"
-    case "error":
-      port.settle(agentEndOutcome({ type: "agent_end", messages: [], willRetry: false }, undefined, undefined))
+    case "error": {
+      const reason = outcome?.detail ?? outcome?.reason ?? tail?.lastMessage.errorMessage ?? "The child turn failed."
+      const action = outcome?.action ?? "Inspect task_output, then use task_send to continue the child."
+      port.settle({ status: "error", failure: { kind: "child-turn-failed", message: `${reason} Action: ${action}` } })
       return "failed"
+    }
     case "completed":
     case undefined:
       break
