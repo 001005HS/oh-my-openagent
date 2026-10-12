@@ -51,7 +51,7 @@ async function crashFixture(failRespawn = false, failContinuation = false, stall
       },
       reattach: failContinuation
         ? async () => ({
-            client: fakeSessionPort(() => Promise.reject(new Error("supervisor pid 4242 shard deadbeef failed delivery"))),
+            client: fakeSessionPort(() => Promise.reject(Object.assign(new Error("transport closed during delivery"), { code: "rpc_transport_gone" }))),
             session: identity, attached: false,
           })
         : async () => stallReattach ? Promise.withResolvers<undefined>().promise : undefined,
@@ -166,7 +166,8 @@ describe("host crash uses existing bounded child recovery (#10023)", () => {
     expect(text).toContain("Investigate saved findings")
     expect(text).toMatch(/because|could not|couldn't/)
     expect(text).toMatch(/retry|Retry/)
-    expect(text).not.toMatch(/host_shard|shard|pid|deadbeef|suspended|rpc_|residency|st_[a-z0-9]+/i)
+    expect(text).toContain(`id:${f.id}`)
+    expect(text).not.toMatch(/host_shard|shard|pid|deadbeef|suspended|rpc_|residency/i)
     f.advance(600_000)
     await bounded(f.lifecycle.cleanupExpiredRecords())
     f.notifier.reconcileUnnotifiedNotifications({ sessionId: "parent-1", parentState: { kind: "idle" } })

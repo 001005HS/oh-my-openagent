@@ -33,7 +33,6 @@ export type CompletionDetails = {
   readonly final_response: string
   readonly final_response_file?: string
   readonly continuation_hint: string
-  readonly recovery_failure_notice?: string
   // The child resumed on its own (a monitor or background job woke it) after an earlier completion.
   readonly resumed_turn?: true
   // Present once an isolated child settled: what happened to its clone and where the artifacts are.

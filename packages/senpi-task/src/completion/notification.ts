@@ -16,7 +16,6 @@ import { DAG_VERIFICATION_DIRECTIVE } from "./dag-verification-directive"
 import type { CompletionDetails, ParentNotifierMessage } from "./types"
 import { defaultTranscriptReader } from "../tools/output/transcript"
 import { renderTranscript } from "../tools/output/render"
-import { recoveryFailureNotice } from "./recovery-failure-notice"
 
 export const FINAL_RESPONSE_TRANSPORT_LIMIT = 32_000
 
@@ -49,9 +48,6 @@ export function buildCompletionDetails(record: TaskRecord, options: BuildDetails
     final_response: finalResponse.text,
     ...(finalResponse.file === undefined ? {} : { final_response_file: finalResponse.file }),
     continuation_hint: continuationHint(record),
-    ...(record.failure_kind === "suspended_unresumable"
-      ? { recovery_failure_notice: recoveryFailureNotice(record, record.fallback_closing_child === undefined) }
-      : {}),
     ...(record.resumed_run_epoch !== undefined && record.resumed_run_epoch === record.notification.run_epoch
       ? { resumed_turn: true as const }
       : {}),
@@ -86,10 +82,8 @@ function finalResponseForNotification(record: TaskRecord, stateDir: string | und
     ? defaultTranscriptReader({ taskId: record.task_id, stateDir }).entries
     : []
   const tail = entries.length === 0 ? undefined : renderTranscript(entries, { mode: "tail", tailLines: 60 }).text
-  const notice = recoveryFailureNotice(record, record.fallback_closing_child === undefined)
-  const recoveryMessage = record.error_message?.startsWith(notice) === true ? record.error_message : notice
   const source = record.failure_kind === "suspended_unresumable"
-    ? [recoveryMessage, record.final_response, tail].filter(Boolean).join("\n\n")
+    ? [record.error_message, tail, record.final_response].filter(Boolean).join("\n\n")
     : record.final_response ?? record.error_message ?? ""
   if (source.length <= FINAL_RESPONSE_TRANSPORT_LIMIT) return { text: source }
   if (stateDir === undefined) return { text: source.slice(0, FINAL_RESPONSE_TRANSPORT_LIMIT) }
@@ -118,8 +112,6 @@ function continuationHint(record: TaskRecord): string {
 }
 
 function completionDetailLines(detail: CompletionDetails, width: number | undefined): readonly string[] {
-  if (detail.recovery_failure_notice !== undefined)
-    return [detail.final_response]
   const identity = joinRendererTokens([
     detail.resumed_turn === true ? "task completion (resumed turn)" : "task completion",
     `name:${normalizeRendererText(detail.name)}`,

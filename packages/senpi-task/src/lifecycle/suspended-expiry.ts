@@ -7,6 +7,7 @@ import { endClosingFallbackChild } from "./fallback-closing-child"
 import { DEFAULT_HOST_SESSION_RETRY_POLICY, isHostSessionRecord } from "./host-session"
 import { terminateOldRpc } from "./revive-rollback"
 import { recoveryFailureNotice } from "../completion/recovery-failure-notice"
+import { withDroppedSteeringNotice } from "../state/queued-steering"
 
 type StopRetry = { token: string; attempt: number; retryAt: number }
 const stopRetries = new WeakMap<LifecycleContext, Map<string, StopRetry>>()
@@ -125,8 +126,7 @@ export async function expireSuspendedChild(
     return
   const undelivered = fresh.pending_steering?.length ?? 0
   const closureMessage = recoveryFailureNotice(fresh, closed)
-  const message = undelivered === 0 ? closureMessage
-    : `${closureMessage}\n${undelivered} queued message${undelivered === 1 ? " was" : "s were"} not delivered.`
+  const message = withDroppedSteeringNotice(closureMessage, undelivered)
   context.store.mutate(record.task_id, (current) => {
     const { pending_steering: _undelivered, ...rest } = current
     return rest
