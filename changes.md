@@ -1,3 +1,9 @@
+## 2026-10-12 - Session tools show the real error and skip unreadable sessions (#5854)
+
+Thanks to @crazyrabbit0 for the fresh reproduction on 5.1.30 with OpenCode 1.19.0. When OpenCode answered a session read with an error body, the SDK layer threw that plain object, and every session tool printed `Error: [object Object]`. A no-match `session_search` scans up to 50 sessions and `session_list` reads every session's info, so one unreadable session hid the whole result.
+
+The SDK layer now throws a real `Error` that keeps the body's name and message (for example `NotFoundError: Session not found: …`), with the body as its `cause`, and the tools describe any non-`Error` value by its name, message and code, falling back to JSON. `session_search` across sessions and `session_list` skip a session they cannot read and name it with its reason at the end of the output instead of failing.
+
 ## 2026-10-12 - Track task-owned worktrees and runtime caches at creation (#9951)
 
 Ultrawork now scopes runtime caches before task commands, registers path-specific cleanup todos at resource creation, and requires removal receipts. Native full and compact directives, Codex, and the independent OpenCode variants share the same lifecycle: stop owned processes before directory removal, preserve worktrees still needed by open PRs, and leave shared caches untouched. Loop, phase, team, and contribution workflows refer to their bundled directive instead of repeating its rules.
