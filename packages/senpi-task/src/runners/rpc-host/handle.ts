@@ -1,7 +1,6 @@
 import { log } from "@oh-my-opencode/utils"
 
 import type { RunnerOutcome } from "../in-process/child-handle"
-import { isBusyChildRejection, type RpcStreamingBehavior } from "../rpc/delivery-semantics"
 import { exitTurnOutcome, promptFailureOutcome } from "../rpc/turn-outcome"
 import { createTurnSettlement, sessionIsIdle } from "../rpc/turn-settlement"
 import type { ChildEventListener, ChildExitOutcome, RpcTerminalAssistantMessage } from "../types"
@@ -22,6 +21,8 @@ import type {
 import { startHostHeartbeat } from "./handle-heartbeat"
 import { createHandleListeners } from "./handle-listeners"
 import { createHandleRecovery } from "./handle-recovery"
+import { createHandleReconciliation } from "./handle-reconciliation"
+import { createHostDelivery } from "./handle-delivery"
 import { createHandleStop } from "./handle-stop"
 import { createHandleTeardown } from "./handle-teardown"
 import { createHandleWaiters } from "./handle-waiters"
@@ -74,8 +75,21 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     baseline: () => turnBaseline,
     finalText: () => finalText,
   })
+  let reconciledInterrupted = false
+  const reconciliation = createHandleReconciliation({
+    port: () => client,
+    settle: (settled) => {
+      if (settled.status === "completed") finalText = settled.finalResponse
+      settleTurn(settled)
+    },
+    interrupted: () => { reconciledInterrupted = true },
+  })
 
   const onSessionEvent = (event: Parameters<ChildEventListener>[0]): void => {
+    if (event.type === "agent_start" && reconciledInterrupted) {
+      reconciledInterrupted = false
+      listeners.emitSelfResumed()
+    }
     // A run the child starts on its own after its turn settled (a monitor or background job woke it)
     // is a new turn: the next outcome is that run's, never the settled one again (omo#9069).
     if (event.type === "agent_start" && turnOutcome !== undefined && outcome === undefined) {
@@ -168,6 +182,8 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
       bindHostSessionPort(client, clientBinding)
     },
     turnResumed: () => listeners.emitTurnResumed(),
+    reconcile: () => reconciliation.reconcile(session.sessionPath, undefined, true),
+    beginContinuation: () => beginTurn(),
     endLost: () => endSession({ kind: "transport_gone" }),
     // The continuation that re-drives the in-flight turn was not delivered (omo#9093). A lost
     // transport is the next recovery's to handle; anything else fails the turn exactly like an
@@ -203,26 +219,7 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     turnBaseline = finalText
   }
 
-  // Same queueing contract as the child-process runner: a delivery that lands mid-run is retried
-  // as followUp instead of failing the child (`rpc/delivery-semantics.ts`).
-  const deliverPrompt = async (text: string, streamingBehavior: RpcStreamingBehavior): Promise<void> => {
-    try {
-      await recovery.issue({ type: "prompt", message: text, streamingBehavior })
-    } catch (error) {
-      if (streamingBehavior === "followUp" || !isBusyChildRejection(error)) throw error
-      await recovery.issue({ type: "prompt", message: text, streamingBehavior: "followUp" })
-    }
-  }
-
-  const runPrompt = async (text: string, streamingBehavior: RpcStreamingBehavior = "steer"): Promise<void> => {
-    beginTurn()
-    try {
-      await deliverPrompt(text, streamingBehavior)
-    } catch (error) {
-      settleTurn(promptFailureOutcome(error))
-      throw error
-    }
-  }
+  const delivery = createHostDelivery({ beginTurn, issue: recovery.issue, settle: settleTurn })
 
   const teardown = createHandleTeardown({
     taskId,
@@ -255,16 +252,8 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     },
     getEntries: async (since) => (await recovery.currentPort()).getEntries(since),
     switchSession: async (sessionPath) => (await recovery.currentPort()).switchSession(sessionPath),
-    steer: async (text) => {
-      beginTurn()
-      try {
-        await recovery.issue({ type: "steer", message: text })
-      } catch (error) {
-        if (!isBusyChildRejection(error)) throw error
-        await deliverPrompt(text, "followUp")
-      }
-    },
-    followUp: (text) => runPrompt(text, "followUp"),
+    steer: delivery.steer,
+    followUp: (text) => delivery.runPrompt(text, "followUp"),
     // A child whose cancel is waiting on its lost connection is stopped by that cancel: an abort (a
     // parent shutting down suspends it) must not wait out the whole recovery for nothing.
     abort: () => {
@@ -276,6 +265,8 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     markStopping: stop.markStopping,
     stopWhenReachable: stop.stopWhenReachable,
     ...listeners.registrations,
+    reconcileTurn: (record) => reconciliation.reconcile(session.sessionPath, record),
+    onReconciled: reconciliation.subscribe,
     adoptFinishedTurn: async (finalResponse) => {
       if (turnOutcome !== undefined || settlement.pending() !== undefined) return
       // A state read that fails is not proof of idleness, and must never cost the reattach: stay busy.
@@ -296,6 +287,6 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     detach: teardown.detach,
     close: teardown.close,
     terminate: teardown.terminate,
-    startInitialPrompt: (text) => runPrompt(text),
+    startInitialPrompt: (text) => delivery.runPrompt(text),
   }
 }

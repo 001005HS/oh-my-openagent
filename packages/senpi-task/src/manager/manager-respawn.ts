@@ -13,9 +13,10 @@ import { sessionTailFinishedText, sessionTailNeedsContinuation } from "./interru
 import { buildRespawnManagedSpec, isTerminalRecord } from "./manager-helpers"
 import type { ManagedRunner, TrustedRespawnLaunchResolver } from "./types"
 import { modelSelector } from "../runners/in-process/runtime-fallback-settings"
+import { HOST_RESPAWN_CONTINUATION } from "../runners/rpc-host/reconcile-turn"
+import { reconcileDaemonTurn } from "./reconcile-daemon-turn"
 
-const CONTINUATION_MESSAGE =
-  "Your previous turn was interrupted by a host process restart. Resume your task from its current state and finish it - do not restart from scratch, and do not repeat work already recorded in this session."
+const CONTINUATION_MESSAGE = HOST_RESPAWN_CONTINUATION
 const RESPAWN_CLEANUP_FAILURE_REASON = "rpc respawn cleanup failed"
 
 type RpcRespawnRunner = { start(spec: RpcRunnerSpec): Promise<RpcChildHandle> }
@@ -158,7 +159,10 @@ async function respawnProcess(input: {
     // An ATTACHED daemon session is the same live session, mid-turn and all: switching it would
     // reopen what is already open, and a continuation nudge would inject a second prompt into a
     // turn that never stopped. A session the host reopened from its JSONL still gets both.
-    if (joinedLiveHostSession(handle)) return { ok: true, handle: adaptRpcHandle(handle) }
+    if (joinedLiveHostSession(handle)) {
+      await reconcileDaemonTurn(input.record, handle)
+      return { ok: true, handle: adaptRpcHandle(handle) }
+    }
     // A host session with nothing live to re-join and its session directory gone lost its work:
     // report that child by itself instead of resuming an empty session under its task id.
     if (isHostSessionHandle(handle) && !sessionDirPresent) {
@@ -168,8 +172,12 @@ async function respawnProcess(input: {
     if (handle.switchSession === undefined) return cleanupFailure(handle, "respawned RPC handle cannot switch sessions")
     const switched = await handle.switchSession(sessionPath)
     if (switched.cancelled) return cleanupFailure(handle, "switch_session was cancelled")
-    await continueInterruptedTurn(input.record, sessionPath, adaptRpcHandle(handle))
-    await adoptFinishedTurn(input.record, sessionPath, handle)
+    if (handle.reconcileTurn !== undefined) {
+      await reconcileDaemonTurn(input.record, handle)
+    } else {
+      await continueInterruptedTurn(input.record, sessionPath, adaptRpcHandle(handle))
+      await adoptFinishedTurn(input.record, sessionPath, handle)
+    }
     return { ok: true, handle: adaptRpcHandle(handle) }
   } catch (error) {
     const cleaned = handle === undefined || await disposeRpc(handle)

@@ -120,6 +120,8 @@ export type TaskRecord = TaskRecordInput & TaskStartFailureRecordFields & {
   readonly effective_model?: ResolvedModelRecord
   readonly final_response?: string
   readonly error_message?: string
+  readonly stop_reason?: "deadline"
+  readonly deadline?: Readonly<Record<string, unknown>>
   // Exit observed, cause unconfirmed: status stays running until the owning manager confirms it.
   readonly provisional_exit?: {
     readonly observed_at: string

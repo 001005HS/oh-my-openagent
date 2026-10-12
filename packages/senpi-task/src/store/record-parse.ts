@@ -60,6 +60,10 @@ export function parseTaskRecord(value: unknown, path: string, warnings?: string[
   const finalResponse = readOptionalString(value, "final_response")
   const isolation = parseOptionalIsolation(value)
   const errorMessage = readOptionalString(value, "error_message")
+  const stopReason = readOptionalString(value, "stop_reason")
+  if (stopReason !== undefined && stopReason !== "deadline") throw new Error("stop_reason must be deadline")
+  const deadline = value["deadline"]
+  if (deadline !== undefined && !isRecord(deadline)) throw new Error("deadline is not an object")
   const startedAt = readOptionalString(value, "started_at")
   const terminalAt = readOptionalString(value, "terminal_at")
   const killed = readOptionalBoolean(value, "killed")
@@ -144,6 +148,8 @@ export function parseTaskRecord(value: unknown, path: string, warnings?: string[
     ...(finalResponse === undefined ? {} : { final_response: finalResponse }),
     ...(isolation === undefined ? {} : { isolation }),
     ...(errorMessage === undefined ? {} : { error_message: errorMessage }),
+    ...(stopReason === undefined ? {} : { stop_reason: stopReason }),
+    ...(deadline === undefined ? {} : { deadline }),
     ...(failureKind === undefined ? {} : { failure_kind: failureKind }),
     ...(failureReason === undefined ? {} : { failure_reason: failureReason }),
     ...(killed === undefined ? {} : { killed }),

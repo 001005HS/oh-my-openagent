@@ -7,6 +7,7 @@ import {
   type HostSessionReattachRefused,
 } from "./reattach"
 import type { HostParkReason, HostSessionCommand } from "./session-client"
+import type { HostTurnReconciliation } from "./reconcile-turn"
 import { armRecoveryBound, withinBound, type RecoveryBound, type TransportRecoveryOptions } from "./transport-recovery"
 
 export interface HandleRecoveryHost {
@@ -20,6 +21,8 @@ export interface HandleRecoveryHost {
   turnSettled(): boolean
   adopt(next: HostSessionReattached): void
   turnResumed(): void
+  reconcile(): Promise<HostTurnReconciliation>
+  beginContinuation(): void
   endLost(): void
   park(reason: HostParkReason): void
   /** The continuation that re-drives the in-flight turn after a reattach was not delivered. */
@@ -124,10 +127,12 @@ export function createHandleRecovery(host: HandleRecoveryHost): HandleRecovery {
           host.adopt(next)
         },
         turnResumed: host.turnResumed,
+        reconcile: host.reconcile,
         // A stop recorded while the reattached session was being read must run before any continuation:
         // the turn is not re-driven, and the recovery's end stops the adopted session (omo#9403).
         continueTurn: async (prompt) => {
           if (host.stopRequested()) return
+          host.beginContinuation()
           await withinBound(bound, host.port().send({ type: "prompt", message: prompt, streamingBehavior: "steer" }))
         },
         // A refused reattach parks (the endpoint answered, but may not host this session); exhaustion ends.

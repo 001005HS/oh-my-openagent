@@ -90,6 +90,7 @@ export type HostSessionIdentity = {
   readonly session_path: string
   readonly instance_id: string
   readonly daemon_pid?: number
+  readonly adopted_entry_id?: string
 }
 
 export type ResolvedModelRecord = {

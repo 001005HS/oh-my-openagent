@@ -95,7 +95,7 @@ export function hostSuiteSettings(overrides: Record<string, unknown> = {}): OmoT
 }
 
 export async function startHostWorld(options: FakeHostOptions = {}): Promise<HostWorld> {
-  const host = await startFakeHost(options)
+  const host = await startFakeHost({ transcripts: true, ...options })
   const projectDir = mkdtempSync(join(tmpdir(), "dh-world-"))
   const parents: ParentSession[] = []
   let cleanedUp: Promise<void> | undefined

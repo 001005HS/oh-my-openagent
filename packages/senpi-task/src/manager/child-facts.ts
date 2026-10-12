@@ -25,6 +25,22 @@ export function subscribeChildFacts(input: {
     if (event.type === "retry_fallback_exhausted") input.fallbackExhaustions.add(handle)
     runStats.get(taskId)?.accept(event)
   })
+  const reconciled = handle.onReconciled?.((notice) => {
+    const timestamp = new Date(now()).toISOString()
+    if (notice.kind === "adopted") {
+      input.store.mutate(taskId, (fresh) => ({
+        ...fresh,
+        ...(fresh.host_session === undefined ? {} : { host_session: { ...fresh.host_session, adopted_entry_id: notice.entryId } }),
+      }))
+    } else {
+      const needsAction = notice.kind === "idle_queued" || notice.deadline !== undefined
+      input.store.transition(taskId, { type: "interrupt", timestamp, ...(needsAction ? { error_message: notice.reason } : {}) })
+      if (notice.kind === "interrupted" && notice.deadline !== undefined) {
+        input.store.mutate(taskId, (fresh) => ({ ...fresh, stop_reason: "deadline", deadline: notice.deadline }))
+      }
+    }
+    input.store.appendEvent(taskId, { type: notice.kind === "idle_queued" ? "idle_queued" : "host_turn_reconciled", payload: notice })
+  })
   const extension = handle.subscribeExtensionEvents?.(input.onExtensionEvent)
   const resumed = handle.onSelfResumed?.(() => {
     runStats.set(taskId, createRunStatsTracker(now(), now))
@@ -35,6 +51,7 @@ export function subscribeChildFacts(input: {
     transcript()
     effectiveModel()
     stats()
+    reconciled?.()
     extension?.()
     resumed?.()
   }
