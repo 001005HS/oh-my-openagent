@@ -123,6 +123,47 @@ describe("queued resume review regressions", () => {
     expect(manager.taskHistory.getByParentSession("new-parent").map(entry => entry.status)).toEqual(["running"])
   })
 
+  test("refuses a second continuation while one is queued", async () => {
+    // given
+    const { manager } = await queueResume("new-parent", true)
+    // when
+    const second = manager.resume({ sessionId: "child", prompt: "second", parentSessionId: "new-parent", parentMessageId: "third-message" })
+    // then
+    await expect(second).rejects.toThrow("already has a continuation queued")
+  })
+
+  test("cancels a queued continuation without dispatching it", async () => {
+    // given
+    const { manager, internals, task, promptAsync, directory } = await queueResume("new-parent", true)
+    // when
+    expect(await manager.cancelTask("resume-review", { source: "test", skipNotification: true })).toBe(true)
+    internals.concurrencyManager.release("explore")
+    await settleAdmission()
+    // then
+    expect(task.status).toBe("cancelled")
+    expect(promptAsync).not.toHaveBeenCalled()
+    expect(internals.pendingByParent.has("new-parent")).toBe(false)
+    expect(manager.taskHistory.getByParentSession("new-parent").map(entry => entry.status)).toEqual(["cancelled"])
+    expect(readContinuationMarker(directory, "new-parent")?.sources["background-task"]?.state).toBe("idle")
+  })
+
+  test("cancels a queued continuation when its parent session is deleted", async () => {
+    // given
+    const { manager, internals, task, promptAsync, directory } = await queueResume("new-parent", true)
+    // when
+    manager.handleEvent({ type: "session.deleted", properties: { info: { id: "new-parent" } } })
+    await settleAdmission()
+    await settleAdmission()
+    internals.concurrencyManager.release("explore")
+    await settleAdmission()
+    // then
+    expect(task.status).toBe("cancelled")
+    expect(promptAsync).not.toHaveBeenCalled()
+    expect(internals.pendingByParent.has("new-parent")).toBe(false)
+    expect(manager.taskHistory.getByParentSession("new-parent").map(entry => entry.status)).toEqual(["cancelled"])
+    expect(readContinuationMarker(directory, "new-parent")?.sources["background-task"]?.state).toBe("idle")
+  })
+
   test("logs an admission failure even after the resume token was consumed", async () => {
     // given
     const { internals, task, log } = await queueResume()
