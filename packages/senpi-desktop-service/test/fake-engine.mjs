@@ -17,7 +17,7 @@ import { createInterface } from "node:readline";
 import { createDesktop } from "./fake-desktop.mjs";
 
 const mode = process.env.FAKE_ENGINE_MODE ?? "normal";
-const abi = process.env.FAKE_ENGINE_ABI ?? "senpi-desktop/2";
+const abi = process.env.FAKE_ENGINE_ABI ?? "senpi-desktop/1";
 const resumeToken = `token-${process.pid}`;
 const desktop = process.env.FAKE_ENGINE_DESKTOP === "1" ? createDesktop() : undefined;
 const stalled = process.env.FAKE_ENGINE_STALL;

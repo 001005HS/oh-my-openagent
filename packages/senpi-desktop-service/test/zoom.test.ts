@@ -67,9 +67,10 @@ describe("native region zoom", { timeout: 30_000 }, () => {
 		expect(result.displays).toEqual([]);
 	});
 
-	it("rejects a pre-zoom ABI before any region request", async () => {
+
+	it("refuses an engine with a foreign ABI before any region request", async () => {
 		// Given
-		const log = fakeEngineFactory({ FAKE_ENGINE_ABI: "senpi-desktop/1" });
+		const log = fakeEngineFactory({ FAKE_ENGINE_ABI: "other/9" });
 		const service = new DesktopService({ createChild: log.factory });
 		services.push(service);
 		// When

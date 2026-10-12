@@ -12,7 +12,7 @@ use crate::methods::Notification;
 /// Engine protocol version reported by `engine.hello`.
 pub const PROTOCOL_VERSION: &str = "1";
 /// ABI marker a host checks in the `engine.hello` reply.
-pub const ABI: &str = "senpi-desktop/2";
+pub const ABI: &str = "senpi-desktop/1";
 
 /// Standard JSON-RPC 2.0 error codes the engine emits.
 pub const PARSE_ERROR: i64 = -32_700;

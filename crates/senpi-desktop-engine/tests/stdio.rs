@@ -13,7 +13,7 @@ fn hello_and_capabilities_report_the_abi_and_the_fake_backend_before_session_ope
     let hello = engine.call(1, "engine.hello", json!({}));
     let capabilities = engine.call(2, "capabilities", json!({}));
     // Then
-    assert_eq!(hello["result"]["abi"], json!("senpi-desktop/2"));
+    assert_eq!(hello["result"]["abi"], json!("senpi-desktop/1"));
     assert_eq!(hello["result"]["protocolVersion"], json!("1"));
     assert_eq!(capabilities["result"]["backend"], json!("fake"));
     assert_eq!(capabilities["result"]["displayCount"], json!(2));

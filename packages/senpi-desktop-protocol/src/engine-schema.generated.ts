@@ -5,7 +5,7 @@
 export const PROTOCOL_VERSION = "1" as const;
 
 /** Engine ABI sentinel the host must see in `engine.hello`. */
-export const ENGINE_ABI = "senpi-desktop/2" as const;
+export const ENGINE_ABI = "senpi-desktop/1" as const;
 
 /** Every engine JSON-RPC method, by wire name, in schema order. */
 export const ENGINE_METHODS = [

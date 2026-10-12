@@ -179,7 +179,7 @@ fn a_reply_with_an_unknown_member_is_rejected() {
     let validator = Validator { root: &schema };
     let hello = String::from("engine.hello");
     let reply = json!({"jsonrpc": "2.0", "id": 1, "result": {
-        "protocolVersion": "1", "engineVersion": "0", "buildSha": "x", "abi": "senpi-desktop/2", "extra": true
+        "protocolVersion": "1", "engineVersion": "0", "buildSha": "x", "abi": "senpi-desktop/1", "extra": true
     }});
     // When
     let verdict = validator.check_reply(&reply, Some(&hello), "reply");

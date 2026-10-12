@@ -14,7 +14,7 @@ fn region_rpc_keeps_the_full_frame_valid_for_later_input() {
         "capture",
         json!({"target": "101", "caps": {"maxWidth": 32}}),
     );
-    let region = json!({"x": 0, "y": 0, "width": 8, "height": 6});
+    let region = json!({"x": 0.0, "y": 0.0, "width": 8.0, "height": 6.0});
     // When
     let zoom = engine.invoke(
         "captureRegion",
