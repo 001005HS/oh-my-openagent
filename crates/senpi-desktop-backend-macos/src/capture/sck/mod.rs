@@ -9,6 +9,8 @@ mod protocol;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -70,7 +72,7 @@ pub(crate) enum SckUnavailable {
 pub(crate) enum SckCaptureError {
     /// The helper could not be started on macOS 14+: the caller falls back
     /// to `screencapture` and logs once.
-    Start,
+    Start(DesktopError),
     /// The capture failed; surface this error to the caller.
     Failed(DesktopError),
 }
@@ -103,15 +105,20 @@ impl SckWorker {
             if slot.is_none() {
                 match start_client() {
                     Ok(started) => *slot = Some(started),
-                    Err(_) => return Err(SckCaptureError::Start),
+                    Err(error) => return Err(SckCaptureError::Start(error)),
                 }
             }
             let (client, _) = slot.as_mut().expect("capture client initialized");
             match client.capture(requests) {
                 Ok(frames) => Ok(frames),
                 Err(ClientError::Transport(error)) => {
+                    let first_reply = !client.has_replied();
                     *slot = None;
-                    Err(SckCaptureError::Failed(error))
+                    Err(if first_reply {
+                        SckCaptureError::Start(error)
+                    } else {
+                        SckCaptureError::Failed(error)
+                    })
                 },
                 Err(ClientError::Reply(error)) => Err(SckCaptureError::Failed(error)),
             }
@@ -123,6 +130,10 @@ impl SckWorker {
 /// into a fresh private temp dir (returned so the caller can keep it alive
 /// beside the client).
 fn start_client() -> CoreResult<(HelperClient, Option<tempfile::TempDir>)> {
+    #[cfg(test)]
+    if let Some(program) = test_support::program() {
+        return HelperClient::start(&program).map(|client| (client, None));
+    }
     if let Some(program) = std::env::var_os(ENV_HELPER_PROGRAM).map(PathBuf::from) {
         return HelperClient::start(&program).map(|client| (client, None));
     }

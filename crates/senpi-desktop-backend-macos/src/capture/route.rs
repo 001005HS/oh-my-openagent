@@ -32,6 +32,16 @@ fn note_legacy_into(store: &AtomicU8, reason: u8, log_line: &str, log: impl FnOn
     }
 }
 
+fn note_start_failure(error: &DesktopError) {
+    note_legacy(
+        REASON_START_FAILED,
+        &format!(
+            "the ScreenCaptureKit capture helper failed to start: {error}; \
+             using the screencapture fallback"
+        ),
+    );
+}
+
 /// Whether a legacy fallback already ran (or a helper start already failed).
 fn legacy_capture_active() -> bool {
     LEGACY_REASONS.load(Ordering::Relaxed) != 0
@@ -69,13 +79,7 @@ impl MacCapture {
         match sck_availability() {
             Ok(()) => match self.capture_via_sck(target, exclude_window_titles)? {
                 Some(captured) => Ok(captured),
-                None => {
-                    note_legacy(
-                        REASON_START_FAILED,
-                        "the ScreenCaptureKit capture helper failed to start; using the screencapture fallback",
-                    );
-                    self.capture_via_legacy(target)
-                },
+                None => self.capture_via_legacy(target),
             },
             Err(SckUnavailable::Unsupported) => {
                 note_legacy(
@@ -87,7 +91,8 @@ impl MacCapture {
             Err(SckUnavailable::HelperUnavailable) => {
                 note_legacy(
                     REASON_HELPER_MISSING,
-                    "no ScreenCaptureKit capture helper is staged; using the screencapture fallback",
+                    "no ScreenCaptureKit capture helper is staged; \
+                     using the screencapture fallback",
                 );
                 self.capture_via_legacy(target)
             },
@@ -108,7 +113,10 @@ impl MacCapture {
                 let request = super::sck::target_window(window_id);
                 let frames = match SckWorker::capture(std::slice::from_ref(&request)) {
                     Ok(frames) => frames,
-                    Err(SckCaptureError::Start) => return Ok(None),
+                    Err(SckCaptureError::Start(error)) => {
+                        note_start_failure(&error);
+                        return Ok(None);
+                    },
                     Err(SckCaptureError::Failed(error)) => return Err(error),
                 };
                 let [frame] = <[SckFrame; 1]>::try_from(frames).map_err(|_| {
@@ -117,11 +125,17 @@ impl MacCapture {
                     )
                 })?;
                 if frame.is_on_screen == Some(false)
-                    && frame.pid.and_then(|pid| super::minimized::window_minimized(pid, window_id)) == Some(true)
+                    && frame
+                        .pid
+                        .and_then(|pid| super::minimized::window_minimized(pid, window_id))
+                        == Some(true)
                 {
                     return Err(DesktopError::capture_unavailable(
                         "minimized",
-                        format!("window '{id}' is minimized; restore it, or read it through accessibility"),
+                        format!(
+                            "window '{id}' is minimized; restore it, \
+                             or read it through accessibility"
+                        ),
                     ));
                 }
                 let (width, height) = (frame.image.width(), frame.image.height());
@@ -162,7 +176,10 @@ impl MacCapture {
                 }
                 match SckWorker::capture(&requests) {
                     Ok(frames) => composite_sck(&displays, frames).map(Some),
-                    Err(SckCaptureError::Start) => Ok(None),
+                    Err(SckCaptureError::Start(error)) => {
+                        note_start_failure(&error);
+                        Ok(None)
+                    },
                     Err(SckCaptureError::Failed(error)) => Err(error),
                 }
             },
@@ -207,7 +224,8 @@ pub(crate) mod test_support {
     use std::cell::Cell;
 
     thread_local! {
-        pub(crate) static AVAILABILITY: Cell<Option<Result<(), SckUnavailable>>> = const { Cell::new(None) };
+        pub(crate) static AVAILABILITY: Cell<Option<Result<(), SckUnavailable>>> =
+            const { Cell::new(None) };
     }
 
     pub(crate) fn override_availability(value: Option<Result<(), SckUnavailable>>) {
@@ -217,3 +235,5 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod start_tests;

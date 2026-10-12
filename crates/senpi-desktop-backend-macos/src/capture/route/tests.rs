@@ -10,14 +10,20 @@ use senpi_desktop_core::error::{CoreResult, DesktopError, ErrorCode};
 use senpi_desktop_core::frame::FrameGeometry;
 use senpi_desktop_core::types::{DisplaySelector, Target};
 
-use super::super::sck::{override_capture, SckCaptureError, SckFrame, SckTargetRequest, SckUnavailable};
+use super::super::sck::{
+    override_capture, SckCaptureError, SckFrame, SckTargetRequest, SckUnavailable,
+};
 use super::test_support::override_availability;
 use super::{note_legacy, note_legacy_into, MacCapture, REASON_START_FAILED};
 use crate::capture::minimized::override_probe;
 use crate::capture::Screencapture;
 
 fn shooter() -> Screencapture {
-    Screencapture::with(std::path::PathBuf::from("/usr/bin/true"), Duration::from_secs(60), || true)
+    Screencapture::with(
+        std::path::PathBuf::from("/usr/bin/true"),
+        Duration::from_secs(60),
+        || true,
+    )
 }
 
 fn capture() -> MacCapture {
@@ -38,7 +44,7 @@ fn fake_frames(_requests: &[SckTargetRequest]) -> Result<Vec<SckFrame>, SckCaptu
 }
 
 fn fake_start(_requests: &[SckTargetRequest]) -> Result<Vec<SckFrame>, SckCaptureError> {
-    Err(SckCaptureError::Start)
+    Err(SckCaptureError::Start(DesktopError::capture_failed("start failed")))
 }
 
 fn fake_unavailable(_requests: &[SckTargetRequest]) -> Result<Vec<SckFrame>, SckCaptureError> {
@@ -119,7 +125,9 @@ fn an_sck_window_capture_is_not_legacy_and_carries_is_on_screen() {
     assert_eq!(geometry.window_is_on_screen(), Some(false));
 }
 
-fn fake_owned_off_screen(_requests: &[SckTargetRequest]) -> Result<Vec<SckFrame>, SckCaptureError> {
+fn fake_owned_off_screen(
+    _requests: &[SckTargetRequest],
+) -> Result<Vec<SckFrame>, SckCaptureError> {
     Ok(vec![SckFrame { pid: Some(7), ..sck_frame() }])
 }
 

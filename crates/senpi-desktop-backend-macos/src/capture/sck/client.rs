@@ -35,6 +35,7 @@ pub(crate) struct HelperClient {
     input: BufWriter<ChildStdin>,
     output: BufReader<ChildStdout>,
     header: Vec<u8>,
+    has_replied: bool,
     /// Temp dir the staged helper binary lives in; kept alive until drop.
     _staging: Option<tempfile::TempDir>,
 }
@@ -82,14 +83,22 @@ impl HelperClient {
             input: BufWriter::new(input),
             output: BufReader::new(output),
             header: Vec::new(),
+            has_replied: false,
             _staging: staging,
         })
+    }
+
+    pub(crate) fn has_replied(&self) -> bool {
+        self.has_replied
     }
 
     /// Sends one batch and reads one frame per request. A reply-level error
     /// (PermissionDenied, WindowNotFound, CaptureUnavailable...) does NOT
     /// poison the worker; a transport error leaves it for the owner to reset.
-    pub(crate) fn capture(&mut self, requests: &[TargetRequest]) -> Result<Vec<Frame>, ClientError> {
+    pub(crate) fn capture(
+        &mut self,
+        requests: &[TargetRequest],
+    ) -> Result<Vec<Frame>, ClientError> {
         let deadline = Instant::now() + CAPTURE_TIMEOUT;
         serde_json::to_writer(
             &mut self.input,
@@ -105,7 +114,9 @@ impl HelperClient {
         self.input.flush().map_err(io_error)?;
         let mut frames = Vec::with_capacity(requests.len());
         for expected in 0..requests.len() {
-            match read_header(&mut self.output, &mut self.header, deadline)? {
+            let reply = read_header(&mut self.output, &mut self.header, deadline)?;
+            self.has_replied = true;
+            match reply {
                 Reply::Error { code, error, reason } => {
                     return Err(ClientError::Reply(match (code.as_str(), reason) {
                         ("PermissionDenied", _) => super::super::permission_denied(),

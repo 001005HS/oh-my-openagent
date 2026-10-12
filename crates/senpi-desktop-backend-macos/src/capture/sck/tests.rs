@@ -2,37 +2,11 @@
 //! breaking) the helper protocol, so transport, reset, and error mapping all
 //! run against the actual pipe code.
 
-use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
-
 use senpi_desktop_core::error::ErrorCode;
 
 use super::client::{ClientError, HelperClient};
 use super::protocol::TargetRequest;
-
-/// A fake helper: an executable Python script at `path`.
-fn fake_helper(dir: &tempfile::TempDir, body: &str) -> PathBuf {
-    let path = dir.path().join("helper.py");
-    std::fs::write(&path, body).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    path
-}
-
-const PY_PREAMBLE: &str = r#"#!/usr/bin/env python3
-import json, struct, sys
-
-def header(value):
-    sys.stdout.buffer.write((json.dumps(value) + "\n").encode())
-    sys.stdout.buffer.flush()
-
-def pixels(width, height, bgra):
-    sys.stdout.buffer.write(bytes(bgra) * (width * height))
-    sys.stdout.buffer.flush()
-
-def read_request():
-    line = sys.stdin.buffer.readline()
-    return json.loads(line.decode())
-"#;
+use super::test_support::{fake_helper, PY_PREAMBLE};
 
 fn request_batch(targets: &[TargetRequest]) -> Vec<TargetRequest> {
     targets.to_vec()
