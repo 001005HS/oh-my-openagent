@@ -126,6 +126,8 @@ function mainWorkingTree(commonDir: string, probe: GitLayoutProbe): { root: stri
   return undefined
 }
 
+// Reads only the `[core]` keys written as `key = value`. `include`/`includeIf` files and a valueless
+// `bare` line are not followed, which leaves the layout unknown and so keeps the path-derived id.
 function readCoreConfig(text: string | undefined): CoreConfig {
   let bare: boolean | undefined
   let worktree: string | undefined
