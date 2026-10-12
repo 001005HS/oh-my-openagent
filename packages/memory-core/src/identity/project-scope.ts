@@ -9,6 +9,7 @@
 // path. In `git` mode a linked worktree path is mapped onto its main checkout first, the same way
 // session binding maps it. Nothing is created: only identities whose repo already exists count.
 
+import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 
 import { existsSync, lstatSync, readdirSync, realpathSync } from "../fs/resilient"
@@ -84,6 +85,8 @@ export function createProjectIdentityResolver(options: ProjectIdentityResolverOp
   const env = options.memoryRoot === undefined ? (options.env ?? process.env) : { ...(options.env ?? process.env), [MEMORY_ROOT_ENV_VAR]: options.memoryRoot }
   const mode = options.autoIdentity ?? "path"
   const exists = options.exists ?? existsSync
+  const homeRoot = realPathOrResolved(homedir())
+  const memoryRootReal = options.memoryRoot === undefined ? undefined : realPathOrResolved(options.memoryRoot)
   const linkedRoots = new Set<string>()
   const checkedLinks = new Set<string>()
   const byDir = new Map<string, ProjectIdentity | null>()
@@ -93,7 +96,18 @@ export function createProjectIdentityResolver(options: ProjectIdentityResolverOp
     if (checkedLinks.has(link)) return
     checkedLinks.add(link)
     if (!isDirectorySymlink(link) || isInsideGitWorkTree(dirname(link))) return
-    linkedRoots.add(realPathOrResolved(link))
+    const target = realPathOrResolved(link)
+    if (isTooBroadRoot(target)) return
+    linkedRoots.add(target)
+  }
+
+  // A link to the session root or above, to the home directory or above, or to anything holding the
+  // memory root would pull every project on the machine into scope (`ln -s ~ x`): only a link that
+  // names a project's own tree counts.
+  function isTooBroadRoot(target: string): boolean {
+    if (isInsideOrEqual(sessionRoot, target)) return true
+    if (isInsideOrEqual(homeRoot, target)) return true
+    return memoryRootReal !== undefined && isInsideOrEqual(memoryRootReal, target)
   }
 
   function scanSessionTree(): void {

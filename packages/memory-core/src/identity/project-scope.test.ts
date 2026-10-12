@@ -133,6 +133,29 @@ describe("createProjectIdentityResolver", () => {
     expect(byRealPath?.identity.id).toBe(expected)
   })
 
+  it("#given a link to an ancestor of the session root #when a file of an unrelated project is touched through it or directly #then that project is never in scope", () => {
+    // given - `ln -s <root> ws/up` would otherwise make every project under the root a linked project.
+    const { workspace, sibling, env } = fixture(({ sibling }) => [sibling])
+    symlinkSync(join(workspace, ".."), join(workspace, "up"))
+    const resolver = createProjectIdentityResolver({ sessionCwd: workspace, env })
+
+    // when / then
+    expect(resolver.forPath(join(workspace, "up", "sibling", "notes.md"))).toBeUndefined()
+    expect(resolver.forPath(join(sibling, "notes.md"))).toBeUndefined()
+  })
+
+  it("#given a link to the memory root's parent #when a file under it is touched #then nothing under the memory root comes into scope", () => {
+    // given
+    const { workspace, child, env } = fixture(({ child }) => [child])
+    const memoryRoot = env[MEMORY_ROOT_ENV_VAR]
+    symlinkSync(join(memoryRoot, ".."), join(workspace, "mem-parent"))
+    const resolver = createProjectIdentityResolver({ sessionCwd: workspace, env, memoryRoot })
+
+    // when / then - the child inside the session tree still resolves; the broad link adds nothing.
+    expect(resolver.forPath(join(workspace, "mem-parent", "memory", "x.md"))).toBeUndefined()
+    expect(resolver.forPath(join(child, "src", "index.ts"))?.identity.id).toBe(resolveMemoryIdentity("auto", child, env).id)
+  })
+
   it("#given a symlink committed inside a git work tree #when a file through it is touched #then it is never followed", () => {
     // given - a symlink that is the repository's own content, not a linked-in project.
     const { workspace, sibling, env } = fixture(({ sibling }) => [sibling])

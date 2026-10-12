@@ -84,17 +84,19 @@ describe("selectWithProjectSeats (#10044)", () => {
     expect(projectOnly).toHaveLength(4)
   })
 
-  test("#given three touched projects of 200 notes and 800 own notes #when ranked #then the selection stays inside the existing per-turn budget", () => {
+  test("#given three touched projects and an own corpus #when ranked #then each corpus is ranked exactly once, on its own documents", () => {
     // given
     const own = filler("own", 800, "kubernetes cluster notes")
-    const projects = ["a", "b", "c"].map((name) => project(`${name}-1234abcd`, filler(name, 200, "rollout canary checklist")))
-    const started = performance.now()
+    const projects = ["a", "b", "c"].map((name) => project(`${name}-1234abcd`, filler(name, 200, "kubernetes rollout canary")))
+    const calls: number[] = []
 
     // when
-    const selected = selectWithProjectSeats(own, projects, 2, rank([QUERY], 2))
+    selectWithProjectSeats(own, projects, 2, (documents, extraQueries) => {
+      calls.push(documents.length)
+      return rank([QUERY], 2)(documents, extraQueries)
+    })
 
-    // then - the same order of cost as one 1,400-document corpus, the bound the recall path already holds.
-    expect(selected).toHaveLength(2)
-    expect(performance.now() - started).toBeLessThan(2_000)
+    // then - four bounded passes, never a merged 1,400-document corpus.
+    expect(calls).toEqual([800, 200, 200, 200])
   })
 })
