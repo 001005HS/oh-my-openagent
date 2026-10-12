@@ -1,0 +1,135 @@
+import {
+  GitMemoryRepo,
+  RecallCorpusCache,
+  createProjectIdentityResolver,
+  type ProjectIdentity,
+  type ProjectIdentityResolver,
+  type RecallDocument,
+} from "@oh-my-opencode/memory-core"
+
+import type { SenpiExtensionAPI } from "../../extension/types"
+import type { MemoryIdentityContext } from "./context"
+import { grantProjectMemoryRead } from "./project-memory-grants"
+import { isRecord, sessionIdFrom } from "./wiring-context"
+
+export const PROJECT_MEMORY_NUDGE_MAX_NOTES = 30
+
+const TOUCH_TOOL_NAMES = new Set(["read", "edit", "write"])
+const PATH_ARGUMENT_NAMES = ["path", "file_path", "filePath"] as const
+
+export interface ProjectMemorySwitches {
+  readonly nudge: boolean
+  readonly recall: boolean
+}
+
+export interface ProjectMemoryNudgeOptions {
+  readonly resolveContext: (sessionId: string) => MemoryIdentityContext | undefined
+  readonly switches: () => ProjectMemorySwitches
+  readonly fallbackCwd: () => string
+  readonly env?: Record<string, string | undefined>
+}
+
+interface SessionScope {
+  readonly cwd: string
+  readonly resolver: ProjectIdentityResolver
+  readonly nudged: Set<string>
+  readonly touched: ProjectIdentity[]
+}
+
+export interface ProjectMemoryScope {
+  touchedMostRecentFirst(sessionId: string): readonly ProjectIdentity[]
+}
+
+export function registerProjectMemoryNudge(pi: SenpiExtensionAPI, options: ProjectMemoryNudgeOptions): ProjectMemoryScope {
+  const sessions = new Map<string, SessionScope>()
+  const corpora = new Map<string, RecallCorpusCache>()
+
+  function scopeFor(sessionId: string, eventCtx: unknown): SessionScope {
+    const cwd = isRecord(eventCtx) && typeof eventCtx.cwd === "string" && eventCtx.cwd.length > 0 ? eventCtx.cwd : options.fallbackCwd()
+    const existing = sessions.get(sessionId)
+    if (existing?.cwd === cwd) return existing
+    const created: SessionScope = {
+      cwd,
+      resolver: createProjectIdentityResolver({ sessionCwd: cwd, ...(options.env === undefined ? {} : { env: options.env }) }),
+      nudged: new Set(),
+      touched: [],
+    }
+    sessions.set(sessionId, created)
+    return created
+  }
+
+  async function notesOf(project: ProjectIdentity): Promise<readonly RecallDocument[]> {
+    const dir = project.identity.paths.repo
+    let cache = corpora.get(dir)
+    if (cache === undefined) {
+      cache = new RecallCorpusCache()
+      corpora.set(dir, cache)
+    }
+    return (await cache.load(new GitMemoryRepo({ dir, agentId: project.identity.id }))).documents
+  }
+
+  pi.on("tool_result", async (payload: unknown, eventCtx: unknown) => {
+    const touchedPath = touchedPathOf(payload)
+    if (touchedPath === undefined) return undefined
+    const sessionId = sessionIdFrom(eventCtx)
+    if (sessionId === undefined) return undefined
+    const context = options.resolveContext(sessionId)
+    if (context === undefined) return undefined
+    const switches = options.switches()
+    if (!switches.nudge && !switches.recall) return undefined
+
+    const scope = scopeFor(sessionId, eventCtx)
+    const project = scope.resolver.forPath(touchedPath)
+    if (project === undefined || project.identity.id === context.identity) return undefined
+    grantProjectMemoryRead(context, project.identity.paths.repo)
+    const index = scope.touched.findIndex((entry) => entry.identity.id === project.identity.id)
+    if (index >= 0) scope.touched.splice(index, 1)
+    scope.touched.unshift(project)
+
+    if (!switches.nudge || scope.nudged.has(project.identity.id)) return undefined
+    scope.nudged.add(project.identity.id)
+    const notes = await notesOf(project)
+    if (notes.length === 0) return undefined
+    const content = isRecord(payload) && Array.isArray(payload.content) ? payload.content : []
+    return { content: [...content, { type: "text", text: formatProjectMemoryNudge(project, notes), audience: "model" }] }
+  })
+
+  pi.on("session_compact", (payload: unknown, eventCtx: unknown) => {
+    if (isRecord(payload) && payload.accepted === false) return
+    const sessionId = sessionIdFrom(eventCtx)
+    if (sessionId !== undefined) sessions.get(sessionId)?.nudged.clear()
+  })
+
+  pi.on("session_shutdown", (_payload: unknown, eventCtx: unknown) => {
+    const sessionId = sessionIdFrom(eventCtx)
+    if (sessionId !== undefined) sessions.delete(sessionId)
+  })
+
+  return { touchedMostRecentFirst: (sessionId) => sessions.get(sessionId)?.touched ?? [] }
+}
+
+export function formatProjectMemoryNudge(project: ProjectIdentity, notes: readonly RecallDocument[]): string {
+  const shown = notes.slice(0, PROJECT_MEMORY_NUDGE_MAX_NOTES)
+  const lines = [
+    "",
+    `[Project memory: ${project.projectDir}]`,
+    "This project keeps its own memory from earlier sessions. Consult it actively: read any note below that bears on the work before relying on assumptions.",
+    `Notes live under ${project.identity.paths.repo}; open one with the read tool at that directory plus the path shown.`,
+    ...shown.map((note) => `- ${note.path}: ${note.description}`),
+    ...(notes.length > shown.length ? [`- +${notes.length - shown.length} more`] : []),
+  ]
+  return lines.join("\n")
+}
+
+function touchedPathOf(payload: unknown): string | undefined {
+  if (!isRecord(payload) || payload.isError === true || typeof payload.toolName !== "string") return undefined
+  if (!TOUCH_TOOL_NAMES.has(payload.toolName.trim().toLowerCase())) return undefined
+  const input = payload.input
+  if (!isRecord(input)) return undefined
+  for (const name of PATH_ARGUMENT_NAMES) {
+    const value = input[name]
+    if (typeof value === "string" && value.length > 0) return value
+  }
+  return undefined
+}
+
