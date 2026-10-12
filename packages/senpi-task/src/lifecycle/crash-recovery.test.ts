@@ -122,7 +122,8 @@ describe("host crash uses existing bounded child recovery (#10023)", () => {
         streamingBehavior: "followUp",
         message: expect.any(String),
       }])
-      expect(f.replacement.sent[0]?.message).not.toBe(f.launchRecords[0]?.prompt)
+      const continuation = f.replacement.sent[0]
+      expect(continuation?.type === "prompt" ? continuation.message : undefined).not.toBe(f.launchRecords[0]?.prompt)
       expect(f.store.load(f.id)?.status).toBe("running")
       expect(f.manager.getResidentHandle(f.id)).toBeDefined()
       expect(f.terminals).toHaveLength(0)
