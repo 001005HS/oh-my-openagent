@@ -36,24 +36,25 @@ struct Queued {
     cancel: oneshot::Receiver<()>,
 }
 
-/// Cancel handles of the requests of this connection that await a reply.
+/// Cancel handles of the requests of this connection that await a reply,
+/// each marked whether it holds native input.
 #[derive(Clone, Default)]
-struct InFlight(Arc<Mutex<HashMap<RequestId, oneshot::Sender<()>>>>);
+struct InFlight(Arc<Mutex<HashMap<RequestId, (oneshot::Sender<()>, bool)>>>);
 
 impl InFlight {
     /// `None` when `id` is already in flight.
-    fn register(&self, id: &RequestId) -> Option<oneshot::Receiver<()>> {
+    fn register(&self, id: &RequestId, holds_input: bool) -> Option<oneshot::Receiver<()>> {
         let mut requests = self.0.lock();
         if requests.contains_key(id) {
             return None;
         }
         let (cancel, cancelled) = oneshot::channel();
-        requests.insert(id.clone(), cancel);
+        requests.insert(id.clone(), (cancel, holds_input));
         Some(cancelled)
     }
 
     fn cancel(&self, id: &RequestId) {
-        if let Some(cancel) = self.0.lock().remove(id) {
+        if let Some((cancel, _)) = self.0.lock().remove(id) {
             // A request that is answering right now no longer listens.
             cancel.send(()).unwrap_or(());
         }
@@ -63,9 +64,20 @@ impl InFlight {
         self.0.lock().remove(id);
     }
 
-    fn cancel_all(&self) {
-        for (_, cancel) in self.0.lock().drain() {
-            cancel.send(()).unwrap_or(());
+    /// Interrupts every in-flight hold so its input is released before the
+    /// connection drains or the session closes. Other requests keep running
+    /// and are answered as before.
+    fn cancel_holds(&self) {
+        let mut requests = self.0.lock();
+        let holds: Vec<RequestId> = requests
+            .iter()
+            .filter(|(_, (_, holds_input))| *holds_input)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in holds {
+            if let Some((cancel, _)) = requests.remove(&id) {
+                cancel.send(()).unwrap_or(());
+            }
         }
     }
 }
@@ -91,7 +103,7 @@ where
         in_flight.clone(),
     ));
     let read = read_requests(&engine, reader, &out, &queue, &in_flight).await;
-    in_flight.cancel_all();
+    in_flight.cancel_holds();
     drop((queue, out));
     let dispatched = dispatcher.await.map_err(io::Error::other);
     let written = writer.await.map_err(io::Error::other).and_then(|written| written);
@@ -155,9 +167,10 @@ fn handle_line(
         (Route::Immediate(outcome), Some(id)) => Some(reply_line(id, outcome)),
         (Route::Session(call), Some(id)) => {
             if matches!(&call, SessionCall::Close) {
-                in_flight.cancel_all();
+                in_flight.cancel_holds();
             }
-            let Some(cancel) = in_flight.register(&id) else {
+            let holds_input = matches!(method, Method::HoldKeys | Method::HoldMouse);
+            let Some(cancel) = in_flight.register(&id, holds_input) else {
                 let duplicate = Failure::InvalidRequest("a request with this id is already in flight".into());
                 return Some(failure_line(Some(id), duplicate));
             };
