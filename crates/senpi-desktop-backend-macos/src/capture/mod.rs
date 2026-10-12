@@ -1,11 +1,12 @@
 //! Quartz capture: TCC preflight, display/window enumeration, and
 //! `screencapture`-based capture with a display-only CoreGraphics fallback.
-//! Never prompts for permission and never uses ScreenCaptureKit.
+//! Never prompts for permission. Known cursor-helper windows are excluded by ScreenCaptureKit.
 
 mod displays;
 pub(crate) mod fallback;
 pub(crate) mod screencapture;
 mod windows;
+mod filtered;
 
 use image::RgbaImage;
 use senpi_desktop_core::error::{CoreResult, DesktopError, TccPermission};
@@ -77,12 +78,20 @@ impl MacCapture {
         let lock_path = crate::overlay::lock_path().map_err(|error| {
             DesktopError::capture_failed(format!("cannot locate account cursor-exclusion cache: {error}"))
         })?;
-        self.overlay.capture(&lock_path, crate::focus::window_info, std::thread::sleep, || match target {
+        self.overlay.capture(&lock_path, crate::focus::window_info, std::thread::sleep, |excluded| {
+            let result = match target {
             Target::Desktop | Target::Display(_) => {
                 let selector = target.display_selector().unwrap_or_else(|| self.selector.clone());
-                self.capture_desktop(&selector)
+                self.capture_desktop(&selector, excluded)
             }
-            Target::Window(id) => self.capture_window(id),
+            Target::Window(id) => self.capture_window(id, excluded),
+            }?;
+            // A launcher with another cache domain must not introduce an unfiltered helper.
+            let after = crate::focus::window_info()?;
+            if after.iter().any(|window| window.cursor_overlay && !excluded.contains(&window.window_number)) {
+                return Err(DesktopError::capture_failed("a new cursor helper was not included in the exclusion filter"));
+            }
+            Ok(result)
         })
     }
 
@@ -97,7 +106,7 @@ impl MacCapture {
     /// One `screencapture -x -R<rect>` per display, composited. When the tool
     /// is absent or fails with permission granted, the primary display is
     /// captured through CoreGraphics instead.
-    fn capture_desktop(&self, selector: &DisplaySelector) -> CoreResult<(RgbaImage, FrameGeometry)> {
+    fn capture_desktop(&self, selector: &DisplaySelector, excluded: &[u32]) -> CoreResult<(RgbaImage, FrameGeometry)> {
         self.require_permission()?;
         let focused = if *selector == DisplaySelector::Active {
             match crate::focus::front_window_id() {
@@ -120,13 +129,17 @@ impl MacCapture {
         let displays = selector.select(displays::enumerate(selector)?, focused.as_ref())?;
         let mut regions = Vec::with_capacity(displays.len());
         for display in &displays {
-            let image = match self.shooter.run(&display_args(display)) {
+            let image = if !excluded.is_empty() {
+                let id = display.id.parse::<u32>()
+                    .map_err(|_| DesktopError::capture_failed("filtered display has no native ID"))?;
+                filtered::capture(Some(id), None, display.pixel_width, display.pixel_height, excluded)?
+            } else { match self.shooter.run(&display_args(display)) {
                 Ok(image) => image,
                 Err(ShotError::Unavailable(reason)) => {
                     return fallback::capture_primary(&displays, &reason);
                 }
                 Err(ShotError::Fatal(error)) => return Err(error),
-            };
+            }};
             if image.width() == 0 || image.height() == 0 {
                 return Err(DesktopError::capture_failed(format!(
                     "capture of display '{}' returned an empty image",
@@ -139,16 +152,21 @@ impl MacCapture {
     }
 
     /// `screencapture -x -o -l <wid>`; window capture has no fallback.
-    fn capture_window(&self, id: &str) -> CoreResult<(RgbaImage, FrameGeometry)> {
+    fn capture_window(&self, id: &str, excluded: &[u32]) -> CoreResult<(RgbaImage, FrameGeometry)> {
         let window_id = id
             .parse::<u32>()
             .map_err(|_| DesktopError::invalid_target(format!("invalid macOS window id '{id}'")))?;
         self.require_permission()?;
+        if excluded.contains(&window_id) {
+            return Err(DesktopError::capture_failed("cursor-helper windows are not capture targets"));
+        }
         let window = windows::find(id)?;
-        let image = self
+        let image = if !excluded.is_empty() {
+            filtered::capture(None, Some(window_id), window.width, window.height, excluded)?
+        } else { self
             .shooter
             .run(&window_args(window_id))
-            .map_err(DesktopError::from)?;
+            .map_err(DesktopError::from)? };
         if image.width() == 0 || image.height() == 0 {
             return Err(DesktopError::capture_failed(format!(
                 "capture of window '{id}' returned an empty image"

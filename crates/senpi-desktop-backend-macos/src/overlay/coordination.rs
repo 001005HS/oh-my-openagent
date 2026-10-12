@@ -1,4 +1,4 @@
-//! Visible panels hold shared locks; an agent capture holds the exclusive lock.
+//! First helper-window publication holds a shared lock; capture holds the exclusive lock.
 //! Separate processes use separate file handles, and exit releases the locks.
 use std::fs::{File, OpenOptions, TryLockError};
 use std::ffi::{CStr, OsStr};

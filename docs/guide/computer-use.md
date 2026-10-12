@@ -10,7 +10,7 @@ The tool's parameters and permission classification are in [the computer tool re
 
 Computer use is on by default on macOS, Linux and Windows hosts: the `computer` tool is registered in every OmO Native session, and nothing touches your desktop until the agent (or you) activates it. The agent finds the tool with `tool_search` for `computer`, or calls it by name. After activation, JavaScript and Python eval kernels also receive a `computer` global.
 
-On macOS, a display-only virtual cursor shows where the agent is working without moving your physical pointer. Its default-ON setting is intentional: the overlay is visible in your own screen recordings and screen shares. Agents never see any session's cursor overlay in screenshots or window lists; captures wait up to two seconds for another capture or visible overlay to finish, and helpers cannot render during a capture. A capture is refused if cursor exclusion still cannot be established within that bound. Set `computer.showCursor: false` to keep it off, or use `/computer cursor off` for this session.
+On macOS, a display-only virtual cursor shows where the agent is working without moving your physical pointer. Its default-ON setting is intentional: the overlay is visible in your own screen recordings and screen shares. Agents never see any session's cursor overlay in screenshots or window lists. On macOS 14 or later, native screenshots exclude known cursor-helper windows while other sessions' cursors remain visible. A capture is refused if a helper cannot be identified or excluded; it never falls back to unfiltered pixels when exclusion is required. Set `computer.showCursor: false` to keep it off, or use `/computer cursor off` for this session.
 
 You control it with these commands:
 

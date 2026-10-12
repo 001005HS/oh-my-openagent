@@ -56,7 +56,7 @@ fn foreign_helper_past_deadline_returns_a_bounded_capture_error() {
         &path,
         || Ok(Vec::new()),
         std::thread::sleep,
-        || {
+        |_| {
             ran = true;
             Ok(())
         },

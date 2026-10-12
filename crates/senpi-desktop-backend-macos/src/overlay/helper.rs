@@ -28,6 +28,7 @@ pub(crate) fn run() -> io::Result<()> {
     let panel = CursorPanel::new(mtm);
     let lock_path = coordination::path()?;
     let mut visible = None;
+    let mut registered = false;
     let (send, receive) = sync_channel(1);
     let reader = std::thread::Builder::new()
         .name("cursor-overlay-ipc".to_owned())
@@ -58,7 +59,7 @@ pub(crate) fn run() -> io::Result<()> {
                             return Err(io::Error::other("non-finite cursor target"));
                         }
                         motion.target(x, y, now_ms);
-                        render(&panel, motion.frame(now_ms), mtm, &mut visible, &lock_path)?;
+                        render(&panel, motion.frame(now_ms), mtm, &mut visible, &mut registered, &lock_path)?;
                         wire::write(&mut output, &panel.reply(token)?)?;
                     }
                     Command::Hide { .. } => {
@@ -69,7 +70,7 @@ pub(crate) fn run() -> io::Result<()> {
                     }
                     Command::Resume { .. } => {
                         motion.resume(token);
-                        render(&panel, motion.frame(now_ms), mtm, &mut visible, &lock_path)?;
+                        render(&panel, motion.frame(now_ms), mtm, &mut visible, &mut registered, &lock_path)?;
                         wire::write(&mut output, &panel.reply(token)?)?;
                     }
                 }
@@ -96,7 +97,7 @@ pub(crate) fn run() -> io::Result<()> {
             }
         }
         autoreleasepool(|_| {
-            render(&panel, motion.frame(now_ms), mtm, &mut visible, &lock_path)?;
+            render(&panel, motion.frame(now_ms), mtm, &mut visible, &mut registered, &lock_path)?;
             runloop.runUntilDate(&NSDate::dateWithTimeIntervalSinceNow(1.0 / 60.0));
             Ok::<(), io::Error>(())
         })?;
@@ -108,6 +109,7 @@ fn render(
     frame: Option<Frame>,
     mtm: MainThreadMarker,
     visible: &mut Option<File>,
+    registered: &mut bool,
     lock_path: &Path,
 ) -> io::Result<()> {
     if !frame.as_ref().is_some_and(|frame| frame.alpha > 0.0) {
@@ -115,11 +117,24 @@ fn render(
         *visible = None;
         return Ok(());
     }
-    if visible.is_none() {
+    if !*registered && visible.is_none() {
         *visible = coordination::visible(coordination::open(lock_path)?)?;
         if visible.is_none() {
             return panel.render(None, mtm);
         }
     }
-    panel.render(frame, mtm)
+    panel.render(frame, mtm)?;
+    if !*registered {
+        let window_id = panel.reply(0)?.window_id;
+        *registered = crate::focus::window_info()
+            .map_err(|e| io::Error::other(e.to_string()))?
+            .iter()
+            .any(|window| window.window_number == window_id
+                && window.pid == std::process::id() && window.cursor_overlay);
+        if *registered {
+            // First publication is complete. Future frames reuse this excluded window ID.
+            *visible = None;
+        }
+    }
+    Ok(())
 }

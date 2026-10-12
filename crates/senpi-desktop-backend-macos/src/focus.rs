@@ -99,14 +99,18 @@ pub(crate) fn window_info() -> CoreResult<Vec<WindowInfo>> {
     let layer_key = CFString::from_str("kCGWindowLayer");
     let on_screen_key = CFString::from_str("kCGWindowIsOnscreen");
     let title_key = CFString::from_str("kCGWindowName");
-    Ok(array
+    let mut unidentified_overlay = false;
+    let windows = array
         .iter()
         .filter_map(|entry| {
             // SAFETY: CoreGraphics window-info dictionaries have CFString keys
             // and CFType values; downcasts below reject absent or wrong types.
             let entry =
                 unsafe { CFRetained::cast_unchecked::<CFDictionary<CFString, CFType>>(entry) };
-            Some(WindowInfo {
+            let cursor_overlay = entry.get(&title_key)
+                .and_then(|title| title.downcast::<CFString>().ok())
+                .is_some_and(|title| title.to_string() == crate::overlay::WINDOW_TITLE);
+            let window = (|| Some(WindowInfo {
                 pid: u32::try_from(entry.get(&pid_key)?.downcast::<CFNumber>().ok()?.as_i64()?)
                     .ok()?,
                 window_number: u32::try_from(
@@ -127,12 +131,18 @@ pub(crate) fn window_info() -> CoreResult<Vec<WindowInfo>> {
                     .downcast::<CFBoolean>()
                     .ok()?
                     .as_bool(),
-                cursor_overlay: entry.get(&title_key)
-                    .and_then(|title| title.downcast::<CFString>().ok())
-                    .is_some_and(|title| title.to_string() == crate::overlay::WINDOW_TITLE),
-            })
+                cursor_overlay,
+            }))();
+            if cursor_overlay && window.is_none() {
+                unidentified_overlay = true;
+            }
+            window
         })
-        .collect())
+        .collect();
+    if unidentified_overlay {
+        return Err(DesktopError::capture_failed("cannot identify a cursor-helper window"));
+    }
+    Ok(windows)
 }
 
 /// How long a restored application may take to come back and stay the user's front app.

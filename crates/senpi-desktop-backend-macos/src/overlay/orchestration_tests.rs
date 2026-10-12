@@ -18,7 +18,7 @@ fn concurrent_cursor_off_captures_wait_and_both_succeed() {
             &first_path,
             || Ok(Vec::new()),
             std::thread::sleep,
-            || {
+            |_| {
                 entered.send(()).unwrap();
                 first_release.recv_timeout(GUARD).unwrap();
                 Ok(1)
@@ -39,7 +39,7 @@ fn concurrent_cursor_off_captures_wait_and_both_succeed() {
                 blocked.send(()).unwrap();
                 second_resume.recv_timeout(GUARD).unwrap();
             },
-            || Ok(2),
+            |_| Ok(2),
         )
     });
     second_blocked.recv_timeout(GUARD).unwrap();
@@ -59,14 +59,14 @@ fn capture_succeeds_after_a_foreign_visible_holder_releases() {
         &path,
         || Ok(Vec::new()),
         |_| drop(visible.take()),
-        || Ok(7),
+        |_| Ok(7),
     );
     assert_eq!(result.unwrap(), 7);
     assert!(visible.is_none());
 }
 
 #[test]
-fn capture_refuses_a_foreign_visible_overlay_before_pixels() {
+fn capture_passes_a_foreign_visible_window_id_to_the_exclusion_backend() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("overlay.lock");
     let mut ran = false;
@@ -82,13 +82,14 @@ fn capture_refuses_a_foreign_visible_overlay_before_pixels() {
             }])
         },
         std::thread::sleep,
-        || {
+        |excluded| {
+            assert_eq!(excluded, [88]);
             ran = true;
             Ok(())
         },
     );
-    assert_eq!(result.unwrap_err().code, ErrorCode::CaptureFailed);
-    assert!(!ran);
+    result.unwrap();
+    assert!(ran);
     assert!(coordination::visible(coordination::open(&path).unwrap()).unwrap().is_some());
 }
 
@@ -100,7 +101,7 @@ fn capture_binds_the_exclusive_lock_through_pixels_and_releases_on_error() {
         &path,
         || Ok(Vec::new()),
         std::thread::sleep,
-        || {
+        |_| {
             // A missing or prematurely dropped binding permits a helper to appear here.
             assert!(coordination::visible(coordination::open(&path).unwrap()).unwrap().is_none());
             Err::<(), _>(DesktopError::capture_failed("synthetic screenshot error"))

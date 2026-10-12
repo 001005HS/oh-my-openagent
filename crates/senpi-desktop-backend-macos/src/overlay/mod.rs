@@ -83,39 +83,16 @@ impl Overlay {
         }
     }
 
-    /// One hide/ACK scope for every capture route, including fallbacks.
-    /// If hiding fails, kill/reap first; refuse pixels if a window remains.
+    /// Freeze first publication of new helper windows while native capture excludes known IDs.
     pub fn capture<T>(
         &self,
         path: &Path,
         window_info: impl FnOnce() -> CoreResult<Vec<focus::WindowInfo>>,
         wait: impl FnMut(Duration),
-        capture: impl FnOnce() -> CoreResult<T>,
+        capture: impl FnOnce(&[u32]) -> CoreResult<T>,
     ) -> CoreResult<T> {
-        let token = {
-            let mut state = self.0.lock();
-            state.token = state.token.wrapping_add(1);
-            let token = state.token;
-            if let Some(helper) = state.helper.as_mut() {
-                match helper.send(Command::Hide { token }) {
-                    Ok(reply) if !reply.visible => {}
-                    Ok(_) => state.helper = None,
-                    Err(error) => {
-                        eprintln!(
-                            "cursor-overlay: hide failed; terminating before capture: {error}"
-                        );
-                        state.helper = None;
-                    }
-                }
-            }
-            token
-        };
-        let _hidden = Hidden {
-            overlay: self.clone(),
-            token,
-        };
-        // A title check alone races another session's next render. The
-        // exclusive scope prevents every helper from appearing during pixels.
+        // Existing helpers may keep animating: their window IDs are excluded at the compositor.
+        // The exclusive scope blocks only first publication, not visible-lifetime locks.
         let _capture = coordination::open(path)
             .and_then(|file| coordination::capture(file, wait))
             .map_err(|error| {
@@ -127,35 +104,21 @@ impl Overlay {
         let windows = window_info().map_err(|error| {
             DesktopError::capture_failed(format!("cannot verify cursor exclusion: {error}"))
         })?;
-        ensure_hidden(&windows)?;
-        capture()
+        capture(&excluded_window_ids(&windows)?)
     }
 }
 
-fn ensure_hidden(windows: &[focus::WindowInfo]) -> CoreResult<()> {
-    if windows.iter().any(|window| window.cursor_overlay && window.on_screen) {
-        return Err(DesktopError::capture_failed(
-            "a cursor overlay is still visible; capture refused",
-        ));
-    }
-    Ok(())
-}
-
-struct Hidden {
-    overlay: Overlay,
-    token: u64,
-}
-
-impl Drop for Hidden {
-    fn drop(&mut self) {
-        let mut state = self.overlay.0.lock();
-        if let Some(helper) = state.helper.as_mut() {
-            if let Err(error) = helper.send(Command::Resume { token: self.token }) {
-                eprintln!("cursor-overlay: resume failed; disabling: {error}");
-                state.helper = None;
-            }
+fn excluded_window_ids(windows: &[focus::WindowInfo]) -> CoreResult<Vec<u32>> {
+    let mut ids = Vec::new();
+    for window in windows.iter().filter(|window| window.cursor_overlay) {
+        if window.window_number == 0 || window.pid == 0 {
+            return Err(DesktopError::capture_failed(
+                "a cursor overlay cannot be identified for exclusion; capture refused",
+            ));
         }
+        ids.push(window.window_number);
     }
+    Ok(ids)
 }
 
 #[cfg(test)]
