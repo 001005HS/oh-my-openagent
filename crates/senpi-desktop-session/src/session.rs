@@ -113,6 +113,7 @@ impl Session {
 
     /// Enqueues `op` behind every earlier request.
     pub fn submit(&self, op: Op) -> Pending {
+        let budget = self.timeouts.budget_for(&op);
         let signal = self.supervisor.hold_signal();
         let mut pending = self.enqueue(|reply| {
             let mut holds = self.holds.lock();
@@ -121,6 +122,8 @@ impl Session {
             Message::Op { op, reply, signal: Arc::clone(&signal) }
         });
         pending.cancellation = Some(crate::cancel_on_drop::CancelOnDrop(signal));
+        pending.budget = budget;
+        pending.deadline = Instant::now() + budget;
         pending
     }
 
