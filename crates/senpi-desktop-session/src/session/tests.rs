@@ -9,6 +9,28 @@ use senpi_desktop_safety::{FakeClock, Supervisor};
 use super::{Pending, PendingKind, Response};
 
 #[tokio::test]
+async fn submitted_long_holds_keep_the_duration_aware_deadline() {
+    // Given a real session with a three-second operation margin.
+    let session = super::Session::start(
+        crate::selection::BackendSelection::FakeScenario(Box::default()),
+        crate::timeouts::SessionTimeouts {
+            operation: Duration::from_secs(3),
+            close: Duration::from_secs(2),
+        },
+    ).unwrap();
+    // When a 100-second hold is submitted (no backend input is admitted).
+    let pending = session.submit(crate::request::Op::HoldKeys(
+        senpi_desktop_core::protocol_params::HoldKeysParams {
+            target: "101".into(), keys: vec!["shift".into()], duration: 100.0, opts: None,
+        },
+    ));
+    // Then submit uses the hold budget, not the ordinary operation deadline.
+    assert_eq!(pending.budget, Duration::from_secs(103));
+    drop(pending);
+    session.close().wait().await.unwrap();
+}
+
+#[tokio::test]
 async fn hold_deadline_waits_for_worker_release_before_timeout_reply() {
     // Given an expired hold with a worker reply still outstanding.
     let supervisor = Supervisor::new(Arc::new(FakeClock::new(0)));
