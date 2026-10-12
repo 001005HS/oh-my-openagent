@@ -134,6 +134,17 @@ describe("tryFallbackRetry", () => {
       const retry = [...args.queuesByKey.values()].flat()[0]
       expect(retry.input.prompt).toContain("original-task")
       expect(retry.input.prompt).toContain("latest-continuation")
+      expect(retry.input.prompt).toContain("[Note:")
+    })
+
+    test("leaves a never-resumed task's retry prompt without the retry note", async () => {
+      // given
+      const args = createDefaultArgs({ prompt: "test prompt" })
+      // when
+      await tryFallbackRetry(args)
+      // then
+      const retry = [...args.queuesByKey.values()].flat()[0]
+      expect(retry.input.prompt).toBe("test prompt")
     })
 
     test("returns true and enqueues retry", async () => {

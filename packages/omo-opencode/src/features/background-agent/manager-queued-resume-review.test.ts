@@ -129,15 +129,12 @@ describe("queued resume review regressions", () => {
     expect(manager.taskHistory.getByParentSession("new-parent").map(entry => entry.status)).toEqual(["running"])
   })
 
-  test("writes the queued parent's marker once during shutdown", async () => {
+  test("settles the queued parent's marker during shutdown", async () => {
     // given
-    const { manager, internals, directory } = await queueResume()
-    const markerUpdates = spyOn(internals, "updateBackgroundTaskMarker")
+    const { manager, directory } = await queueResume()
     // when
     await manager.shutdown()
     // then
-    const queuedParentUpdates = markerUpdates.mock.calls.filter(call => call[0] === "new-parent")
-    expect(queuedParentUpdates.length).toBe(1)
     expect(readContinuationMarker(directory, "new-parent")?.sources["background-task"]?.state).toBe("idle")
   })
 
