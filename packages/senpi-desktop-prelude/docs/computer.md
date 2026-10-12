@@ -14,6 +14,8 @@ computer.window(idOrFilter) → ComputerWindow
 computer.focusedWindow() → ComputerWindow | null
 computer.screenshot({ silent? }?) / win.screenshot({ silent? }?) → { target, frameId, width, height, sourceWidth, sourceHeight, scale, path? }
     The root captures the focused monitor by default (primary fallback), not the all-display composite. Auto-displays the image unless `silent: true`. Wayland uses the first display the portal reports, not a known compositor primary.
+computer.zoom({ x, y, width, height }, { silent?, frameId? }?) / win.zoom(...) → { target, frameId, width, height, sourceWidth, sourceHeight, coordinateWidth, coordinateHeight, region, scale, path? }
+    Fresh native-detail crop of a region in the SAME target's last full screenshot. Desktop/display zoom pins the displays that full frame captured, even after focus moves. Zoom pixels are NOT input coordinates: later clicks still use the last full screenshot's coordinateWidth/coordinateHeight and frameId. A missing/stale full frame or invalid rectangle throws InvalidCoordinateFrame; take a new full screenshot. Same helper on display handles.
 computer.click(x, y, { button?, count?, modifiers?, delivery? }?) / win.click(...) → None
 computer.doubleClick(x, y, opts?) / computer.move(x, y) / computer.drag([[x, y], …], { modifiers?, delivery? }?) / computer.scroll(x, y, { dx?, dy?, delivery? }?) → None
     Same helpers on a window handle: win.doubleClick, win.move, win.drag, win.scroll.
@@ -29,6 +31,8 @@ win.menu.select(path, { delivery? }?) → None
     Exec tier: invokes the leaf command `path` names. Matching prefers a case-insensitive exact title, otherwise compares titles ignoring a trailing `...` or `…`; each tier must match exactly one item. An ambiguous label, a disabled item anywhere in the path, a submenu as the leaf, or an untitled separator is refused and NOTHING is dispatched; the engine revalidates the command before the press. Background delivery (the default) refuses an app that has several windows, because the command would act on whichever window that app treats as key; pass `{ delivery: "foreground" }` (Python: `delivery='foreground'`) to raise and key this window first, which needs the human-confirmed grant (`computer.control.acquire`).
 win.ax({ all?, maxDepth? }?) → str
     One formatted TEXT tree, one node per line with `[ref=eN]` tags; NEVER iterate or `.map` it.
+win.observe({ silent?, all?, maxDepth?, maxNodes? }?) → ComputerObserveResult
+    Read tier: one atomic window screenshot plus AX text, nodeCount and truncated. Displays the screenshot then AX text unless silent. The input frame and AX refs change only when both succeed and the reply can be delivered; failure or cancellation preserves the previous frame and delivered ref generations. Window handles only. An older engine without observe refuses it without changing screenshot() or ax().
 win.find({ role?, title?, value?, limit? }) → ComputerElement[]
 win.ref("e5") / computer.ref("e5") → ComputerElement | null
 computer.elementAt(x, y) / computer.focusedElement() → ComputerElement | null
@@ -52,7 +56,7 @@ computer.close() → None
 Rules:
     Observe once per turn before interacting with an app (one screenshot or `ax()` of the target), act, then observe again only when you need fresh state; never re-screenshot after every action.
     PREFER AX over pixels: `win.ax()` → `el.press()` / `el.click()` / `el.setValue()`.
-    Pointer x,y are pixels in the MOST RECENT screenshot of the SAME target; AX coordinates are global desktop coordinates; NEVER mix them. `InvalidCoordinateFrame` → re-screenshot that target.
+    Pointer x,y are pixels in the MOST RECENT FULL screenshot of the SAME target; zoom leaves that frame unchanged. AX coordinates are global desktop coordinates; NEVER mix them. `InvalidCoordinateFrame` → re-screenshot that target.
     Each `win.ax()` starts a ref generation; current and previous refs stay valid, older refs throw `StaleRef`. Re-snapshot; NEVER guess refs.
     Input defaults to `delivery: "background"`. On macOS it leaves the frontmost app, its focused window, the cursor and the destination of the user's next keystroke unchanged, but a clicked target window may rise directly under the user's front window. `BackgroundUnavailable` means use AX or retry with `delivery: "foreground"` (briefly activates the target, then the focus guard restores it). Never assume a background action landed without re-observing.
     Background keyboard input goes only to an app's SOLE window: typing or pressing keys into a process with several windows throws `BackgroundUnavailable`; use AX `setValue`, or foreground delivery.
