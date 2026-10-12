@@ -4,13 +4,18 @@ import type { TaskRecord } from "../state"
 import { runTaskSend } from "../tools/control/send"
 import type { FakeHost, FakeHostOptions } from "./rpc-host/__fixtures__/fake-host"
 import { HOST_CHILD_MODEL, startHostWorld, type HostWorld, type ParentSession } from "./rpc-host/__fixtures__/host-world"
+import { hostWorldRecovery } from "./rpc-host/__fixtures__/host-world-recovery"
 import { manualRecoveryClock, type ManualRecoveryClock } from "./rpc-host/__fixtures__/manual-recovery-clock"
+import { LIVE_PARENT_SUSPENSION_BUDGET_MS } from "../lifecycle/live-parent-recovery"
 import type { ReattachOutcome } from "./rpc-host/handle-reattach"
 
 /**
- * omo#9403: a child whose host transport drops must, within a bound, either run again or end
- * `failed: transport lost` with its lane released - never stay running on a connection that is gone.
- * Every connection here is a real unix socket to the fake host; the bound is a clock the suite fires.
+ * omo#9403, omo#10023: a child whose host transport drops must, within a bound, either run again or
+ * park for live-parent recovery with its lane released - never stay running on a connection that is
+ * gone. A parked child is respawned from its recorded launch when the host and a slot allow it, and
+ * only when that fails does it end with one plain notice naming the cause and the user's action.
+ * Every connection here is a real unix socket to the fake host; the reattach bound is a clock the
+ * suite fires, and the live-parent recovery budget is a second clock it advances.
  */
 
 const worlds: HostWorld[] = []
@@ -23,6 +28,7 @@ interface Lane {
   readonly world: HostWorld
   readonly parent: ParentSession
   readonly clock: ManualRecoveryClock
+  readonly live: ReturnType<typeof hostWorldRecovery>
   readonly outcomes: ReattachOutcome[]
 }
 
@@ -30,14 +36,16 @@ async function laneOf(slots: number, host: FakeHostOptions = {}, reattachDelaysM
   const world = await startHostWorld(host)
   worlds.push(world)
   const clock = manualRecoveryClock()
+  const live = hostWorldRecovery()
   const outcomes: ReattachOutcome[] = []
   const parent = world.connect("parent-a", {
     settings: { default_concurrency: slots },
     reattachDelaysMs,
     recoveryClock: clock,
+    liveRecovery: live,
     shardEvents: { onReattachOutcome: (info) => outcomes.push(info.outcome) },
   })
-  return { world, parent, clock, outcomes }
+  return { world, parent, clock, live, outcomes }
 }
 
 function concurrencyOf(parent: ParentSession) {
@@ -69,9 +77,24 @@ async function joinRecovery(parent: ParentSession, record: TaskRecord): Promise<
 }
 
 function routingOf(world: HostWorld, record: TaskRecord): string {
-  const live = world.host.sessions().find((session) => session.sessionPath === record.host_session?.session_path)
+  const live = world.host.sessions().findLast((session) => session.sessionPath.includes(`/children/${record.task_id}/`))
   if (live === undefined) throw new Error(`the host holds no session for ${record.task_id}`)
   return live.routingId
+}
+
+/** Parked for live-parent recovery: detached with its cause, still unfinished, and holding no lease. */
+function parkedFor(parent: ParentSession, taskId: string): boolean {
+  const record = parent.store.load(taskId)
+  return record?.residency_state === "rpc_detached" && record.suspension_reason !== undefined
+    && (record.status === "running" || record.status === "pending")
+}
+
+/** The plain notice a child ends with once live-parent recovery runs out: a reason and an action, no transport jargon. */
+function expectRecoveryNotice(record: TaskRecord): void {
+  expect(record.status).toBe("error")
+  expect(record.failure_kind).toBe("suspended_unresumable")
+  expect(record.error_message).toContain("Retry")
+  expect(record.error_message).not.toContain("transport lost")
 }
 
 describe("a child whose host transport drops", () => {
@@ -100,9 +123,9 @@ describe("a child whose host transport drops", () => {
     expect(recordAt(parent, 1).status).toBe("running")
   })
 
-  test("#given a running child #when its socket closes and the host never answers the reopen #then within the bound the parent gets failed: transport lost, the lane admits the next child, and task_send names the loss", async () => {
+  test("#given a running child #when its socket closes and the host never answers the reopen #then within the bound it parks with its lane released, task_send queues for it, and it is respawned on the same session once a slot frees", async () => {
     // given
-    const { world, parent, clock } = await laneOf(1)
+    const { world, parent, clock, live } = await laneOf(1)
     await parent.startChildren(2)
     const first = recordAt(parent, 0)
     world.host.withholdReply("open_session")
@@ -115,23 +138,34 @@ describe("a child whose host transport drops", () => {
     const nextPrompt = world.host.waitForCommand("prompt")
     clock.expire()
 
-    // then
-    const failed = await settled(parent, first.task_id)
-    expect(failed.status).toBe("error")
-    expect(failed.error_message).toContain("transport lost")
+    // then - parked, not failed: the lane admits the next child and a message waits for the respawn
+    await live.until(() => parkedFor(parent, first.task_id))
     await nextPrompt
     expect(concurrencyOf(parent).leaseState(first.task_id, first.notification.run_epoch)).toBeUndefined()
     expect(concurrencyOf(parent).getCount(HOST_CHILD_MODEL)).toBe(1)
-    expect(recordAt(parent, 1).status).toBe("running")
+    const second = recordAt(parent, 1)
+    expect(second.status).toBe("running")
     const sent = await runTaskSend(parent.manager, { to: first.task_id, message: "still there?" }, parent.sessionId)
-    expect(sent.details).toMatchObject({ kind: "not_continuable" })
-    expect(JSON.stringify(sent.details)).toContain("transport lost")
-    expect(JSON.stringify(sent.details)).not.toContain("lane_capacity")
+    expect(sent.details).toMatchObject({ kind: "queued" })
+    expect(JSON.stringify(sent.details)).not.toContain("transport lost")
+
+    // when the next child finishes, the next recovery retry respawns the parked one on its own session
+    await live.until(() => parent.store.load(first.task_id)?.revival_deferred_reason === "capacity")
+    world.host.completeTurn(routingOf(world, second), "second done")
+    expect((await settled(parent, second.task_id)).status).toBe("completed")
+    live.advance(5_000)
+    await live.until(() => parent.store.load(first.task_id)?.residency_state === "resident"
+      && parent.store.load(first.task_id)?.suspension_reason === undefined)
+    expect(parent.store.load(first.task_id)?.host_session?.session_path).toBe(first.host_session?.session_path)
+    world.host.completeTurn(routingOf(world, first), "finished after the respawn")
+    const done = await settled(parent, first.task_id)
+    expect(done.status).toBe("completed")
+    expect(done.final_response).toBe("finished after the respawn")
   })
 
-  test("#given several children on one host #when the host crashes, comes back, and never accepts the continuation #then each ends failed within the bound, nothing reports reattached, and every lease is released", async () => {
+  test("#given several children on one host #when the host crashes, comes back, and never accepts the continuation #then each parks with its lease released, nothing reports reattached, and after the recovery budget each ends with one plain notice", async () => {
     // given
-    const { world, parent, clock, outcomes } = await laneOf(3, {}, [0])
+    const { world, parent, clock, live, outcomes } = await laneOf(3, {}, [0])
     await parent.startChildren(3)
     const children = [0, 1, 2].map((index) => recordAt(parent, index))
     world.host.withholdReply("prompt")
@@ -143,14 +177,16 @@ describe("a child whose host transport drops", () => {
     // then - a continuation that was never taken is not a reattach
     expect(outcomes).toEqual([])
     clock.expire()
-    for (const child of children) {
-      const failed = await settled(parent, child.task_id)
-      expect(failed.status).toBe("error")
-      expect(failed.error_message).toContain("transport lost")
-    }
+    await live.until(() => outcomes.length === 3)
     expect(outcomes).toEqual(["lost", "lost", "lost"])
+    for (const child of children) expect(concurrencyOf(parent).leaseState(child.task_id, child.notification.run_epoch)).toBeUndefined()
+
+    // when - the host never takes a continuation for the whole live-parent recovery budget
+    live.advance(LIVE_PARENT_SUSPENSION_BUDGET_MS + 1)
+
+    // then
+    for (const child of children) expectRecoveryNotice(await settled(parent, child.task_id))
     expect(concurrencyOf(parent).getCount(HOST_CHILD_MODEL)).toBe(0)
-    expect(parent.records().filter((record) => record.residency_state === "rpc_detached")).toEqual([])
   })
 
   test("#given several children on one host #when the host crashes and comes back healthy #then each is re-prompted, reported reattached only once the host took the continuation, and runs to completion", async () => {
@@ -171,9 +207,9 @@ describe("a child whose host transport drops", () => {
     expect(concurrencyOf(parent).getCount(HOST_CHILD_MODEL)).toBe(0)
   })
 
-  test("#given a child that started a long-running process #when it fails with transport lost and its host answers again #then its session is closed on the host and the process is gone", async () => {
+  test("#given a child that started a long-running process #when its parked recovery runs out and its host answers again #then its session is closed on the host and the process is gone", async () => {
     // given
-    const { world, parent, clock } = await laneOf(1, { sessionProcesses: true })
+    const { world, parent, clock, live } = await laneOf(1, { sessionProcesses: true })
     await parent.startChildren(1)
     const child = recordAt(parent, 0)
     const session = world.host.sessions().find((candidate) => candidate.sessionPath === child.host_session?.session_path)
@@ -183,12 +219,15 @@ describe("a child whose host transport drops", () => {
     world.host.cutConnections()
     await reopenAsked
     clock.expire()
-    const failed = await settled(parent, child.task_id)
-    expect(failed.error_message).toContain("transport lost")
+    // A parked session is kept for its respawn: the process is still there while recovery may run.
+    await live.until(() => parkedFor(parent, child.task_id))
+    expect(processAlive(session.processPid)).toBe(true)
 
-    // when - the host answers again: the stalled reopen dies with its socket and the next one lands
+    // when - recovery runs out, then the host answers again: the stalled reopen dies with its socket and the close lands
     world.host.allowReply("open_session")
     const closed = world.host.waitForCommand("close_session")
+    live.advance(LIVE_PARENT_SUSPENSION_BUDGET_MS + 1)
+    expectRecoveryNotice(await settled(parent, child.task_id))
     world.host.cutConnections()
     await closed
 
@@ -216,9 +255,9 @@ describe("a child whose host transport drops", () => {
     expect((await settled(parent, child.task_id)).status).toBe("completed")
   })
 
-  test("#given a stopped task host under a live parent with children holding every slot #when the bound runs out #then their leases are reclaimed, the pending child starts, and its own lease is never reclaimed", async () => {
+  test("#given a stopped task host under a live parent with children holding every slot #when the bound runs out #then they park with their leases reclaimed, the pending child starts, and its own lease is never reclaimed", async () => {
     // given - the host is stopped and replaced by one that never answers a reopen
-    const { world, parent, clock } = await laneOf(2, {}, [0])
+    const { world, parent, clock, live } = await laneOf(2, {}, [0])
     await parent.startChildren(3)
     const [first, second, pending] = [0, 1, 2].map((index) => recordAt(parent, index))
     if (first === undefined || second === undefined || pending === undefined) throw new Error("three children expected")
@@ -233,15 +272,17 @@ describe("a child whose host transport drops", () => {
     clock.expire()
 
     // then
-    expect((await settled(parent, first.task_id)).status).toBe("error")
-    expect((await settled(parent, second.task_id)).status).toBe("error")
     await pendingPrompt
+    for (const parked of [first, second]) {
+      expect(parent.store.load(parked.task_id)?.status).not.toBe("error")
+      expect(concurrencyOf(parent).leaseState(parked.task_id, parked.notification.run_epoch)).toBeUndefined()
+    }
     const started = parent.store.load(pending.task_id)
     expect(started?.status).toBe("running")
     clock.expire()
     expect(parent.store.load(pending.task_id)?.status).toBe("running")
     expect(concurrencyOf(parent).leaseState(pending.task_id, started?.notification.run_epoch ?? -1)).toBe("held")
-    expect(concurrencyOf(parent).getCount(HOST_CHILD_MODEL)).toBe(1)
+    expect(concurrencyOf(parent).getCount(HOST_CHILD_MODEL)).toBeLessThanOrEqual(2)
   })
 })
 
