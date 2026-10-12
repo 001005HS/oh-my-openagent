@@ -98,7 +98,9 @@ export function createPluginInterface(args: {
       () => toolSnippets,
       async (sessionID) => {
         if (!sessionID) return []
-        const response = await ctx.client.session.get({
+        const sessionsApi = ctx.client.session
+        if (!sessionsApi?.get) return undefined
+        const response = await sessionsApi.get({
           path: { id: sessionID },
           query: { directory: ctx.directory },
           signal: AbortSignal.timeout(3000),
