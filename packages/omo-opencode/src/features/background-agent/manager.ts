@@ -273,6 +273,7 @@ export class BackgroundManager {
   private processingKeys: Set<string> = new Set()
   private completionTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
   private readonly syncAttachedSessions = new Set<string>()
+  private readonly resumesAwaitingAdmission = new Set<string>()
   private completedTaskArchive: Map<string, BackgroundTask> = new Map()
   private completedTaskSummaries: Map<string, BackgroundTaskNotificationTask[]> = new Map()
   private idleDeferralTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
@@ -1364,6 +1365,11 @@ The fallback retry session is now created and can be inspected directly.
         "Wait for it to start and complete before resuming it with task_id.")
     }
 
+    if (this.resumesAwaitingAdmission.has(existingTask.id)) {
+      throw new Error(`Task ${existingTask.id} is already being resumed and cannot accept another continuation. ` +
+        "Wait for it to complete before resuming it with task_id.")
+    }
+
     const resumeSnapshot = this.captureResumeTaskSnapshot(existingTask, input.parentSessionId)
     const completionTimer = this.completionTimers.get(existingTask.id)
     if (completionTimer) {
@@ -1379,8 +1385,14 @@ The fallback retry session is now created and can be inspected directly.
     const admission = this.concurrencyManager.acquire(concurrencyKey, existingTask.id)
     const mustWait = this.concurrencyManager.getQueueLength(concurrencyKey) > queuedBefore
     if (!mustWait) {
-      await admission
-      return this.startResumedTask(existingTask, input, resumeSnapshot, concurrencyKey)
+      // Reserve the task before yielding: a concurrent resume in the same turn must be refused, not queued behind this one.
+      this.resumesAwaitingAdmission.add(existingTask.id)
+      try {
+        await admission
+        return await this.startResumedTask(existingTask, input, resumeSnapshot, concurrencyKey)
+      } finally {
+        this.resumesAwaitingAdmission.delete(existingTask.id)
+      }
     }
     const resumeToken = {}
     existingTask.pendingResume = resumeToken

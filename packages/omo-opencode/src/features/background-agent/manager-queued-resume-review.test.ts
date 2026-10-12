@@ -31,7 +31,7 @@ afterEach(async () => {
   }
 })
 
-async function queueResume(parentSessionId = "new-parent", busy = false) {
+function createResumeFixture(busy = false) {
   const directory = mkdtempSync(join(tmpdir(), "omo-resume-review-"))
   const promptAsync = mock(async () => ({ data: {} }))
   const log = mock((message: string, data?: unknown) => {
@@ -65,9 +65,14 @@ async function queueResume(parentSessionId = "new-parent", busy = false) {
     id: task.id, sessionID: task.sessionId, agent: task.agent,
     description: task.description, status: task.status, completedAt: task.completedAt,
   })
-  await internals.concurrencyManager.acquire("explore")
-  await manager.resume({ sessionId: "child", prompt: "latest", parentSessionId, parentMessageId: "new-message" })
   return { manager, internals, task, directory, promptAsync, log }
+}
+
+async function queueResume(parentSessionId = "new-parent", busy = false) {
+  const fixture = createResumeFixture(busy)
+  await fixture.internals.concurrencyManager.acquire("explore")
+  await fixture.manager.resume({ sessionId: "child", prompt: "latest", parentSessionId, parentMessageId: "new-message" })
+  return fixture
 }
 
 // One event-loop turn drains admission and prompt-gate microtasks without a timed sleep.
@@ -189,5 +194,24 @@ describe("queued resume review regressions", () => {
     expect(internals.pendingByParent.has("new-parent")).toBe(false)
     expect(manager.taskHistory.getByParentSession("new-parent").map(entry => entry.status)).toEqual(["cancelled"])
     expect(readContinuationMarker(directory, "new-parent")?.sources["background-task"]?.state).toBe("idle")
+  })
+
+  test("refuses a second resume issued while the first awaits immediate admission", async () => {
+    // given
+    const { manager, internals, task, promptAsync, directory } = createResumeFixture()
+    // when
+    const first = manager.resume({ sessionId: "child", prompt: "first", parentSessionId: "first-parent", parentMessageId: "first-message" })
+    const second = manager.resume({ sessionId: "child", prompt: "second", parentSessionId: "second-parent", parentMessageId: "second-message" })
+    const [firstResult, secondResult] = await Promise.allSettled([first, second])
+    await settleAdmission()
+    // then
+    expect(firstResult.status).toBe("fulfilled")
+    expect(secondResult.status).toBe("rejected")
+    expect(secondResult.status === "rejected" ? String(secondResult.reason) : "").toContain("already being resumed")
+    expect(task.prompt).toBe("first")
+    expect(promptAsync).toHaveBeenCalledTimes(1)
+    expect(internals.pendingByParent.has("second-parent")).toBe(false)
+    expect(manager.taskHistory.getByParentSession("second-parent")).toEqual([])
+    expect(readContinuationMarker(directory, "second-parent")?.sources["background-task"]?.state ?? "idle").toBe("idle")
   })
 })
