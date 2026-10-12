@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Interrupted background tasks recover without crash warnings.** Tasks that cannot reconnect resume automatically from their saved conversation and launch instructions within the existing retry budget. If recovery still fails, one notice names the task, explains why, and tells you how to retry; technical crash details stay in logs. ([#10023](https://github.com/code-yeongyu/oh-my-openagent/issues/10023))
+
 **Computer use can zoom into part of a screenshot at full detail without changing where clicks land.** `zoom(region)` on the desktop, a window or a display captures that region again at native resolution, while later clicks and typing still use the coordinates of the last full screenshot. ([#9651](https://github.com/code-yeongyu/oh-my-openagent/issues/9651))
 
 **Computer use can list and choose menu commands on Windows.** `menus.items` and `menus.select` read a window's classic menu bar directly, or its UI Automation menu when it has none, and run the chosen command without keyboard input. Elevated windows, ambiguous or disabled labels, submenus, and menus that change mid-request are refused before anything runs; apps that take focus while they act are refused in the background and work with `delivery: "foreground"`. ([#9651](https://github.com/code-yeongyu/oh-my-openagent/issues/9651), [#9991](https://github.com/code-yeongyu/oh-my-openagent/pull/9991))

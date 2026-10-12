@@ -6,6 +6,7 @@ import { destroyResidentTask } from "./destroy"
 import { endClosingFallbackChild } from "./fallback-closing-child"
 import { DEFAULT_HOST_SESSION_RETRY_POLICY, isHostSessionRecord } from "./host-session"
 import { terminateOldRpc } from "./revive-rollback"
+import { recoveryFailureNotice } from "../completion/recovery-failure-notice"
 
 type StopRetry = { token: string; attempt: number; retryAt: number }
 const stopRetries = new WeakMap<LifecycleContext, Map<string, StopRetry>>()
@@ -123,9 +124,7 @@ export async function expireSuspendedChild(
   )
     return
   const undelivered = fresh.pending_steering?.length ?? 0
-  const closureMessage = closed
-    ? `${reason}\nThe child could not be resumed (${cause}); its stop is confirmed.`
-    : `${reason}\nThe child could not be resumed (${cause}). Its old session may still be running on an unreachable host; closing it is being retried. There is no at-most-once guarantee if you re-dispatch: the work may run twice while the old run is still live. Check side-effecting work before re-running.`
+  const closureMessage = recoveryFailureNotice(fresh, closed)
   const message = undelivered === 0 ? closureMessage
     : `${closureMessage}\n${undelivered} queued message${undelivered === 1 ? " was" : "s were"} not delivered.`
   context.store.mutate(record.task_id, (current) => {

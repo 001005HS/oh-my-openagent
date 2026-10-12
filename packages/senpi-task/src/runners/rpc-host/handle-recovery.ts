@@ -50,7 +50,7 @@ type ReattachAnswer = HostSessionReattached | HostSessionReattachRefused | undef
  * when the loss hits is NOT a turn the host lost - its retry is the delivery - so recovery's in-flight
  * verdict ignores turns while a delivery is pending, whichever reaction runs first.
  *
- * Every recovery is BOUNDED (omo#9403): when the bound runs out first the child ends `transport lost`
+ * Every recovery is BOUNDED (omo#9403): when the bound runs out first the child parks for respawn
  * and whatever connection a late reattach still produces ends the session on the host, so the
  * child's processes go with it. A stop asked for while the transport is down is applied on the
  * recovered connection before anything else, and never continues the turn.
@@ -130,8 +130,9 @@ export function createHandleRecovery(host: HandleRecoveryHost): HandleRecovery {
           if (host.stopRequested()) return
           await withinBound(bound, host.port().send({ type: "prompt", message: prompt, streamingBehavior: "steer" }))
         },
-        // A refused reattach parks (the endpoint answered, but may not host this session); exhaustion ends.
-        giveUp: (reason) => (reason === undefined ? host.endLost() : host.park(reason)),
+        // Exhaustion hands the recorded launch and transcript to live-parent recovery (#9868),
+        // just like a typed refusal. It must not publish a terminal loss before respawn can run.
+        giveUp: (reason) => host.park(reason ?? "daemon_unavailable"),
       },
       boundedReattach(reattach, bound),
     )
