@@ -1582,6 +1582,16 @@ The fallback retry session is now created and can be inspected directly.
       const errorMessage = errorInfo.message ?? (error instanceof Error ? error.message : String(error))
       existingTask.error = errorMessage
       existingTask.completedAt = new Date()
+      this.taskHistory.record(existingTask.parentSessionId, {
+        id: existingTask.id,
+        sessionID: existingTask.sessionId,
+        agent: existingTask.agent,
+        description: existingTask.description,
+        status: "interrupt",
+        category: existingTask.category,
+        startedAt: existingTask.startedAt,
+        completedAt: existingTask.completedAt,
+      })
       if (existingTask.rootSessionId) {
         this.unregisterRootDescendant(existingTask.rootSessionId)
       }

@@ -193,6 +193,28 @@ describe("queued resume review regressions", () => {
     expect(readContinuationMarker(directory, "new-parent")?.sources["background-task"]?.state).toBe("idle")
   })
 
+  test("records terminal interrupt history when an admitted resume prompt fails", async () => {
+    // given
+    const fixture = createResumeFixture()
+    const { manager, internals, task, promptAsync } = fixture
+    promptAsync.mockImplementation(async () => {
+      throw new Error("model unavailable")
+    })
+    await internals.concurrencyManager.acquire("explore")
+    await manager.resume({ sessionId: "child", prompt: "latest", parentSessionId: "new-parent", parentMessageId: "new-message" })
+    // when
+    internals.concurrencyManager.release("explore")
+    await settleAdmission()
+    // The failure catch is fire-and-forget; wait for the terminal transition to settle.
+    for (let i = 0; i < 100 && task.status !== "interrupt"; i++) {
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+    // then
+    expect(promptAsync).toHaveBeenCalledTimes(1)
+    expect(task.status).toBe("interrupt")
+    expect(manager.taskHistory.getByParentSession("new-parent").map(entry => entry.status)).toEqual(["interrupt"])
+  })
+
   test("refuses a second resume issued while the first awaits immediate admission", async () => {
     // given
     const { manager, internals, task, promptAsync, directory } = createResumeFixture()
