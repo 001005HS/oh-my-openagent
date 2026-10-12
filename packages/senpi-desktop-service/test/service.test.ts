@@ -190,6 +190,24 @@ describe("DesktopService", HANG_GUARD, () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
+	it("cancels an in-flight hold before sending session.close", async () => {
+		// Given a call that only answers cancellation.
+		const log = fakeEngineFactory();
+		const service = serviceOver(log);
+		await service.open({});
+		const pending = rejectionOf(service.call("holdKeys", { fake: "cancellable" }));
+		const sent = await log.nthRequest("holdKeys", 1);
+		// When the service closes.
+		await service.close();
+		// Then cancellation precedes close on the same stream.
+		expect(await pending).toHaveProperty("code", "Cancelled");
+		const cancel = log.requests.findIndex((request) => request.method === "$/cancel");
+		const close = log.requests.findIndex((request) => request.method === "session.close");
+		expect(cancel).toBeGreaterThanOrEqual(0);
+		expect(close).toBeGreaterThan(cancel);
+		expect(log.requests[cancel]?.params).toEqual({ id: sent.id });
+	});
+
 	it("fans audit and stopPath.changed notifications out to every current listener", async () => {
 		// Given
 		const log = fakeEngineFactory();

@@ -118,6 +118,13 @@ export class RpcClient {
 		return promise;
 	}
 
+	/** Interrupt outstanding calls before enqueueing session.close. */
+	cancelAll(): void {
+		for (const id of this.#pending.keys()) {
+			this.#cancel(id, new DesktopServiceError("Cancelled", "desktop session is closing"));
+		}
+	}
+
 	/** Ends stdin; the engine exits at EOF. */
 	end(): void {
 		this.#child.end();

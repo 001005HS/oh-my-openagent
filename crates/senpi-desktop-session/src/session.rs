@@ -2,7 +2,7 @@
 //! submission order, and waits for each reply under its deadline.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::thread;
 use std::time::Duration;
 
@@ -43,6 +43,7 @@ pub struct Session {
     supervisor: Arc<senpi_desktop_safety::Supervisor>,
     /// `None` once `close` was requested: every later request fails `Closed`.
     queue: Mutex<Option<flume::Sender<Message>>>,
+    holds: Mutex<Vec<Weak<senpi_desktop_safety::HoldSignal>>>,
     capabilities: Arc<Mutex<DesktopCapabilities>>,
     timeouts: SessionTimeouts,
 }
@@ -91,6 +92,7 @@ impl Session {
         Ok(Self {
             supervisor,
             queue: Mutex::new(Some(queue)),
+            holds: Mutex::new(Vec::new()),
             capabilities,
             timeouts,
         })
@@ -112,10 +114,11 @@ impl Session {
     /// Enqueues `op` behind every earlier request.
     pub fn submit(&self, op: Op) -> Pending {
         let signal = self.supervisor.hold_signal();
-        let mut pending = self.enqueue(|reply| Message::Op {
-            op,
-            reply,
-            signal: Arc::clone(&signal),
+        let mut pending = self.enqueue(|reply| {
+            let mut holds = self.holds.lock();
+            holds.retain(|hold| hold.strong_count() > 0);
+            holds.push(Arc::downgrade(&signal));
+            Message::Op { op, reply, signal: Arc::clone(&signal) }
         });
         pending.cancellation = Some(crate::cancel_on_drop::CancelOnDrop(signal));
         pending
@@ -124,7 +127,9 @@ impl Session {
     /// Releases the backend after every earlier request. Idempotent: a second
     /// close answers `Unit` at once.
     pub fn close(&self) -> Pending {
-        let Some(queue) = self.queue.lock().take() else {
+        let mut queue = self.queue.lock();
+        self.cancel_holds();
+        let Some(queue) = queue.take() else {
             return Pending::ready(Ok(Response::Unit));
         };
         let (ack, acked) = flume::bounded(1);
@@ -132,6 +137,12 @@ impl Session {
             Ok(()) => Pending::new(PendingKind::Close(acked), self.timeouts.close),
             // The thread is gone, so the backend is already released.
             Err(_) => Pending::ready(Ok(Response::Unit)),
+        }
+    }
+
+    fn cancel_holds(&self) {
+        for hold in self.holds.lock().drain(..).filter_map(|hold| hold.upgrade()) {
+            hold.cancel();
         }
     }
 
@@ -147,6 +158,12 @@ impl Session {
                 "{THREAD_NAME} stopped unexpectedly"
             )))),
         }
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        self.cancel_holds();
     }
 }
 

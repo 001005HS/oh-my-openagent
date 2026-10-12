@@ -85,6 +85,23 @@ fn release_precedes_restore(sink: &RecordingSink, mouse: bool) {
 }
 
 #[tokio::test]
+async fn close_interrupts_a_long_hold_and_observes_release() {
+    // Given a 100-second hold that has delivered its press.
+    let (session, sink, _) = open().await;
+    let events = sink.subscribe();
+    let pending = session.submit(held_key());
+    await_press(&events, false);
+    // When close interrupts the hold before queueing teardown.
+    tokio::time::timeout(senpi_desktop_session::CLOSE_TIMEOUT, session.close().wait())
+        .await.unwrap().unwrap();
+    // Then the backend recorded the release before close acknowledged.
+    assert!(sink.ops().iter().any(|op| matches!(op,
+        SinkOp::HeldKey { key: KeyName::Shift, down: false, .. }
+    )));
+    assert_eq!(pending.wait().await.unwrap_err().code, ErrorCode::Cancelled);
+}
+
+#[tokio::test]
 async fn cancellation_wakes_a_bounded_hold_without_polling() {
     // Given a registered recorder before a real session request.
     let (session, sink, _) = open().await;

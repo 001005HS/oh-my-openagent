@@ -62,6 +62,12 @@ impl InFlight {
     fn finish(&self, id: &RequestId) {
         self.0.lock().remove(id);
     }
+
+    fn cancel_all(&self) {
+        for (_, cancel) in self.0.lock().drain() {
+            cancel.send(()).unwrap_or(());
+        }
+    }
 }
 
 /// Serves requests from `reader` until it ends, then answers every request
@@ -85,6 +91,7 @@ where
         in_flight.clone(),
     ));
     let read = read_requests(&engine, reader, &out, &queue, &in_flight).await;
+    in_flight.cancel_all();
     drop((queue, out));
     let dispatched = dispatcher.await.map_err(io::Error::other);
     let written = writer.await.map_err(io::Error::other).and_then(|written| written);
@@ -138,6 +145,9 @@ fn handle_line(
     // A notification carries no id to answer; only `$/cancel` acts on one.
     if request.id.is_none() && method != Method::Cancel {
         return None;
+    }
+    if method == Method::SessionClose {
+        in_flight.cancel_all();
     }
     match (engine.route(method, request.params), request.id) {
         (Route::Cancel(target), id) => {
