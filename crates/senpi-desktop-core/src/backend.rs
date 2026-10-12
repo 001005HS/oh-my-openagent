@@ -93,7 +93,14 @@ pub trait Backend: Send {
     fn capabilities(&mut self) -> DesktopCapabilities;
     fn displays(&mut self) -> CoreResult<Vec<DesktopDisplay>>;
     fn windows(&mut self) -> CoreResult<Vec<DesktopWindow>>;
-    fn capture(&mut self, target: &Target, caps: &CaptureCaps) -> CoreResult<(RgbaImage, FrameGeometry)>;
+    /// Captures `target`. `exclude_window_titles` names windows a display
+    /// capture must leave out; backends without exclusion support ignore it.
+    fn capture(
+        &mut self,
+        target: &Target,
+        caps: &CaptureCaps,
+        exclude_window_titles: &[String],
+    ) -> CoreResult<(RgbaImage, FrameGeometry)>;
     fn pointer(
         &mut self,
         target: &Target,

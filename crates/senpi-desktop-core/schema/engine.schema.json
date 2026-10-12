@@ -578,7 +578,8 @@
     "FocusRestoreFailed": -32019,
     "TransactionFailed": -32020,
     "InputBusy": -32021,
-    "ControlRequired": -32022
+    "ControlRequired": -32022,
+    "CaptureUnavailable": -32023
   },
   "standardErrors": {
     "parseError": -32700,
@@ -1021,6 +1022,18 @@
             "null"
           ],
           "description": "Whether the owning process runs above the engine's integrity level\n(Windows); `None` where the platform has no such notion."
+        },
+        "isOnScreen": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whether the window is on the active Space. `None` on backends that cannot tell (X11/Win32/Wayland report every listed window on screen)."
         }
       },
       "required": [
@@ -1051,6 +1064,21 @@
               "type": "null"
             }
           ]
+        },
+        "excludeWindowTitles": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Titles of windows to exclude from a display capture."
         }
       },
       "required": [
@@ -2406,7 +2434,8 @@
             "ScreenLocked",
             "CursorRestoreFailed",
             "FocusRestoreFailed",
-            "TransactionFailed"
+            "TransactionFailed",
+            "CaptureUnavailable"
           ]
         },
         {
@@ -2615,6 +2644,17 @@
               "type": "null"
             }
           ]
+        },
+        "captureUnavailable": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CaptureUnavailableData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -2712,6 +2752,19 @@
         "engine.log"
       ],
       "description": "Every server-to-client notification, by wire name."
+    },
+    "CaptureUnavailableData": {
+      "type": "object",
+      "description": "Why a `CaptureUnavailable` capture was refused. `reason` is an open token set: B9 introduces \"minimized\" and later waves add more.",
+      "properties": {
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "additionalProperties": false
     }
   }
 }

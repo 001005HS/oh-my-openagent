@@ -87,6 +87,7 @@ export const ERROR_CODES = [
 	"TransactionFailed",
 	"InputBusy",
 	"ControlRequired",
+	"CaptureUnavailable",
 ] as const;
 
 export type EngineMethod = (typeof ENGINE_METHODS)[number];

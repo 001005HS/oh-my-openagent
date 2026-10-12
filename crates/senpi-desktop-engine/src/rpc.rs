@@ -39,6 +39,7 @@ impl Failure {
                     code: error.code,
                     hint: None,
                     permission: error.permission,
+                    capture_unavailable: error.capture_unavailable,
                 })),
             },
             Self::Rejected(reason) => RpcError {

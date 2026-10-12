@@ -126,11 +126,14 @@ pub struct ResizeWindow {
     pub height: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScriptedFailure {
     pub method: FakeMethod,
     pub code: ErrorCode,
+    /// `CaptureUnavailable` reason token, e.g. `"minimized"`.
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 /// One scripted accessibility element and its subtree.

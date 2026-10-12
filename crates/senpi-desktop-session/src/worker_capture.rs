@@ -15,11 +15,31 @@ impl Worker {
     pub(crate) fn capture(&mut self, params: &CaptureParams) -> CoreResult<Response> {
         let target = Target::parse(&params.target);
         let budget = self.capture_budget(params.caps.as_ref())?;
-        let (image, mut geometry) = self.backend()?.capture(&target, budget.caps())?;
+        let (image, mut geometry) = self.backend()?.capture(
+            &target,
+            budget.caps(),
+            params.exclude_window_titles.as_deref().unwrap_or(&[]),
+        )?;
         let screenshot = plan_screenshot(image, &mut geometry, &budget)?;
         let frame_id = self.frames.record(&target, geometry);
+        let on_screen = self.capture_on_screen(&target);
         self.refresh_capabilities();
-        Ok(capture_response(screenshot, &target, frame_id, None))
+        Ok(capture_response(screenshot, &target, frame_id, None, on_screen))
+    }
+
+    /// The captured window's on-Screen state; absent for desktop/display
+    /// captures and windows the backend no longer lists.
+    fn capture_on_screen(&mut self, target: &Target) -> Option<bool> {
+        let Target::Window(id) = target else {
+            return None;
+        };
+        self.backend()
+            .ok()?
+            .windows()
+            .ok()?
+            .into_iter()
+            .find(|window| window.id == *id)?
+            .is_on_screen
     }
 
     pub(crate) fn capture_budget(&self, caps: Option<&CaptureCaps>) -> CoreResult<Budget> {
@@ -37,6 +57,7 @@ pub(crate) fn capture_response(
     target: &Target,
     frame_id: String,
     zoom: Option<(CaptureRegion, (u32, u32))>,
+    is_on_screen: Option<bool>,
 ) -> Response {
     let (coordinate_width, coordinate_height) = zoom
         .map_or((screenshot.width, screenshot.height), |(_, dimensions)| {
@@ -67,6 +88,7 @@ pub(crate) fn capture_response(
         target: target.key().to_owned(),
         frame_id,
         note,
+        is_on_screen,
     })
 }
 

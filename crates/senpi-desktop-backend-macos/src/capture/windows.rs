@@ -49,6 +49,7 @@ pub(crate) fn enumerate() -> CoreResult<Vec<DesktopWindow>> {
             // xcap marks every window of the active app focused; the AX
             // focused window lands with the focus guard (todo 15).
             focused: window.is_focused().unwrap_or(false),
+            is_on_screen: None,
             elevated: None,
         });
     }

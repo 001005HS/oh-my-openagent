@@ -27,7 +27,12 @@ impl Backend for FakeBackend {
     }
 
     /// Returns the native-size solid image; the session applies `caps`.
-    fn capture(&mut self, target: &Target, _caps: &CaptureCaps) -> CoreResult<(RgbaImage, FrameGeometry)> {
+    fn capture(
+        &mut self,
+        target: &Target,
+        _caps: &CaptureCaps,
+        _exclude_window_titles: &[String],
+    ) -> CoreResult<(RgbaImage, FrameGeometry)> {
         self.begin(FakeMethod::Capture)?;
         if !self.capabilities.capture {
             return Err(DesktopError::capture_failed(

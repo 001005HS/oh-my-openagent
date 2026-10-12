@@ -39,7 +39,12 @@ impl FakeBackend {
     pub fn new(scenario: FakeScenario) -> Self {
         let faults = Faults::default();
         for failure in &scenario.fail_next {
-            faults.fail_next(failure.method, failure.code);
+            let error = match &failure.reason {
+                Some(reason) => DesktopError::new(failure.code, format!("injected {:?} failure", failure.method))
+                    .with_capture_unavailable_reason(reason),
+                None => DesktopError::new(failure.code, format!("injected {:?} failure", failure.method)),
+            };
+            faults.fail_next_with(failure.method, error);
         }
         Self {
             ax_tree: AxTree::build(&scenario.ax),

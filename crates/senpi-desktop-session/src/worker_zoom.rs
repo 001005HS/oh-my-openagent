@@ -23,7 +23,7 @@ impl Worker {
         let budget = self.capture_budget(params.caps.as_ref())?;
         check_cancel(cancelled)?;
         let pinned = base.capture_target(&target);
-        let (image, fresh) = self.backend()?.capture(&pinned, &CaptureCaps::default())?;
+        let (image, fresh) = self.backend()?.capture(&pinned, &CaptureCaps::default(), &[])?;
         self.validate_zoom_target(&base, &target)?;
         let image = base.crop_region(image, &fresh, &params.region)?;
         let (width, height) = image.dimensions();
@@ -50,6 +50,7 @@ impl Worker {
             &target,
             frame_id,
             Some((params.region, base.dimensions())),
+            None,
         ))
     }
 

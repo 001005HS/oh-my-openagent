@@ -65,10 +65,19 @@ impl MacCapture {
     }
 
     pub(crate) fn capture(&self, target: &Target) -> CoreResult<(RgbaImage, FrameGeometry)> {
+        self.capture_with_exclusions(target, &[])
+    }
+
+    /// A capture whose display targets may exclude titled windows (B9 SCK).
+    pub(crate) fn capture_with_exclusions(
+        &self,
+        target: &Target,
+        exclude_window_titles: &[String],
+    ) -> CoreResult<(RgbaImage, FrameGeometry)> {
         match target {
             Target::Desktop | Target::Display(_) => {
                 let selector = target.display_selector().unwrap_or_else(|| self.selector.clone());
-                self.capture_desktop(&selector)
+                self.capture_desktop(&selector, exclude_window_titles)
             }
             Target::Window(id) => self.capture_window(id),
         }
@@ -85,7 +94,11 @@ impl MacCapture {
     /// One `screencapture -x -R<rect>` per display, composited. When the tool
     /// is absent or fails with permission granted, the primary display is
     /// captured through CoreGraphics instead.
-    fn capture_desktop(&self, selector: &DisplaySelector) -> CoreResult<(RgbaImage, FrameGeometry)> {
+    fn capture_desktop(
+        &self,
+        selector: &DisplaySelector,
+        _exclude_window_titles: &[String],
+    ) -> CoreResult<(RgbaImage, FrameGeometry)> {
         self.require_permission()?;
         let focused = if *selector == DisplaySelector::Active {
             match crate::focus::front_window_id() {

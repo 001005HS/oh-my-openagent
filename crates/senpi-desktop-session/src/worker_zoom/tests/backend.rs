@@ -51,6 +51,7 @@ pub(super) fn setup() -> (Worker, Arc<Mutex<State>>) {
             width: 64,
             height: 48,
             focused: true,
+            is_on_screen: None,
             elevated: None,
         },
         active: "1".into(),

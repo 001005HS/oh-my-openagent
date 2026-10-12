@@ -148,7 +148,7 @@ impl Backend for WaylandBackend {
     /// Reads the layout of an already connected libei session only; capture
     /// never opens an input session. A layout that cannot be read leaves the
     /// geometry unproven, so the frame refuses coordinate input.
-    fn capture(&mut self, target: &Target, _caps: &CaptureCaps) -> CoreResult<(RgbaImage, FrameGeometry)> {
+    fn capture(&mut self, target: &Target, _caps: &CaptureCaps, _exclude_window_titles: &[String]) -> CoreResult<(RgbaImage, FrameGeometry)> {
         let layout = match &mut self.input {
             Input::Connected(libei) => libei.regions().ok(),
             Input::Untried | Input::Failed(_) => None,
