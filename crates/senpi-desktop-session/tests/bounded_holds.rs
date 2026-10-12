@@ -78,10 +78,9 @@ fn release_precedes_restore(sink: &RecordingSink, mouse: bool) {
             matches!(op, SinkOp::HeldKey { key: KeyName::Shift, down: false, .. })
         }
     }).expect("held input was not released");
-    let restore = ops.iter().position(|op| matches!(op, SinkOp::RestoreKeyFocus(_)));
-    if let Some(restore) = restore {
-        assert!(release < restore, "input escaped into focus restoration");
-    }
+    let restore = ops.iter().position(|op| matches!(op, SinkOp::RestoreKeyFocus(_)))
+        .expect("background window hold did not restore key focus");
+    assert!(release < restore, "input escaped into focus restoration");
 }
 
 #[tokio::test]
