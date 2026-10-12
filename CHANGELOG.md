@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**Computer use can take a screenshot and read a window's accessibility tree in one step.** `observe()` on a window returns both together, and a failed or cancelled observation leaves the previous screenshot and accessibility references in place. ([#9651](https://github.com/code-yeongyu/oh-my-openagent/issues/9651))
+**Computer use can take a screenshot and read a window's accessibility tree in one step.** `observe()` on a window returns both together, and a failed or cancelled observation normally leaves the previous screenshot and accessibility references in place. ([#9651](https://github.com/code-yeongyu/oh-my-openagent/issues/9651))
 
 **Computer use can zoom into part of a screenshot at full detail without changing where clicks land.** `zoom(region)` on the desktop, a window or a display captures that region again at native resolution, while later clicks and typing still use the coordinates of the last full screenshot. ([#9651](https://github.com/code-yeongyu/oh-my-openagent/issues/9651))
 

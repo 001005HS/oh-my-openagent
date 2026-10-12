@@ -73,10 +73,11 @@ function renderCallChain(chain: readonly ComputerCallStep[]): string {
 
 const SHOWN_ABOVE = "[shown above]";
 
-/** The return value without repeating text the run already displayed verbatim (observe's AX tree). */
+/** The return value without repeating observe's AX tree when the run already displayed it verbatim. */
 function stringifyReturn(value: unknown, shown: ReadonlySet<string>): string {
-	if (typeof value === "string") return shown.has(value) ? SHOWN_ABOVE : value;
-	const replacer = (_key: string, field: unknown) => (typeof field === "string" && shown.has(field) ? SHOWN_ABOVE : field);
+	if (typeof value === "string") return value;
+	const replacer = (key: string, field: unknown) =>
+		key === "ax" && typeof field === "string" && shown.has(field) ? SHOWN_ABOVE : field;
 	return JSON.stringify(value, replacer, 2) ?? String(value);
 }
 
