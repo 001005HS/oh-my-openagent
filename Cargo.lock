@@ -2457,6 +2457,8 @@ dependencies = [
  "parking_lot",
  "senpi-desktop-core",
  "senpi-desktop-safety",
+ "serde",
+ "serde_json",
  "tempfile",
  "xcap",
 ]
