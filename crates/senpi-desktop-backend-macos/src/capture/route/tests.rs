@@ -9,10 +9,9 @@ use image::{Rgba, RgbaImage};
 use senpi_desktop_core::error::{DesktopError, ErrorCode};
 use senpi_desktop_core::types::{DisplaySelector, Target};
 
-use super::super::sck::{override_capture, SckCaptureError, SckFrame, SckTargetRequest};
+use super::super::sck::{override_capture, SckCaptureError, SckFrame, SckTargetRequest, SckUnavailable};
 use super::test_support::override_availability;
 use super::{note_legacy, note_legacy_into, MacCapture, REASON_START_FAILED};
-use crate::capture::sck::SckUnavailable;
 use crate::capture::Screencapture;
 
 fn shooter() -> Screencapture {
