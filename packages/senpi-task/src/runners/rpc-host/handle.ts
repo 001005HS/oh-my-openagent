@@ -75,24 +75,20 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     baseline: () => turnBaseline,
     finalText: () => finalText,
   })
-  let reconciledInterrupted = false
+  let continuationState: "none" | "pending_delivery" | "awaiting_start" = "none"
   const reconciliation = createHandleReconciliation({
     port: () => client,
     settle: (settled) => {
       if (settled.status === "completed") finalText = settled.finalResponse
       settleTurn(settled)
     },
-    interrupted: () => { reconciledInterrupted = true },
+    continuing: () => { continuationState = "pending_delivery" },
   })
 
   const onSessionEvent = (event: Parameters<ChildEventListener>[0]): void => {
-    if (event.type === "agent_start" && reconciledInterrupted) {
-      reconciledInterrupted = false
-      listeners.emitSelfResumed()
-    }
     // A run the child starts on its own after its turn settled (a monitor or background job woke it)
     // is a new turn: the next outcome is that run's, never the settled one again (omo#9069).
-    if (event.type === "agent_start" && turnOutcome !== undefined && outcome === undefined) {
+    if (event.type === "agent_start" && (continuationState === "awaiting_start" || turnOutcome !== undefined) && outcome === undefined) {
       beginTurn()
       listeners.emitSelfResumed()
     }
@@ -209,6 +205,7 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
   bindHostSessionPort(client, clientBinding)
 
   const beginTurn = (): void => {
+    continuationState = continuationState === "pending_delivery" ? "awaiting_start" : "none"
     if (outcome !== undefined) return
     if (reachedIdle || turnOutcome !== undefined) {
       reachedIdle = false

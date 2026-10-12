@@ -7,7 +7,7 @@ import { reconcileHostTurn, type ReconciledTurnNotice } from "./reconcile-turn"
 export function createHandleReconciliation(input: {
   readonly port: () => HostSessionPort
   readonly settle: (outcome: RunnerOutcome) => void
-  readonly interrupted: () => void
+  readonly continuing: () => void
 }) {
   let record: Pick<TaskRecord, "host_session" | "final_response"> = {}
   let adoptedEntryId: string | undefined
@@ -15,7 +15,6 @@ export function createHandleReconciliation(input: {
   const listeners = new Set<(notice: ReconciledTurnNotice) => void>()
   const notify = (notice: ReconciledTurnNotice): void => {
     if (notice.kind === "adopted") adoptedEntryId = notice.entryId
-    if (notice.kind === "interrupted") input.interrupted()
     if (notice.kind === "adopted" && record.host_session !== undefined) {
       record = { host_session: { ...record.host_session, adopted_entry_id: notice.entryId } }
     }
@@ -23,10 +22,10 @@ export function createHandleReconciliation(input: {
     for (const listener of listeners) listener(notice)
   }
   return {
-    reconcile: (sessionPath: string, nextRecord?: Pick<TaskRecord, "host_session" | "final_response">, interruptedWithoutTranscript = false) => {
+    reconcile: async (sessionPath: string, nextRecord?: Pick<TaskRecord, "host_session" | "final_response">, interruptedWithoutTranscript = false) => {
       if (nextRecord !== undefined) record = nextRecord
       const client = input.port()
-      return reconcileHostTurn({
+      const result = await reconcileHostTurn({
         getState: () => client.getState(),
         get lastInputEffect() { return client.lastInputEffect },
         get adoptedEntryId() { return adoptedEntryId },
@@ -34,6 +33,8 @@ export function createHandleReconciliation(input: {
         settle: input.settle,
         interruptedWithoutTranscript,
       }, record, sessionPath)
+      if (result === "continued") input.continuing()
+      return result
     },
     subscribe: (listener: (notice: ReconciledTurnNotice) => void): (() => void) => {
       listeners.add(listener)

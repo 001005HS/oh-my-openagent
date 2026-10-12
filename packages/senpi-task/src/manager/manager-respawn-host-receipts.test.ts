@@ -77,4 +77,24 @@ describe("receipt-driven host respawn lifecycle", () => {
     expect(f.host.commands.filter((command) => command.type === "prompt")).toHaveLength(1)
     await f.result.handle.dispose()
   })
+
+  test("an explicit resume after a deadline tracks one run when the host emits agent_start", async () => {
+    const f = await stoppedChild({ state: "done", outcome: { kind: "deadline", deadline: { kind: "inactivity" } } })
+    await f.manager.reattach(f.record, f.result.handle)
+    const started = Promise.withResolvers<void>()
+    const unsubscribe = f.result.handle.subscribe(event => { if (event.type === "agent_start") started.resolve() })
+    await f.manager.sendToTask({ idOrName: f.record.task_id, message: "continue", callerSessionId: "parent" })
+    f.startContinuation()
+    await started.promise
+    const completed = f.manager.waitFor(f.record.task_id, { signal: AbortSignal.timeout(5_000) })
+    const session = f.host.sessions()[0]
+    if (session === undefined) throw new Error("missing explicitly resumed session")
+    f.host.completeTurn(session.routingId, "EXPLICIT ANSWER")
+    const result = await completed
+    expect(result.final_response).toBe("EXPLICIT ANSWER")
+    expect(f.store.load(f.record.task_id)?.notification.run_epoch).toBe(result.notification.run_epoch)
+    expect(f.events.filter(type => type === "task_self_resumed")).toEqual([])
+    unsubscribe()
+    await f.result.handle.dispose()
+  })
 })
