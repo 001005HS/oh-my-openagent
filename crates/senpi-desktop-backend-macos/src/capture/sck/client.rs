@@ -35,7 +35,10 @@ pub(crate) struct HelperClient {
     input: BufWriter<ChildStdin>,
     output: BufReader<ChildStdout>,
     header: Vec<u8>,
-    has_replied: bool,
+    /// Whether the helper has written any reply byte. A transport failure
+    /// before that is a start failure (silent fallback); after it, a capture
+    /// failure the caller sees, so a helper crashing on one target is not hidden.
+    pub(crate) has_replied: bool,
     /// Temp dir the staged helper binary lives in; kept alive until drop.
     _staging: Option<tempfile::TempDir>,
 }
@@ -88,10 +91,6 @@ impl HelperClient {
         })
     }
 
-    pub(crate) fn has_replied(&self) -> bool {
-        self.has_replied
-    }
-
     /// Sends one batch and reads one frame per request. A reply-level error
     /// (PermissionDenied, WindowNotFound, CaptureUnavailable...) does NOT
     /// poison the worker; a transport error leaves it for the owner to reset.
@@ -114,10 +113,18 @@ impl HelperClient {
         self.input.flush().map_err(io_error)?;
         let mut frames = Vec::with_capacity(requests.len());
         for expected in 0..requests.len() {
-            let reply = read_header(&mut self.output, &mut self.header, deadline)?;
+            let reply = match read_header(&mut self.output, &mut self.header, deadline) {
+                Ok(reply) => reply,
+                Err(error) => {
+                    // Any header byte proves the helper started; only a silent
+                    // death counts as a start failure (see `has_replied`).
+                    self.has_replied |= !self.header.is_empty();
+                    return Err(error.into());
+                },
+            };
+            self.has_replied = true;
             match reply {
                 Reply::Error { code, error, reason } => {
-                    self.has_replied = true;
                     return Err(ClientError::Reply(match (code.as_str(), reason) {
                         ("PermissionDenied", _) => super::super::permission_denied(),
                         ("WindowNotFound", _) => DesktopError::window_not_found(error),
@@ -166,7 +173,6 @@ impl HelperClient {
                     )?;
                     frame.pid = pid.filter(|pid| *pid > 0);
                     frames.push(frame);
-                    self.has_replied = true;
                 },
             }
         }

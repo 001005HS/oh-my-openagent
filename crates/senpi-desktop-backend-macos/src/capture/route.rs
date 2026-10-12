@@ -80,9 +80,10 @@ impl MacCapture {
     ///
     /// The legacy `screencapture` path runs with no error in all three
     /// fallback cases (lead ruling 2026-10-12): macOS < 14, a missing helper,
-    /// and a helper that fails to start on 14+. Each logs once per reason and
-    /// reports `legacyCapture: true` on the result. A helper that dies
-    /// mid-capture instead surfaces the error and resets for the next capture.
+    /// and a helper that fails to start on 14+ (it cannot spawn, or exits or
+    /// stalls before writing any reply byte). Each logs once per reason and
+    /// reports `legacyCapture: true` on the result. A helper that dies after
+    /// writing a reply byte surfaces the error and resets for the next capture.
     pub(crate) fn capture_with_exclusions(
         &self,
         target: &Target,

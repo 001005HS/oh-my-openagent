@@ -114,7 +114,7 @@ impl SckWorker {
             match client.capture(requests) {
                 Ok(frames) => Ok(frames),
                 Err(ClientError::Transport(error)) => {
-                    let first_reply = !client.has_replied();
+                    let first_reply = !client.has_replied;
                     *slot = None;
                     Err(if first_reply {
                         SckCaptureError::Start(error)
