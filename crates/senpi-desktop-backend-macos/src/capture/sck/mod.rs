@@ -11,6 +11,8 @@ mod protocol;
 mod tests;
 #[cfg(test)]
 pub(crate) mod test_support;
+#[cfg(test)]
+mod worker_tests;
 
 use std::cell::RefCell;
 use std::path::PathBuf;
