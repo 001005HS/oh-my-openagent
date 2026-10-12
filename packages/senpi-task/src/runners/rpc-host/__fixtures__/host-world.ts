@@ -205,6 +205,7 @@ function connectParent(input: ConnectParentInput): ParentSession {
   })
   const lifecycle = createTaskLifecycle({
     ...(input.options.hostCloseTimeoutMs === undefined ? {} : { hostCloseTimeoutMs: input.options.hostCloseTimeoutMs }),
+    ...(recovery === undefined ? {} : { hostCloseScheduler: recovery.hostCloseScheduler }),
     hostEndpoint: NO_HOST_ENDPOINT,
     store,
     config,

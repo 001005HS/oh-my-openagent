@@ -4,7 +4,7 @@ import { bounded, recoveryClock } from "../../../lifecycle/__fixtures__/live-par
 import { observeLifecycleStore } from "../../../lifecycle/__fixtures__/observed-lifecycle-store"
 import type { TaskRecordStore } from "../../../store"
 
-/** Observe the real manager/lifecycle writes, with a controlled five-minute recovery budget. */
+/** Observe the real manager/lifecycle writes, with a controlled five-minute recovery budget and host-close deadline. */
 export function hostWorldRecovery() {
   const time = recoveryClock()
   const listeners = new Set<() => void>()
@@ -48,6 +48,8 @@ export function hostWorldRecovery() {
         }),
         now: () => time.clock.now,
         idleReclaimerScheduler: time.scheduler,
+        // A close the host never answers is released by this clock too, not by wall time.
+        hostCloseScheduler: time.scheduler,
         onStoreMutation: (listener: () => void) => {
           listeners.add(listener)
           return () => { listeners.delete(listener) }

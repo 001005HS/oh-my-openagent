@@ -19,6 +19,8 @@ import type { ReattachOutcome } from "./rpc-host/handle-reattach"
  */
 
 const worlds: HostWorld[] = []
+/** The host-close deadline, on the same controlled clock as the recovery budget. */
+const CLOSE_DEADLINE_MS = 10_000
 
 afterEach(async () => {
   for (const world of worlds.splice(0)) await world.cleanup()
@@ -43,6 +45,7 @@ async function laneOf(slots: number, host: FakeHostOptions = {}, reattachDelaysM
     reattachDelaysMs,
     recoveryClock: clock,
     liveRecovery: live,
+    hostCloseTimeoutMs: CLOSE_DEADLINE_MS,
     shardEvents: { onReattachOutcome: (info) => outcomes.push(info.outcome) },
   })
   return { world, parent, clock, live, outcomes }
@@ -181,12 +184,16 @@ describe("a child whose host transport drops", () => {
     expect(outcomes).toEqual(["lost", "lost", "lost"])
     for (const child of children) expect(concurrencyOf(parent).leaseState(child.task_id, child.notification.run_epoch)).toBeUndefined()
 
-    // when - the host never takes a continuation for the whole live-parent recovery budget
+    // when - the host never takes a continuation for the whole live-parent recovery budget, nor
+    // answers the close that ends it: the close deadline releases each child, not the host
     live.advance(LIVE_PARENT_SUSPENSION_BUDGET_MS + 1)
+    await live.until(() => children.every((child) => parent.store.load(child.task_id)?.failure_kind === "suspended_unresumable"))
+    live.advance(CLOSE_DEADLINE_MS)
 
     // then
     for (const child of children) expectRecoveryNotice(await settled(parent, child.task_id))
-    expect(concurrencyOf(parent).getCount(HOST_CHILD_MODEL)).toBe(0)
+    // The last slot frees on the store write that follows the final terminal transition.
+    await live.until(() => concurrencyOf(parent).getCount(HOST_CHILD_MODEL) === 0)
   })
 
   test("#given several children on one host #when the host crashes and comes back healthy #then each is re-prompted, reported reattached only once the host took the continuation, and runs to completion", async () => {
