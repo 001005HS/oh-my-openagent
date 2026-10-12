@@ -1,3 +1,7 @@
+## 2026-10-12 - Track task-owned worktrees and runtime caches at creation (#9951)
+
+Ultrawork now scopes runtime caches before task commands, registers path-specific cleanup todos at resource creation, and requires removal receipts. Native full and compact directives, Codex, and the independent OpenCode variants share the same lifecycle: stop owned processes before directory removal, preserve worktrees still needed by open PRs, and leave shared caches untouched. Loop, phase, team, and contribution workflows refer to their bundled directive instead of repeating its rules.
+
 ## 2026-10-11 - Detect environment leaks at test-file teardown (#9390, #9469)
 
 Thanks to @Dante-dan for the per-file teardown leak check: tests now report added, removed, or changed `process.env` keys after a file's own cleanup, then restore the worker baseline without printing values. Maintainer follow-ups put `OMO_MEMORY_HOME` in the shared hermetic-home installer so package-local Senpi tests use a per-run temporary memory root too, and remove the leftover implicit-test-globals reference. Tests loaded by the integrity plugin must import their test functions from `bun:test`.

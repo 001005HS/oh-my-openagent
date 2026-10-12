@@ -107,6 +107,10 @@ evidence: screenshot + plain transcript + cleanup receipt.
 
 # Bootstrap (DO ALL FOUR BEFORE ANY OTHER WORK — NO SKIPPING)
 
+## Task resources
+Before the first task command, create one `RUN_TMP=$(mktemp -d)` per task, tracking its paths under section 3 immediately. Export `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` for every command; pass the same environment explicitly to children that do not inherit it. Give independent child tasks their own run roots.
+At task end, after owned processes exit, remove only owned directories, including runtime caches. Never wipe shared caches; retain worktrees still needed by open PRs and any parent directory containing them.
+
 ## 0. Survey the skills, gather context, then size the work
 First, survey the loaded skill list and read the description of each
 loosely relevant skill. Decide explicitly which skills this task will
@@ -211,6 +215,8 @@ behind reality. Add newly discovered steps the moment they surface
 instead of waiting for the next pass. Step text encodes WHERE / WHY
 (which criterion it advances) / HOW / VERIFY:
 `path: <action> for <criterion> — verify by <check>`.
+ALWAYS add a cleanup todo naming each worktree or cache directory AT CREATION,
+including the Task resources run root; complete it only after reading back removal.
 
 GOOD pair (ordered):
   `test/foo.test.ts: read the validateEmail cases for criterion 2 — verify by noting intent / coverage / pass in the notepad`
@@ -273,13 +279,12 @@ Until every success criterion PASSES with its evidence captured:
    above; auxiliary surface for CLI- or data-shaped criteria), end to
    end, yourself, plus the step-2 tests; a reproduction now passes.
    Paste the artifact path into the notepad.
-5. CLEANUP (PAIRED — NEVER SKIP): Before task commands, create `RUN_TMP=$(mktemp -d)` once per task and pass `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` to every command and child.
-   ALWAYS add path-specific cleanup todos at creation for each worktree and run-scoped dir (caches included); complete them only after a read-back receipt.
+5. CLEANUP (PAIRED — NEVER SKIP):
    Before recording QA, tear down owned server PIDs (`kill <pid>`; verify
    `kill -0` fails), tmux sessions (`tmux kill-session -t ulw-qa-<criterion>`; confirm `tmux ls`),
    browsers / sessions (`browser.close()` / `session.stop()`), containers (`docker rm -f`), ports
    (`lsof -i :<port>` empty), QA scripts, temp paths and QA-only env vars.
-   After owned processes exit, remove run-scoped dirs (caches included) and no-longer-needed worktrees; retain worktrees needed by unfinished PRs, and never wipe shared caches.
+   Apply Task resources directory teardown at task end, not after each criterion.
    Append the read-back receipt beside the artifact in the notepad.
    No receipt → criterion stays in_progress.
 6. Verify: LSP diagnostics clean on changed files; no test skipped or

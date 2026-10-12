@@ -172,6 +172,12 @@ task(category="quick", load_skills=["git-master"], run_in_background=true)
 ---
 
 ## EXECUTION RULES
+
+## Task resources
+Before the first task command, create and record one `RUN_TMP=$(mktemp -d)` per task. Export `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` for every command; pass the same environment explicitly to children that do not inherit it. Give independent child tasks their own run roots.
+At task end, after owned processes exit, remove only owned directories, including runtime caches. Never wipe shared caches; retain worktrees still needed by open PRs and any parent directory containing them.
+ALWAYS add a path-specific cleanup todo AT CREATION for each worktree or cache directory, including the run root; complete it only after a read-back removal receipt.
+
 - **TODO format**: `path: <action> for <scenario-id> — verify by <check>` encoding WHERE / WHY (which scenario it advances) / HOW / VERIFY. Exactly ONE in_progress at a time. Mark completed IMMEDIATELY — never batch.
   - GOOD pair (ordered): `test/module.test: read the validateEmail cases for S2 - verify by noting intent / coverage / pass in the notepad` → `src/module: Implement validateEmail() for S2 - verify by curl 400 body + module.test green`
   - BAD: "Implement feature" / "Fix bug" / "Add tests later" → rewrite.
@@ -271,7 +277,7 @@ The real-surface artifact is always required. A new test only where the reposito
 
 **NAME THE EXACT TOOL + EXACT INVOCATION** for every scenario — the literal `curl ...`, `tmux send-keys ...`, `page.click(...)` with concrete inputs and the binary observable. "run it" / "open the page" is not a scenario.
 
-**CLEANUP IS PART OF THE TASK — TRACK IT AS TODOS.** Before task commands, create `RUN_TMP=$(mktemp -d)` once per task and pass `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` to every command and child. ALWAYS add path-specific cleanup todos at creation for each worktree and run-scoped dir (caches included); complete them only after a read-back receipt. After owned processes exit, remove run-scoped dirs (caches included) and no-longer-needed worktrees; retain worktrees needed by unfinished PRs, and never wipe shared caches. Tear down QA scripts, tmux assets, browser contexts, PIDs, ports and containers before recording QA; leftover QA resources mean NOT done.
+**CLEANUP IS PART OF THE TASK — TRACK IT AS TODOS.** Apply Task resources directory teardown at task end. Tear down QA scripts, tmux assets, browser contexts, PIDs, ports and containers before recording QA; leftover QA resources mean NOT done.
 </MANUAL_QA_MANDATE>
 
 ### Test Decision (every production code change)

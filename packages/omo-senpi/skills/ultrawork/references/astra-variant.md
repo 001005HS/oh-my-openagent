@@ -35,7 +35,7 @@ are named in its prompt and read there, not here.
    the notepad.
 
 ## cleanup-step
-5. CLEANUP: Before task commands, create `RUN_TMP=$(mktemp -d)` once per task and pass `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` to every command and child. ALWAYS add path-specific cleanup todos at creation for each worktree and run-scoped dir (caches included); complete them only after a read-back receipt. After owned processes exit, remove run-scoped dirs (caches included) and no-longer-needed worktrees; retain worktrees needed by unfinished PRs, and never wipe shared caches.
+5. CLEANUP: Apply Task resources directory teardown at task end.
    Before reporting, tear down QA processes, sessions, ports, containers
    and temp paths; note their read-back receipts beside the artifact.
 

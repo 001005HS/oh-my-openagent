@@ -37,7 +37,7 @@ For `code-yeongyu/lazycodex`, create an issue (never a PR) that includes:
 
 ## Required Workflow
 
-1. Read the user's bug report and identify the affected surface.
+1. Read the user's bug report and identify the affected surface. Before commands, apply the bundled ultrawork directive’s Task resources and todo rules; read those sections if absent from context.
 2. Invoke `$omo:debugging` for the investigation. If only unqualified skill names are exposed, invoke `$debugging` and state that it is the OMO debugging skill.
 3. Materialize the latest sources under `LAZYCODEX_SOURCE_ROOT="${LAZYCODEX_SOURCE_ROOT:-${TMPDIR:-/tmp}/lazycodex-sources}"`, then decide the target repository. Sync both checkouts on every run and compare them before choosing. Validate cached checkouts before reuse so an incomplete `.git` directory cannot route the fix to the wrong repo:
 
@@ -86,13 +86,11 @@ sync_latest_source() {
 sync_latest_source code-yeongyu/lazycodex "$LAZYCODEX_SOURCE_ROOT/lazycodex-source"
 sync_latest_source openai/codex "$LAZYCODEX_SOURCE_ROOT/chatgpt-subscription-source"
 ```
-4. Create a fresh temporary clone and branch under `${TMPDIR:-/tmp}`. Do not modify the user's current repository for the target fix unless the current repository is itself the requested target and the user explicitly asked for local edits. ALWAYS add path-specific cleanup todos at creation for each worktree and run-scoped dir (caches included); complete them only after a read-back receipt. Pass the cache environment below to every task command and child.
+4. Create a fresh temporary clone and branch under `${TMPDIR:-/tmp}`. Do not modify the user's current repository for the target fix unless the current repository is itself the requested target and the user explicitly asked for local edits. Apply those resource rules at clone/worktree creation.
 
 ```bash
 TARGET_REPO="code-yeongyu/lazycodex" # or openai/codex
-WORK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/lazycodex-fix-XXXXXX")"
-mkdir -p "$WORK_ROOT/tmp"
-export TMPDIR="$WORK_ROOT/tmp" NODE_COMPILE_CACHE="$WORK_ROOT/tmp/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$WORK_ROOT/tmp/bun-transpiler"
+WORK_ROOT="$RUN_TMP"
 gh repo clone "$TARGET_REPO" "$WORK_ROOT/repo" -- --depth=1
 cd "$WORK_ROOT/repo"
 BASE_BRANCH="$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')"
@@ -154,7 +152,7 @@ git push -u fork "$BRANCH_NAME"
 gh pr create --repo openai/codex --base "$BASE_BRANCH" --head "$GH_USER:$BRANCH_NAME" --title "<short fix title>" "${LABEL_ARGS[@]}" --body-file "$PR_BODY"
 ```
 
-13. Clean up:
+13. Finish cleanup per Task resources. Run this only when that rule permits removing the worktree and run root; otherwise retain them and report the outstanding cleanup todo:
 
 ```bash
 cd /

@@ -153,6 +153,12 @@ When a `create_goal` tool exists, check `get_goal` first (continue a matching ac
 
 ## TODO DISCIPLINE
 
+## Task resources
+Before the first task command, create and record one `RUN_TMP=$(mktemp -d)` per task. Export `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` for every command; pass the same environment explicitly to children that do not inherit it. Give independent child tasks their own run roots.
+At task end, after owned processes exit, remove only owned directories, including runtime caches. Never wipe shared caches; retain worktrees still needed by open PRs and any parent directory containing them.
+ALWAYS add a path-specific cleanup todo AT CREATION for each worktree or cache directory, including the run root; complete it only after a read-back removal receipt.
+
+
 Track every multi-step task in a live todo list: one atomic item per action with its verification, exactly one item in progress, status updated the instant it changes, newly discovered work added immediately. Never batch completions.
 
 ## SCENARIO CONTRACT
@@ -194,7 +200,7 @@ Tests are necessary and insufficient. Exercise the real surface.
 | Prompt or mode | Verify the prompt loads or the registry resolves it. |
 | Build output | Run build and verify exit code 0. |
 
-Before task commands, create `RUN_TMP=$(mktemp -d)` once per task and pass `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` to every command and child. ALWAYS add path-specific cleanup todos at creation for each worktree and run-scoped dir (caches included); complete them only after a read-back receipt. After owned processes exit, remove run-scoped dirs (caches included) and no-longer-needed worktrees; retain worktrees needed by unfinished PRs, and never wipe shared caches. Tear down QA scripts, tmux assets, browser contexts, PIDs, ports and containers before recording QA; leftover QA resources mean NOT done.
+Apply Task resources directory teardown at task end. Tear down QA scripts, tmux assets, browser contexts, PIDs, ports and containers before recording QA; leftover QA resources mean NOT done.
 
 ## REVIEWER GATE
 

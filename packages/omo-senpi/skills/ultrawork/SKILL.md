@@ -124,6 +124,10 @@ evidence: screenshot + plain transcript + cleanup receipt.
 
 # Bootstrap (DO ALL FOUR BEFORE ANY OTHER WORK — NO SKIPPING)
 
+## Task resources
+Before the first task command, create one `RUN_TMP=$(mktemp -d)` per task, tracking its paths under section 3 immediately. Export `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` for every command; pass the same environment explicitly to children that do not inherit it. Give independent child tasks their own run roots.
+At task end, after owned processes exit, remove only owned directories, including runtime caches. Never wipe shared caches; retain worktrees still needed by open PRs and any parent directory containing them.
+
 When a ulw-loop pointer or the ulw-execute skill accompanies this
 directive, that contract supersedes bootstrap sections 1-3: its state
 owns the goal and is the notepad (the loop CLI's goals and ledger, or
@@ -247,7 +251,8 @@ The todo list is the live cursor over the written plan, never a
 substitute for it: the file holds the thinking, the list tracks the
 execution.
 The todo tool is senpi `todo` — your live, user-visible checklist.
-`init` the phased list (one task per atomic work unit: an edit plus
+`init` the phased list, preserving resource-cleanup todos already registered
+(one task per atomic work unit: an edit plus
 its verification, a QA scenario run, a teardown), then drive every
 state transition through it: `start` the instant a step begins,
 `done` the instant it finishes, `append` newly discovered steps the
@@ -256,6 +261,8 @@ enough to finish within a few tool calls. Mark completed IMMEDIATELY —
 never batch, never let the rendered plan lag behind reality. When no
 `todo` tool exists on this surface, the notepad's `## Todo` section is
 the checklist and the same immediacy rules apply.
+ALWAYS add a cleanup todo naming each worktree or cache directory AT CREATION,
+including the Task resources run root; complete it only after reading back removal.
 Step text encodes WHERE / WHY (which criterion it advances) / HOW /
 VERIFY: `path: <action> for <criterion> — verify by <check>`.
 
@@ -354,13 +361,12 @@ Until every success criterion PASSES with its evidence captured:
    Paste the artifact path into the notepad.
 <!-- omo-ultrawork-astra:run-step:end -->
 <!-- omo-ultrawork-astra:cleanup-step:start -->
-5. CLEANUP (PAIRED — NEVER SKIP): Before task commands, create `RUN_TMP=$(mktemp -d)` once per task and pass `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` to every command and child.
-   ALWAYS add path-specific cleanup todos at creation for each worktree and run-scoped dir (caches included); complete them only after a read-back receipt.
+5. CLEANUP (PAIRED — NEVER SKIP):
    Before recording QA, tear down owned server PIDs (`kill <pid>`; verify
    `kill -0` fails), tmux sessions (`tmux kill-session -t ulw-qa-<criterion>`; confirm `tmux ls`),
    browsers / sessions (`browser.close()` / `session.stop()`), containers (`docker rm -f`), ports
    (`lsof -i :<port>` empty), QA scripts, temp paths and QA-only env vars.
-   After owned processes exit, remove run-scoped dirs (caches included) and no-longer-needed worktrees; retain worktrees needed by unfinished PRs, and never wipe shared caches.
+   Apply Task resources directory teardown at task end, not after each criterion.
    Append the read-back receipt beside the artifact in the notepad.
    No receipt → criterion stays in_progress.
 <!-- omo-ultrawork-astra:cleanup-step:end -->

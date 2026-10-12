@@ -229,9 +229,9 @@ cannot clobber each other. Decide this whenever you see the collision - at team 
 not only up front. For each colliding member run `worktree-add --team <id> --id <member>`: it creates
 the worktree off the base branch on a derived branch, flips the team into worktree mode, records it in
 `team.json`, and prints the `cd` path to hand that member. The member works and commits only inside
-its own worktree. Before member commands, create `RUN_TMP=$(mktemp -d)` once per task and pass `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` to every command and child. ALWAYS add path-specific cleanup todos at creation for each worktree and run-scoped dir (caches included); complete them only after a read-back receipt. To land the work, `integrate --team <id>` merges every member branch into your
+its own worktree. Use the bundled ultrawork directive’s Task resources and todo rules at member/worktree creation; read those sections if absent from context. To land the work, `integrate --team <id>` merges every member branch into your
 current branch with a merge commit (never a squash or rebase); resolve any conflict it reports, then
-`worktree-remove` each no-longer-needed worktree and remove its run-scoped dirs after owned processes exit; read back their absence, never wipe shared caches.
+finish owned directory teardown per Task resources.
 
 Delivering the path differs by transport: on MultiAgentV2, create the worktree BEFORE spawning
 so the bootstrap carries it, or send it to an already-running member as a `followup_task`; on
@@ -280,7 +280,7 @@ is never disbanded is a leak.
 - `delete` removes `.omo/teams/{session_id}` and refuses while the team is unarchived or any member
   is still active unless `--force`.
 - When the work wraps up, land it the way the user asked: `integrate --team <id>` for a direct merge
-  commit, or push each member branch and open a PR. Then `worktree-remove` each worktree, archive, and
+  commit, or push each member branch and open a PR. Then finish worktree cleanup per Task resources, archive, and
   delete. Cleanup is real work; respect the user's instruction on how to land it.
 
 ## Stop rules

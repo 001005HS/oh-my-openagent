@@ -21,7 +21,7 @@ This skill is intentionally compact. The full workflow lives in `references/full
 ## Non-Negotiables
 
 - Use the ulw-loop CLI state under `.omo/ulw-loop`; do not hand-edit goal state.
-- Register goals up front, shaped by `references/define-goal.md` (`omo-agent-toolkit ulw-loop create-goals`, then `create_goal` from the printed handoff), and mirror every atomic step into the live `update_plan` checklist: one ultra-granular step per action, exactly one in_progress, transitions marked the instant they happen. Before task commands, create `RUN_TMP=$(mktemp -d)` once per task and pass `TMPDIR="$RUN_TMP" NODE_COMPILE_CACHE="$RUN_TMP/node-compile-cache" BUN_RUNTIME_TRANSPILER_CACHE_PATH="$RUN_TMP/bun-transpiler"` to every command and child. ALWAYS add path-specific cleanup todos at creation for each worktree and run-scoped dir (caches included); complete them only after a read-back receipt.
+- Register goals up front, shaped by `references/define-goal.md` (`omo-agent-toolkit ulw-loop create-goals`, then `create_goal` from the printed handoff), and mirror every atomic step into the live `update_plan` checklist: one ultra-granular step per action, exactly one in_progress, transitions marked the instant they happen. Use the ultrawork directive’s Task resources and todo rules; read those sections of the bundled `ultrawork` skill if absent from context.
 - After any compaction or context loss, re-read brief + goals + ledger FIRST plus `omo-agent-toolkit ulw-loop status --json`, then resume; never re-plan from scratch.
 - Every ulw-loop command needs the session scope: pass `--session-id <id>` (the printed handoff and resume directive carry it; `CODEX_THREAD_ID` in the environment also resolves it). The CLI refuses unscoped state (`ULW_LOOP_SESSION_SCOPE_REQUIRED`) instead of touching the shared `.omo/ulw-loop` root.
 - If `omo-agent-toolkit ulw-loop create-goals` says this session's aggregate is already complete, start unrelated new work with a fresh `--session-id <new-id>` (passed on every later call) instead of steering or forcing the completed state. Use `--force` only to intentionally overwrite completed evidence.
@@ -49,7 +49,7 @@ When the units are genuinely independent — separate files, no shared contract 
 
 Under team mode, isolate and land per unit:
 
-- **One git worktree per member**, never a shared checkout — concurrent members editing one working tree corrupt each other's diffs and evidence. Give each member its own branch off the base and its own worktree path. Give each member independent runtime cache paths and cleanup todos per bootstrap.
+- **One git worktree per member**, never a shared checkout — concurrent members editing one working tree corrupt each other's diffs and evidence. Give each member its own branch off the base and its own worktree path. Apply the same resource rules when creating member worktrees.
 - **Merge per work unit, as each unit is verified.** A member's unit lands when its own evidence is captured and its gates are green; it does not wait for the slowest sibling. Integrate each merged unit back into the base the others branch from, so overlapping members rebase onto real merged work rather than guessing at it.
 - **Conflicts are the lead's job.** When two members' units touch the same lines, the lead decides the order they land and tells the later member what changed; members never resolve a sibling's conflict blind.
 
