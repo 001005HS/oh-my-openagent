@@ -1,6 +1,6 @@
 /** The slice of the extension API that tells the session's permission preset. */
 export interface PermissionPresetSource {
-  getFlag(name: string): boolean | string | undefined
+  getFlag?(name: string): boolean | string | undefined
   getSettings?(): unknown
 }
 
@@ -13,7 +13,7 @@ const FULL_ACCESS = "full-access"
  * `permissionPreset` from the merged settings.
  */
 export function isFullAccess(source: PermissionPresetSource): boolean {
-  const flag = source.getFlag(PERMISSION_PRESET_FLAG)
+  const flag = source.getFlag?.(PERMISSION_PRESET_FLAG)
   if (typeof flag === "string") return flag === FULL_ACCESS
   const settings = source.getSettings?.()
   return (
@@ -25,13 +25,14 @@ export function isFullAccess(source: PermissionPresetSource): boolean {
 
 /**
  * Registers the read-only view of the `permission-preset` flag and returns the full-access check. senpi's
- * permission system owns the flag; getFlag only answers for flags the calling extension registered.
+ * permission system owns the flag; getFlag only answers for flags the calling extension registered. A host
+ * without flags (a minimal test host) falls back to the settings.
  */
 export function watchFullAccess(
   pi: PermissionPresetSource & {
-    registerFlag(name: string, options: { description?: string; type: "boolean" | "string" }): void
+    registerFlag?(name: string, options: { description?: string; type: "boolean" | "string" }): void
   },
 ): () => boolean {
-  pi.registerFlag(PERMISSION_PRESET_FLAG, { description: "Permission preset (owned by the permission system)", type: "string" })
+  pi.registerFlag?.(PERMISSION_PRESET_FLAG, { description: "Permission preset (owned by the permission system)", type: "string" })
   return () => isFullAccess(pi)
 }

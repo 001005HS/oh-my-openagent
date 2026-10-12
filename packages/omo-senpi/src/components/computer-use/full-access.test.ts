@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "bun:test"
 
-import { isFullAccess } from "./full-access"
+import { isFullAccess, watchFullAccess } from "./full-access"
 
 function source(flag: boolean | string | undefined, settings?: unknown) {
   return { getFlag: () => flag, ...(settings === undefined ? {} : { getSettings: () => settings }) }
@@ -18,5 +18,18 @@ describe("isFullAccess (#10022)", () => {
     ["no flag and no settings", source(undefined), false],
   ])("#given %s #then it reports %p", (_name, preset, expected) => {
     expect(isFullAccess(preset)).toBe(expected)
+  })
+})
+
+describe("watchFullAccess (#10022)", () => {
+  test("#given a host without flags #when registering #then it reads full access from the settings", () => {
+    // given
+    const host = { getSettings: () => ({ permissionPreset: "full-access" }) }
+
+    // when
+    const fullAccess = watchFullAccess(host)
+
+    // then
+    expect(fullAccess()).toBe(true)
   })
 })
