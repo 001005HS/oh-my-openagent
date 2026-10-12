@@ -224,15 +224,33 @@ describe("createModelProfileComponent", () => {
     })
   })
 
-  test("#given an explicit recommended model_profile #when the session starts #then the Recommended ladder still applies", async () => {
-    const { pi, start } = harness({ model_profile: "recommended" }, [SOL, SOL_61, GLM, UNRELATED])
+  // Migration contract (#10029): a saved `recommended` starts the unset default, logged once, never unknown.
+  test("#given a saved retired recommended model_profile #when two sessions start #then each applies the unset default and the retirement is logged once", async () => {
+    const { pi, logs, start } = harness({ model_profile: "recommended" }, [SOL, SOL_61, GLM, UNRELATED])
+
+    await start(STARTUP, "session-1")
+    await start(STARTUP, "session-2")
+
+    expect(pi.sessionModels).toEqual([GLM, GLM])
+    expect(pi.messages.map((entry) => entry.message["customType"])).toEqual([
+      MODEL_PROFILE_APPLIED_TYPE,
+      MODEL_PROFILE_APPLIED_TYPE,
+    ])
+    expect(pi.messages[0]?.message).toMatchObject({ details: { profile: "daily-normal", model: "zai/glm-5.3" } })
+    expect(logs.filter((line) => line.includes('model_profile "recommended" is retired'))).toHaveLength(1)
+  })
+
+  test("#given the user's own model_profiles entry named recommended #when the session starts #then that profile applies", async () => {
+    const { pi, logs, start } = harness(
+      { model_profile: "recommended", model_profiles: { recommended: { models: ["zai/glm-5.3"] } } },
+      [OPUS, GLM],
+    )
 
     await start(STARTUP)
 
-    expect(pi.sessionModels).toEqual([SOL_61])
-    expect(pi.messages[0]?.message).toMatchObject({
-      details: { profile: "recommended", model: "chatgpt-subscription/gpt-6.1-sol", reasoning: "medium" },
-    })
+    expect(pi.sessionModels).toEqual([GLM])
+    expect(pi.messages[0]?.message).toMatchObject({ details: { profile: "recommended", model: "zai/glm-5.3" } })
+    expect(logs.some((line) => line.includes("is retired"))).toBe(false)
   })
 
   test("#given unset with only Copilot GPT-6 Sol and GLM #when the session starts #then Daily · Normal's GLM rung is applied", async () => {
@@ -378,7 +396,7 @@ describe("createModelProfileComponent", () => {
     expect(pi.messages).toHaveLength(1)
     expect(pi.messages[0]?.message).toMatchObject({
       customType: MODEL_PROFILE_UNKNOWN_TYPE,
-      content: 'OmO Native: model_profile "turbo" is not defined; known profiles: daily-heavy, daily-normal, geeky-heavy, geeky-normal, recommended',
+      content: 'OmO Native: model_profile "turbo" is not defined; known profiles: daily-heavy, daily-normal, geeky-heavy, geeky-normal',
     })
   })
 

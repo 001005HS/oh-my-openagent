@@ -1,5 +1,6 @@
 import type { ComponentContext, OmoSenpiComponent, SenpiExtensionAPI } from "../../extension/types"
 import { loadSenpiOmoConfig } from "../config-resolution"
+import { RETIRED_MODEL_PROFILE_IDS } from "./builtin-profiles"
 import { credentialRotationPolicy } from "./credential-policy"
 import { newProbeState, resolveDefaultModelProfile, type ProbeState } from "./default-profile"
 import { authFailedDetails, noticeContent } from "./notice"
@@ -189,6 +190,22 @@ async function resolveWithRequestAuth(
   return { resolution, model, failures }
 }
 
+// A saved `model_profile` naming a retired builtin (`recommended`, #10029) starts the unset
+// default. A user's own `model_profiles` entry of that name is their profile and still applies.
+function isRetiredProfile(name: string, userProfiles: Readonly<Record<string, unknown>> | undefined): boolean {
+  return RETIRED_MODEL_PROFILE_IDS.has(name) && userProfiles?.[name] === undefined
+}
+
+// One line per extension instance (one per process): every session start re-reads the same
+// config, and the user's file is never rewritten, so repeating it would only add noise.
+function logRetiredProfileOnce(ctx: ComponentContext, logged: Set<string>, name: string): void {
+  if (logged.has(name)) return
+  logged.add(name)
+  ctx.logger.info(
+    `omo-senpi: model_profile "${name}" is retired; starting on Daily · Normal (or the first lane that resolves). Remove it from omo.json to silence this.`,
+  )
+}
+
 export function createModelProfileComponent(options: ModelProfileComponentOptions = {}): OmoSenpiComponent {
   const loadConfig = options.loadConfig ?? loadSenpiOmoConfig
   return {
@@ -197,6 +214,7 @@ export function createModelProfileComponent(options: ModelProfileComponentOption
       // One apply per session id; a host that reports no id gets exactly one apply per extension
       // instance, which is the conservative reading of "never clobber twice".
       const appliedSessions = new Set<string>()
+      const loggedRetiredProfiles = new Set<string>()
       pi.on("session_start", async (payload, eventCtx) => {
         if (isTuiSession(eventCtx) || !isFreshSessionWithoutExplicitModel(payload)) return
         const sessionId = extractSessionId(eventCtx) ?? ""
@@ -205,7 +223,9 @@ export function createModelProfileComponent(options: ModelProfileComponentOption
 
         const config = loadConfig({ cwd: extractCwd(pi, eventCtx) }).config
         const configured = config.model_profile
-        const explicit = configured !== undefined && configured.trim().length > 0 ? configured : undefined
+        const named = configured !== undefined && configured.trim().length > 0 ? configured : undefined
+        const explicit = named !== undefined && isRetiredProfile(named, config.model_profiles) ? undefined : named
+        if (named !== undefined && explicit === undefined) logRetiredProfileOnce(ctx, loggedRetiredProfiles, named)
 
         const registry = extractRegistry(eventCtx)
         if (registry === undefined) {

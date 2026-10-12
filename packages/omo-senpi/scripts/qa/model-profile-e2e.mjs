@@ -14,11 +14,11 @@
 //   unset-skips-gateway  the default never takes opengateway's vendor-prefixed Opus; kimi-k3 wins.
 //   unset-gpt-6-1-sol / unset-copilot-gpt-6-sol  GPT beside GLM: Daily · Normal's glm-5.3 max wins.
 //   unset-chatgpt-only-geeky-normal  no Daily lane resolves: Geeky · Normal's gpt-6.1-sol applies.
-//   explicit-recommended  model_profile "recommended" still applies its ladder (gpt-6.1-sol medium).
+//   retired-recommended  model_profile "recommended" (retired, #10029) starts Daily · Normal (glm-5.3 max).
 //   empty-registry   Daily · Normal against only mock-1: unavailable, session keeps mock-1.
 //   literal-pin      model_profile "anthropic/claude-opus-5": that model id is applied.
 //   unknown-profile / capable-removed / deep-work-removed / simple-work-removed
-//                    unknown-profile notice listing recommended and the four lane ids.
+//                    unknown-profile notice listing the four lane ids.
 //   custom-profile   user model_profiles.night-shift applies its chain.
 //   cli-model-wins   `--model` (provenance "cli") with an active lane: the CLI model survives.
 //   lane-beats-recommended-models  the session starts off senpi's recommended ladder (mock-1), the
