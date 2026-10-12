@@ -87,10 +87,12 @@ fn release_precedes_restore(sink: &RecordingSink, mouse: bool) {
 #[tokio::test]
 async fn close_interrupts_a_long_hold_and_observes_release() {
     // Given a 100-second hold that has delivered its press.
-    let (session, sink, _) = open().await;
+    let (session, sink, supervisor) = open().await;
     let events = sink.subscribe();
+    let parked = supervisor.subscribe_hold_wait_for_test();
     let pending = session.submit(held_key());
     await_press(&events, false);
+    parked.recv_timeout(GUARD).expect("hold did not park");
     // When close interrupts the hold before queueing teardown.
     tokio::time::timeout(senpi_desktop_session::CLOSE_TIMEOUT, session.close().wait())
         .await.unwrap().unwrap();
@@ -104,10 +106,12 @@ async fn close_interrupts_a_long_hold_and_observes_release() {
 #[tokio::test]
 async fn cancellation_wakes_a_bounded_hold_without_polling() {
     // Given a registered recorder before a real session request.
-    let (session, sink, _) = open().await;
+    let (session, sink, supervisor) = open().await;
     let events = sink.subscribe();
+    let parked = supervisor.subscribe_hold_wait_for_test();
     let pending = session.submit(held_key());
     await_press(&events, false);
+    parked.recv_timeout(GUARD).expect("hold did not park");
     // When the actual Pending is abandoned, not just a probe set to true.
     drop(pending);
     // Then the next queued request runs only after release and restoration.
@@ -121,8 +125,10 @@ async fn safety_stop_during_hold_wakes_releases_and_reports_suspended() {
     // Given a held key on the actual worker thread.
     let (session, sink, supervisor) = open().await;
     let events = sink.subscribe();
+    let parked = supervisor.subscribe_hold_wait_for_test();
     let pending = session.submit(held_key());
     await_press(&events, false);
+    parked.recv_timeout(GUARD).expect("hold did not park");
     // When the supervisor observes the user's stop.
     supervisor.trigger_stop(StopSource::Hotkey);
     // Then it interrupts the 100-second wait and releases before restore.
@@ -135,15 +141,17 @@ async fn safety_stop_during_hold_wakes_releases_and_reports_suspended() {
 #[tokio::test]
 async fn bounded_button_hold_releases_on_cancellation() {
     // Given a full-frame pointer point and an observer registered before input.
-    let (session, sink, _) = open().await;
+    let (session, sink, supervisor) = open().await;
     session.submit(Op::Capture(CaptureParams { target: "101".to_owned(), caps: None }))
         .wait().await.unwrap();
     let events = sink.subscribe();
+    let parked = supervisor.subscribe_hold_wait_for_test();
     let pending = session.submit(Op::HoldMouse(HoldMouseParams {
         target: "101".to_owned(), x: 10.0, y: 10.0, duration: 100.0,
         button: None, keys: None, frame_id: None, opts: None,
     }));
     await_press(&events, true);
+    parked.recv_timeout(GUARD).expect("hold did not park");
     // When the waiter disappears during the button hold.
     drop(pending);
     // Then the queue cannot advance while the button is still held.
