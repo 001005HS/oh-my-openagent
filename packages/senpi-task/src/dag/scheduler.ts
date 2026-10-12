@@ -620,6 +620,10 @@ async function admitFrontier(context: SchedulerContext): Promise<boolean> {
         if (inFlight.has(nodeId)) continue
         if (!admissionOrder.includes(nodeId)) admissionOrder.push(nodeId)
         const started = (async () => {
+          // Registered below before this body runs: a start that settles synchronously (a throwing
+          // spec builder or manager) would otherwise delete its entry before it exists and leave a
+          // settled promise in the set for the batch loop to spin on.
+          await Promise.resolve()
           let settled: PromiseSettledResult<OwnedStartResult>
           try {
             settled = { status: "fulfilled", value: await context.taskManager.startOwned(startSpec(context, nodeId), owner(context, nodeId)) }
@@ -631,7 +635,9 @@ async function admitFrontier(context: SchedulerContext): Promise<boolean> {
           inFlight.delete(nodeId)
           admitOne(nodeId, settled)
         })()
-        inFlight.set(nodeId, started.finally(() => inFlight.delete(nodeId)))
+        // The start removes itself in the step that admits it; a later delete here would remove a
+        // re-launched start's entry instead (#10057 review D4-H1).
+        inFlight.set(nodeId, started)
       }
     }
     const admitReady = (): void => {

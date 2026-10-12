@@ -676,6 +676,59 @@ describe("DAG scheduler folds settled children while admission is busy (#8934)",
     expect((await running).status).toBe("completed")
   })
 
+  // A start answered by hand, so its denial can land in the same microtask drain as a fold.
+  class HandReleasedStartManager extends FrontierFakeManager {
+    readonly pendingP: (() => void)[] = []
+    readonly pAttempted = deferred<void>()
+    pContended = true
+    override async startOwned(spec: ManagerStartSpec, owner: DagTaskOwner): Promise<OwnedStartResult> {
+      if (String(owner.nodeId) !== "p" || !this.pContended) return super.startOwned(spec, owner)
+      this.attempts.push("p")
+      this.pAttempted.resolve()
+      return new Promise<OwnedStartResult>((resolve) => {
+        this.pendingP.push(() => resolve({ kind: "residency_denied", reason: "Residency admission lease was displaced.", cause: "lease" }))
+      })
+    }
+    releaseOneP(): void {
+      this.pendingP.shift()?.()
+    }
+    releaseAllP(): void {
+      for (const release of this.pendingP.splice(0)) release()
+    }
+  }
+
+  test.each([0, 1, 2, 3, 4, 5])("#given a lease denial returned %i microtask(s) after a fold starts #when the node is re-launched before its first start settles #then its new start stays tracked and the run completes", async (hops) => {
+    // given - a attached, p's first start pending, slow's start hung.
+    const hostBusy = deferred<void>()
+    const manager = new HandReleasedStartManager({ beforeStart: (nodeId) => (nodeId === "slow" ? hostBusy.promise : undefined) })
+    const { scheduler } = frontierFixture(definition([node("a"), node("p"), node("slow")]), manager)
+    const running = scheduler.run()
+    running.catch(() => undefined)
+    await Promise.race([Promise.all([whenNodeState(scheduler, "a", "running"), manager.pAttempted.promise]), timeout("a to be attached and p to be probed")])
+
+    // when - a completes, and p's denial comes back `hops` microtasks later.
+    manager.complete("a")
+    for (let index = 0; index < hops; index += 1) await Promise.resolve()
+    manager.releaseOneP()
+
+    // then - the contention ends, and p is re-probed and starts instead of the run throwing.
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    hostBusy.resolve()
+    await Promise.race([manager.whenStarted("slow"), timeout("slow to start")])
+    manager.complete("slow")
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    manager.pContended = false
+    manager.releaseAllP()
+    const outcome = await Promise.race([
+      manager.whenStarted("p").then(() => "p-started"),
+      running.then(() => "run-settled", (error: unknown) => `run-threw: ${String(error)}`),
+      timeout("p to start or the run to settle"),
+    ])
+    expect(outcome).toBe("p-started")
+    manager.complete("p")
+    expect((await running).status).toBe("completed")
+  })
+
   test("#given admission re-probing a contended lease #when an attached child completes #then its node folds while the lease is still denied", async () => {
     // given - b's admission lease stays contended; a is attached and running.
     let leaseContended = true
