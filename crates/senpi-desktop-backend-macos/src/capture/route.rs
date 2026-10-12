@@ -11,17 +11,30 @@ use senpi_desktop_core::types::{DesktopDisplay, DesktopWindow, Target};
 use super::sck::{SckCaptureError, SckFrame, SckUnavailable, SckWorker};
 use super::{parse_window_id, MacCapture};
 
-/// Each legacy fallback reason logs once per engine process, never per
-/// capture. Bits double as the `legacyCapture` capabilities flag's memory of
-/// a start failure that only a capture attempt could reveal.
+/// Start failures log once until SCK recovers; availability reasons log once
+/// per engine process. Bits also record the `legacyCapture` capability.
 const REASON_UNSUPPORTED: u8 = 1;
 const REASON_HELPER_MISSING: u8 = 2;
 const REASON_START_FAILED: u8 = 4;
+#[cfg(not(test))]
 static LEGACY_REASONS: AtomicU8 = AtomicU8::new(0);
 
+fn with_legacy_reasons<T>(action: impl FnOnce(&AtomicU8) -> T) -> T {
+    #[cfg(test)]
+    {
+        test_support::LEGACY_REASONS.with(action)
+    }
+    #[cfg(not(test))]
+    {
+        action(&LEGACY_REASONS)
+    }
+}
+
 fn note_legacy(reason: u8, log_line: &str) {
-    note_legacy_into(&LEGACY_REASONS, reason, log_line, |line| {
-        eprintln!("senpi-desktop-backend-macos: capture: {line}");
+    with_legacy_reasons(|store| {
+        note_legacy_into(store, reason, log_line, |line| {
+            eprintln!("senpi-desktop-backend-macos: capture: {line}");
+        });
     });
 }
 
@@ -44,7 +57,7 @@ fn note_start_failure(error: &DesktopError) {
 
 /// Whether a legacy fallback already ran (or a helper start already failed).
 fn legacy_capture_active() -> bool {
-    LEGACY_REASONS.load(Ordering::Relaxed) != 0
+    with_legacy_reasons(|store| store.load(Ordering::Relaxed) != 0)
 }
 
 /// The availability the router honors; tests override it.
@@ -78,7 +91,15 @@ impl MacCapture {
         self.require_permission()?;
         match sck_availability() {
             Ok(()) => match self.capture_via_sck(target, exclude_window_titles)? {
-                Some(captured) => Ok(captured),
+                Some(captured) => {
+                    if !captured.1.is_legacy_capture() {
+                        // Recovery lets a later start failure log its reason again.
+                        with_legacy_reasons(|store| {
+                            store.fetch_and(!REASON_START_FAILED, Ordering::Relaxed);
+                        });
+                    }
+                    Ok(captured)
+                },
                 None => self.capture_via_legacy(target),
             },
             Err(SckUnavailable::Unsupported) => {
@@ -219,19 +240,7 @@ fn composite_sck(
 }
 
 #[cfg(test)]
-pub(crate) mod test_support {
-    use super::SckUnavailable;
-    use std::cell::Cell;
-
-    thread_local! {
-        pub(crate) static AVAILABILITY: Cell<Option<Result<(), SckUnavailable>>> =
-            const { Cell::new(None) };
-    }
-
-    pub(crate) fn override_availability(value: Option<Result<(), SckUnavailable>>) {
-        AVAILABILITY.with(|cell| cell.set(value));
-    }
-}
+pub(crate) mod test_support;
 
 #[cfg(test)]
 mod tests;

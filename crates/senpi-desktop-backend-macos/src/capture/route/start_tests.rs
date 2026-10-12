@@ -6,10 +6,12 @@ use senpi_desktop_core::types::{DisplaySelector, Target};
 
 use super::super::sck::test_support::{fake_helper, ProgramGuard};
 use super::super::Screencapture;
+use super::test_support::ReasonsGuard;
 use super::{MacCapture, SckWorker};
 
 #[test]
 fn an_immediately_exiting_helper_routes_to_fallback_without_error() {
+    let _reasons = ReasonsGuard::new();
     let dir = tempfile::tempdir().unwrap();
     let helper = fake_helper(&dir, "#!/usr/bin/env python3\nimport os\nos._exit(1)\n");
     let _program = ProgramGuard::new(helper);
@@ -24,6 +26,7 @@ fn an_immediately_exiting_helper_routes_to_fallback_without_error() {
 #[test]
 #[ignore = "live: needs WindowServer, Screen Recording and macOS 14+"]
 fn an_immediately_exiting_helper_returns_a_legacy_capture() {
+    let _reasons = ReasonsGuard::new();
     assert!(SckWorker::availability().is_ok(), "requires the SCK route");
     let dir = tempfile::tempdir().unwrap();
     let helper = fake_helper(&dir, "#!/usr/bin/env python3\nimport os\nos._exit(1)\n");
