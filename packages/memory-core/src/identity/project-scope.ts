@@ -6,7 +6,7 @@
 // session's own identity is never returned. Nothing is created: only identities whose repo already
 // exists count.
 
-import { existsSync, realpathSync } from "node:fs"
+import { existsSync, realpathSync } from "../fs/resilient"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 
 import { resolveMemoryIdentity, type MemoryIdentity } from "./resolve"
