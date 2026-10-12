@@ -21,5 +21,7 @@ objc2-foundation.workspace = true
 parking_lot.workspace = true
 senpi-desktop-core = { path = "../senpi-desktop-core", features = ["system-clipboard"] }
 senpi-desktop-safety = { path = "../senpi-desktop-safety" }
+serde.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true
 xcap.workspace = true

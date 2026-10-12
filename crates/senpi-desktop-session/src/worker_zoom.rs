@@ -24,6 +24,7 @@ impl Worker {
         check_cancel(cancelled)?;
         let pinned = base.capture_target(&target);
         let (image, fresh) = self.backend()?.capture(&pinned, &CaptureCaps::default(), &[])?;
+        let legacy_capture = fresh.is_legacy_capture();
         self.validate_zoom_target(&base, &target)?;
         let image = base.crop_region(image, &fresh, &params.region)?;
         let (width, height) = image.dimensions();
@@ -51,6 +52,7 @@ impl Worker {
             frame_id,
             Some((params.region, base.dimensions())),
             None,
+            legacy_capture,
         ))
     }
 

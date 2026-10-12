@@ -835,6 +835,11 @@
         },
         "screenLocked": {
           "type": "boolean"
+        },
+        "legacyCapture": {
+          "type": "boolean",
+          "description": "Captures run through the legacy `screencapture` path, not the ScreenCaptureKit worker (B9: macOS < 14, helper missing, or the helper failed to start).",
+          "default": false
         }
       },
       "required": [
@@ -1167,6 +1172,23 @@
             "string",
             "null"
           ]
+        },
+        "legacyCapture": {
+          "type": "boolean",
+          "description": "`true` when this capture ran through the legacy `screencapture` fallback instead of the ScreenCaptureKit worker (B9).",
+          "default": false
+        },
+        "isOnScreen": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The captured window's on-Screen state (macOS B9; absent for desktop captures and backends that cannot tell)."
         }
       },
       "required": [

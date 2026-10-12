@@ -79,6 +79,7 @@ impl MacosBackend {
             display_count,
             focus_guard: true,
             stop_reason: canary_failed.then(|| CANARY_STOP_REASON.to_string()),
+            legacy_capture: self.capture.legacy_capture(),
             ..DesktopCapabilities::unavailable()
         }
     }

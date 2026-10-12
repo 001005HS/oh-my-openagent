@@ -1,0 +1,251 @@
+//! One persistent helper process: framed, bounded reads on a nonblocking
+//! pipe, deadline-aware, and reset on any transport failure.
+
+use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
+use std::os::fd::AsRawFd;
+use std::path::PathBuf;
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::time::{Duration, Instant};
+
+use senpi_desktop_core::error::{CoreResult, DesktopError};
+use senpi_desktop_core::frame::MAX_COMPOSITE_PIXELS;
+
+use super::frame::{decode, frame_bytes, Frame};
+use super::protocol::{Batch, Reply, TargetRequest};
+
+const CAPTURE_TIMEOUT: Duration = Duration::from_secs(5);
+const HEADER_LIMIT: usize = 65_536;
+
+/// One helper child and its pipe ends. `Drop` reaps the child.
+pub(crate) struct HelperClient {
+    child: Child,
+    input: BufWriter<ChildStdin>,
+    output: BufReader<ChildStdout>,
+    header: Vec<u8>,
+    /// Temp dir the staged helper binary lives in; kept alive until drop.
+    _staging: Option<tempfile::TempDir>,
+}
+
+impl HelperClient {
+    /// Spawns `program`, which must speak the helper wire protocol.
+    pub(crate) fn start(program: &PathBuf) -> CoreResult<Self> {
+        Self::start_with_staging(program, None)
+    }
+
+    pub(crate) fn start_with_staging(
+        program: &PathBuf,
+        staging: Option<tempfile::TempDir>,
+    ) -> CoreResult<Self> {
+        let mut child = Command::new(program)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| {
+                DesktopError::capture_failed(format!("cannot start the native capture worker: {error}"))
+            })?;
+        let (Some(input), Some(output)) = (child.stdin.take(), child.stdout.take()) else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(DesktopError::internal("capture worker pipes are missing"));
+        };
+        let fd = output.as_raw_fd();
+        // SAFETY: `output` owns this live descriptor; nonblocking reads let
+        // every pipe wait honor the capture deadline.
+        let configured = unsafe {
+            let flags = libc::fcntl(fd, libc::F_GETFL);
+            flags >= 0 && libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) == 0
+        };
+        if !configured {
+            let error = io_error(io::Error::last_os_error());
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
+        Ok(Self {
+            child,
+            input: BufWriter::new(input),
+            output: BufReader::new(output),
+            header: Vec::new(),
+            _staging: staging,
+        })
+    }
+
+    /// Sends one batch and reads one frame per request. A reply-level error
+    /// (PermissionDenied, WindowNotFound, CaptureUnavailable...) does NOT
+    /// poison the worker; a transport error leaves it for the owner to reset.
+    pub(crate) fn capture(&mut self, requests: &[TargetRequest]) -> CoreResult<Vec<Frame>> {
+        let deadline = Instant::now() + CAPTURE_TIMEOUT;
+        serde_json::to_writer(
+            &mut self.input,
+            &Batch {
+                requests,
+                max_pixels: MAX_COMPOSITE_PIXELS,
+            },
+        )
+        .map_err(|error| DesktopError::internal(format!("cannot encode capture request: {error}")))?;
+        self.input.write_all(b"\n").map_err(io_error)?;
+        self.input.flush().map_err(io_error)?;
+        let mut frames = Vec::with_capacity(requests.len());
+        for expected in 0..requests.len() {
+            match read_header(&mut self.output, &mut self.header, deadline)? {
+                Reply::Error { code, error, reason } => {
+                    return Err(match (code.as_str(), reason) {
+                        ("PermissionDenied", _) => super::super::permission_denied(),
+                        ("WindowNotFound", _) => DesktopError::window_not_found(error),
+                        ("InvalidTarget", _) => DesktopError::invalid_target(error),
+                        ("Unsupported", _) => DesktopError::internal(format!(
+                            "capture worker reported Unsupported on macOS 14+: {error}"
+                        )),
+                        ("CaptureUnavailable", Some(reason)) => {
+                            DesktopError::capture_unavailable(reason, error)
+                        },
+                        ("CaptureUnavailable", None) => DesktopError::capture_failed(format!(
+                            "capture worker sent CaptureUnavailable without a reason: {error}"
+                        )),
+                        _ => DesktopError::capture_failed(error),
+                    });
+                },
+                Reply::Frame {
+                    index,
+                    width,
+                    height,
+                    byte_length,
+                    bounds,
+                    is_on_screen,
+                } => {
+                    if index != expected || !bounds.valid() {
+                        return Err(DesktopError::capture_failed(
+                            "capture worker returned inconsistent frame metadata",
+                        ));
+                    }
+                    frame_bytes(width, height)?;
+                    let pixels = read_pixels(&mut self.output, byte_length, deadline)?;
+                    frames.push(decode(
+                        width,
+                        height,
+                        byte_length,
+                        pixels,
+                        (bounds.x, bounds.y, bounds.width, bounds.height),
+                        is_on_screen,
+                    )?);
+                },
+            }
+        }
+        Ok(frames)
+    }
+}
+
+impl Drop for HelperClient {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+fn check_deadline(deadline: Instant) -> CoreResult<()> {
+    if Instant::now() >= deadline {
+        return Err(DesktopError::timeout(
+            "ScreenCaptureKit worker exceeded its five-second deadline",
+        ));
+    }
+    Ok(())
+}
+
+fn wait_readable(output: &BufReader<ChildStdout>, deadline: Instant) -> CoreResult<()> {
+    check_deadline(deadline)?;
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    let milliseconds = i32::try_from(remaining.as_millis().min(20)).unwrap_or(20).max(1);
+    let mut descriptor = libc::pollfd {
+        fd: output.get_ref().as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: one initialized pollfd points at the reader's live descriptor.
+    let result = unsafe { libc::poll(&mut descriptor, 1, milliseconds) };
+    if result < 0 {
+        let error = io::Error::last_os_error();
+        if error.kind() != io::ErrorKind::Interrupted {
+            return Err(io_error(error));
+        }
+    }
+    Ok(())
+}
+
+fn read_header(
+    output: &mut BufReader<ChildStdout>,
+    header: &mut Vec<u8>,
+    deadline: Instant,
+) -> CoreResult<Reply> {
+    header.clear();
+    loop {
+        check_deadline(deadline)?;
+        let remaining = (HEADER_LIMIT + 1).saturating_sub(header.len());
+        let result = output.by_ref().take(remaining as u64).read_until(b'\n', header);
+        if header.len() > HEADER_LIMIT {
+            return Err(DesktopError::capture_failed(
+                "native capture header exceeds its safety limit",
+            ));
+        }
+        match result {
+            Ok(0) => {
+                return Err(DesktopError::capture_failed(
+                    "native capture worker exited before returning a frame",
+                ));
+            },
+            Ok(_) if header.last() == Some(&b'\n') => break,
+            Ok(_) => {},
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {},
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                wait_readable(output, deadline)?;
+            },
+            Err(error) => return Err(io_error(error)),
+        }
+    }
+    serde_json::from_slice(header)
+        .map_err(|error| DesktopError::capture_failed(format!("invalid native capture response: {error}")))
+}
+
+fn read_pixels(
+    output: &mut BufReader<ChildStdout>,
+    length: usize,
+    deadline: Instant,
+) -> CoreResult<Vec<u8>> {
+    let mut pixels = Vec::with_capacity(length);
+    while pixels.len() < length {
+        check_deadline(deadline)?;
+        let remaining = (length - pixels.len()).min(256 * 1024);
+        match output.by_ref().take(remaining as u64).read_to_end(&mut pixels) {
+            Ok(0) => {
+                return Err(DesktopError::capture_failed(
+                    "native capture worker returned a truncated image",
+                ));
+            },
+            Ok(_) => {},
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {},
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                wait_readable(output, deadline)?;
+            },
+            Err(error) => return Err(io_error(error)),
+        }
+    }
+    Ok(pixels)
+}
+
+fn io_error(error: io::Error) -> DesktopError {
+    DesktopError::capture_failed(format!("native capture transport failed: {error}"))
+}
+
+/// The staged helper's sibling path next to the running executable, used in
+/// release layout (`native/prebuilds/<host>/senpi-desktop-capture-helper`).
+pub(crate) fn staged_helper_path(executable: &PathBuf) -> PathBuf {
+    executable
+        .parent()
+        .map(|dir| dir.join("senpi-desktop-capture-helper"))
+        .unwrap_or_else(|| PathBuf::from("senpi-desktop-capture-helper"))
+}
+
+/// A readable debug name for the helper spawn, for logs.
+pub(crate) fn describe(program: &PathBuf) -> String {
+    program.display().to_string()
+}

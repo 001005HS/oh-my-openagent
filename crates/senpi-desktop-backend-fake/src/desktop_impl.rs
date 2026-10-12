@@ -40,6 +40,11 @@ impl Backend for FakeBackend {
             ));
         }
         let (frame, width, height) = self.frame(target)?;
+        let frame = if self.legacy_capture {
+            frame.into_legacy_capture()
+        } else {
+            frame
+        };
         if width == 0 || height == 0 {
             return Err(DesktopError::capture_failed(
                 "fake scenario has nothing to capture",

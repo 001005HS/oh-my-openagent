@@ -95,7 +95,8 @@ impl DisplaySelector {
 
 /// Runtime truth about what this host's backend can do right now.
 ///
-/// FROZEN field set (IS-2): later todos fill values, never add fields.
+/// FROZEN field set (IS-2): later todos fill values, never add fields. B9
+/// (lead ruling 2026-10-12) amends it with `legacy_capture` only.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DesktopCapabilities {
@@ -119,6 +120,11 @@ pub struct DesktopCapabilities {
     /// Windows mandatory integrity level of the engine process.
     pub integrity_level: Option<String>,
     pub screen_locked: bool,
+    /// Captures run through the legacy `screencapture` path, not the
+    /// ScreenCaptureKit worker (B9: macOS < 14, helper missing, or the
+    /// helper failed to start).
+    #[serde(default)]
+    pub legacy_capture: bool,
 }
 
 impl DesktopCapabilities {
@@ -140,6 +146,7 @@ impl DesktopCapabilities {
             stop_reason: None,
             integrity_level: None,
             screen_locked: false,
+            legacy_capture: false,
         }
     }
 }

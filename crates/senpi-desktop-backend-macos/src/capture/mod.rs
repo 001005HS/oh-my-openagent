@@ -1,9 +1,12 @@
-//! Quartz capture: TCC preflight, display/window enumeration, and
-//! `screencapture`-based capture with a display-only CoreGraphics fallback.
-//! Never prompts for permission and never uses ScreenCaptureKit.
+//! Screen capture: TCC preflight, display/window enumeration, and the base
+//! `screencapture`/CoreGraphics capture mechanisms. The B9 routing between
+//! the ScreenCaptureKit worker and the legacy path lives in `route.rs`.
+//! Never prompts for permission.
 
 mod displays;
 mod fallback;
+mod route;
+mod sck;
 mod screencapture;
 mod windows;
 
@@ -68,19 +71,26 @@ impl MacCapture {
         self.capture_with_exclusions(target, &[])
     }
 
-    /// A capture whose display targets may exclude titled windows (B9 SCK).
-    pub(crate) fn capture_with_exclusions(
-        &self,
-        target: &Target,
-        exclude_window_titles: &[String],
-    ) -> CoreResult<(RgbaImage, FrameGeometry)> {
-        match target {
-            Target::Desktop | Target::Display(_) => {
-                let selector = target.display_selector().unwrap_or_else(|| self.selector.clone());
-                self.capture_desktop(&selector, exclude_window_titles)
+    fn displays_for(&self, selector: &DisplaySelector) -> CoreResult<Vec<DesktopDisplay>> {
+        let focused = if *selector == DisplaySelector::Active {
+            match crate::focus::front_window_id() {
+                Ok(Some(id)) => match windows::find(&id.to_string()) {
+                    Ok(window) => Some(window),
+                    Err(error) => {
+                        eprintln!("active capture cannot locate the front window; using primary: {error}");
+                        None
+                    },
+                },
+                Ok(None) => None,
+                Err(error) => {
+                    eprintln!("active capture cannot query focus; using primary: {error}");
+                    None
+                },
             }
-            Target::Window(id) => self.capture_window(id),
-        }
+        } else {
+            None
+        };
+        selector.select(displays::enumerate(selector)?, focused.as_ref())
     }
 
     fn require_permission(&self) -> CoreResult<()> {
@@ -94,38 +104,16 @@ impl MacCapture {
     /// One `screencapture -x -R<rect>` per display, composited. When the tool
     /// is absent or fails with permission granted, the primary display is
     /// captured through CoreGraphics instead.
-    fn capture_desktop(
-        &self,
-        selector: &DisplaySelector,
-        _exclude_window_titles: &[String],
-    ) -> CoreResult<(RgbaImage, FrameGeometry)> {
+    fn capture_desktop(&self, selector: &DisplaySelector) -> CoreResult<(RgbaImage, FrameGeometry)> {
         self.require_permission()?;
-        let focused = if *selector == DisplaySelector::Active {
-            match crate::focus::front_window_id() {
-                Ok(Some(id)) => match windows::find(&id.to_string()) {
-                    Ok(window) => Some(window),
-                    Err(error) => {
-                        eprintln!("active capture cannot locate the front window; using primary: {error}");
-                        None
-                    }
-                },
-                Ok(None) => None,
-                Err(error) => {
-                    eprintln!("active capture cannot query focus; using primary: {error}");
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        let displays = selector.select(displays::enumerate(selector)?, focused.as_ref())?;
+        let displays = self.displays_for(selector)?;
         let mut regions = Vec::with_capacity(displays.len());
         for display in &displays {
             let image = match self.shooter.run(&display_args(display)) {
                 Ok(image) => image,
                 Err(ShotError::Unavailable(reason)) => {
                     return fallback::capture_primary(&displays, &reason);
-                }
+                },
                 Err(ShotError::Fatal(error)) => return Err(error),
             };
             if image.width() == 0 || image.height() == 0 {
@@ -141,9 +129,7 @@ impl MacCapture {
 
     /// `screencapture -x -o -l <wid>`; window capture has no fallback.
     fn capture_window(&self, id: &str) -> CoreResult<(RgbaImage, FrameGeometry)> {
-        let window_id = id
-            .parse::<u32>()
-            .map_err(|_| DesktopError::invalid_target(format!("invalid macOS window id '{id}'")))?;
+        let window_id = parse_window_id(id)?;
         self.require_permission()?;
         let window = windows::find(id)?;
         let image = self
@@ -158,6 +144,11 @@ impl MacCapture {
         let geometry = FrameGeometry::for_window(&window, image.width(), image.height());
         Ok((image, geometry))
     }
+}
+
+fn parse_window_id(id: &str) -> CoreResult<u32> {
+    id.parse::<u32>()
+        .map_err(|_| DesktopError::invalid_target(format!("invalid macOS window id '{id}'")))
 }
 
 #[cfg(test)]

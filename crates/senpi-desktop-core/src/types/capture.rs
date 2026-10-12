@@ -93,6 +93,10 @@ pub struct CaptureResult {
     /// captures and backends that cannot tell).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_on_screen: Option<bool>,
+    /// `true` when this capture ran through the legacy `screencapture`
+    /// fallback instead of the ScreenCaptureKit worker (B9).
+    #[serde(default)]
+    pub legacy_capture: bool,
 }
 
 /// One delivered window observation; capture pixels remain the input frame.

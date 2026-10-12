@@ -28,6 +28,7 @@ pub struct FakeBackend {
     pub(crate) capture_color: Rgba<u8>,
     delays: DelayMs,
     pub(crate) resize_window: Option<ResizeWindow>,
+    pub(crate) legacy_capture: bool,
     pub(crate) ax_tree: AxTree,
     pub(crate) ax_owner_unknown: bool,
     pub(crate) menus: BTreeMap<String, Vec<FakeMenuNode>>,
@@ -58,6 +59,7 @@ impl FakeBackend {
             capture_color: Rgba(scenario.capture_color),
             delays: scenario.delay_ms,
             resize_window: scenario.resize_window,
+            legacy_capture: scenario.legacy_capture,
             sink: RecordingSink::default(),
             faults,
         }
