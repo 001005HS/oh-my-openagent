@@ -70,17 +70,32 @@ pixels(1, 1, [0, 0, 0, 255])
 #[test]
 fn capture_unavailable_maps_reason_without_resetting_the_worker() {
     let dir = tempfile::tempdir().unwrap();
+    let trace = dir.path().join("trace.json");
     let helper = fake_helper(&dir, &format!(
         "{PY_PREAMBLE}
+events = []
+wire_read_request, wire_header = read_request, header
+
+def read_request():
+    request = wire_read_request()
+    events.append('request')
+    return request
+
+def header(value):
+    events.append(value['kind'])
+    wire_header(value)
+
 read_request()
 header({{'kind':'error','code':'CaptureUnavailable','reason':'minimized',
         'error':'The window is minimized'}})
+read_request()
 header({{'kind':'frame','index':0,'width':1,'height':1,'byteLength':4,
         'bounds':{{'x':0.0,'y':0.0,'width':1.0,'height':1.0}}}})
-# second request served below
-read_request()
+with open(r'{trace}', 'w') as output:
+    json.dump(events, output)
 pixels(1, 1, [9, 9, 9, 255])
-"
+",
+        trace = trace.display()
     ));
     let mut client = HelperClient::start(&helper).unwrap();
     let error = client.capture(&request_batch(&[TargetRequest::window(9)])).unwrap_err();
@@ -95,6 +110,9 @@ pixels(1, 1, [9, 9, 9, 255])
     // A reply-level error keeps the worker alive: the next capture succeeds.
     let frames = client.capture(&request_batch(&[TargetRequest::window(9)])).unwrap();
     assert_eq!(frames.len(), 1);
+    let events: Vec<String> =
+        serde_json::from_str(&std::fs::read_to_string(trace).unwrap()).unwrap();
+    assert_eq!(events, ["request", "error", "request", "frame"]);
 }
 
 #[test]
