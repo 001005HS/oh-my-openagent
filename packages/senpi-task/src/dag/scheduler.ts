@@ -598,11 +598,14 @@ async function admitFrontier(context: SchedulerContext): Promise<boolean> {
     const awaitingAdmission = [...denied, ...runnable]
     context.admissionInProgress = true
     let results: PromiseSettledResult<{ readonly nodeId: DagNodeId; readonly result: OwnedStartResult }>[]
+    let foldedDuringBatch = false
     try {
-      results = await Promise.allSettled(awaitingAdmission.map(async (nodeId) => ({
+      const batch = await foldSettlementsUntil(context, Promise.allSettled(awaitingAdmission.map(async (nodeId) => ({
         nodeId,
         result: await context.taskManager.startOwned(startSpec(context, nodeId), owner(context, nodeId)),
-      })))
+      }))))
+      results = batch.value
+      foldedDuringBatch = batch.folded
     } finally {
       context.admissionInProgress = false
       resolveAdmissionIdle(context)
@@ -637,6 +640,9 @@ async function admitFrontier(context: SchedulerContext): Promise<boolean> {
     }
     if (context.cancellationStarted) return false
     context.pendingAdmission.push(...nextDenied)
+    // A child folded during the batch may have unblocked dependents or freed a slot: scan again now,
+    // since no further settlement may ever arrive to wake the run (#8934).
+    if (foldedDuringBatch) continue
     if (nextDenied.length === 0) return true
     // A contended or displaced admission lease is a bounded wait inside acquisition itself, so the
     // next probe is already paced; only a cap denial has to wait for a slot to free.
@@ -861,6 +867,8 @@ async function settleOne(context: SchedulerContext, residencyReleased?: Promise<
     context.foreignSettlement = false
     return true
   }
+  // Own settlements are listed first and un-wrapped: when a child settles, its residency wake fires in
+  // the same tick, and the fold must win so the dependents it unblocks join the next admission batch.
   const settled = await Promise.race([
     ...[...context.attachedTasks.values()].map((entry) => entry.settled),
     ...(residencyReleased === undefined ? [] : [residencyReleased.then(() => null)]),
@@ -869,6 +877,39 @@ async function settleOne(context: SchedulerContext, residencyReleased?: Promise<
   ])
   if (settled === null) return true
   if (settled === undefined || context.suspended || context.cancellationStarted) return false
+  foldSettlement(context, settled)
+  return true
+}
+
+// Pending forever while nothing is attached, which is what every caller's race wants.
+function nextOwnSettlement(context: SchedulerContext): Promise<AttachedTaskSettlement> {
+  return Promise.race([...context.attachedTasks.values()].map((entry) => entry.settled))
+}
+
+// #8934: an admission batch can stay in flight for minutes (a start against a busy task host), and a
+// lease-denied sibling sends the pass straight into another batch. Folding only between batches left
+// every child that finished meanwhile `running` (dag_8e7feddb: 16 completions, 0 folded), so this
+// run's own children fold the moment they settle while the batch is awaited. Their nodes are never
+// part of the batch: only scheduled, unattached nodes are admitted.
+async function foldSettlementsUntil<T>(
+  context: SchedulerContext,
+  work: Promise<T>,
+): Promise<{ readonly value: T; readonly folded: boolean }> {
+  const done = work.then((value) => ({ done: true as const, value }))
+  let folded = false
+  for (;;) {
+    const next = await Promise.race([
+      done,
+      nextOwnSettlement(context).then((settled) => ({ done: false as const, settled })),
+    ])
+    if (next.done) return { value: next.value, folded }
+    if (context.suspended || context.cancellationStarted) return { value: await work, folded }
+    foldSettlement(context, next.settled)
+    folded = true
+  }
+}
+
+function foldSettlement(context: SchedulerContext, settled: AttachedTaskSettlement): void {
   const task = context.attachedTasks.get(settled.nodeId)
   context.attachedTasks.delete(settled.nodeId)
   context.attachedTaskIds.delete(settled.nodeId)
@@ -882,7 +923,6 @@ async function settleOne(context: SchedulerContext, residencyReleased?: Promise<
   } finally {
     task?.resolveFolded()
   }
-  return true
 }
 
 function foldTaskOutcome(context: SchedulerContext, nodeId: DagNodeId, task: TaskRecord): void {

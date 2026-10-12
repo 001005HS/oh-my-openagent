@@ -320,7 +320,9 @@ function expectedSuccessSequence(waves: readonly (readonly string[])[]): readonl
 // Frontier admission interleaves events the barrier used to serialize: a dependent is admitted as
 // soon as ITS dependencies settle, so a staggered run emits several wave.started groupings for one
 // wave index and a later wave's completed can precede an earlier wave's. Waves here are
-// informational groupings over the compiled graph, never execution barriers.
+// informational groupings over the compiled graph, never execution barriers. A child that settles
+// while an admission batch is in flight folds at once (#8934), so its completion can precede the
+// attachments of the batch that was admitted before it settled.
 function expectedFrontierSequence(): readonly string[] {
   return [
     "dag.run.created",
@@ -336,19 +338,19 @@ function expectedFrontierSequence(): readonly string[] {
     "dag.node.transitioned:design:pending>scheduled",
     "dag.node.transitioned:budget:pending>scheduled",
     "dag.wave.started:1:[design,budget]",
+    "dag.node.transitioned:research:running>completed",
     "dag.node.task-attached:design",
     "dag.node.transitioned:design:scheduled>running",
     "dag.node.task-attached:budget",
     "dag.node.transitioned:budget:scheduled>running",
-    "dag.node.transitioned:research:running>completed",
-    "dag.wave.completed:0:[intake,research]",
     "dag.node.transitioned:evidence:pending>scheduled",
     "dag.wave.started:1:[evidence]",
-    "dag.node.task-attached:evidence",
-    "dag.node.transitioned:evidence:scheduled>running",
     "dag.node.transitioned:design:running>completed",
     "dag.node.transitioned:budget:running>completed",
+    "dag.node.task-attached:evidence",
+    "dag.node.transitioned:evidence:scheduled>running",
     "dag.node.transitioned:evidence:running>completed",
+    "dag.wave.completed:0:[intake,research]",
     "dag.wave.completed:1:[design,evidence,budget]",
     "dag.node.transitioned:build:pending>scheduled",
     "dag.node.transitioned:docs:pending>scheduled",
