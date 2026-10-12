@@ -15,7 +15,7 @@ afterEach(() => {
 })
 
 function fixture(identityDirs: (layout: { workspace: string; child: string; sibling: string }) => readonly string[]) {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "project-scope-")))
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "project-scope-")))
   roots.push(root)
   const workspace = join(root, "workspace")
   const child = join(workspace, "projects", "child")

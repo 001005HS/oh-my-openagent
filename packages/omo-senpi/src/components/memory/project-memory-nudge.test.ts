@@ -44,7 +44,7 @@ interface World {
 }
 
 function world(childNotes: Record<string, string> = { "reference/deploy.md": "how the child deploys" }): World {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "project-memory-nudge-")))
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "project-memory-nudge-")))
   roots.push(root)
   const workspace = join(root, "workspace")
   const child = join(workspace, "child")

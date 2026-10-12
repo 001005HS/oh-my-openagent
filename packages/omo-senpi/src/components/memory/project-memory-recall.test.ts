@@ -47,7 +47,7 @@ function commitNotes(repo: string, notes: Record<string, { description: string; 
 }
 
 function world(options: { recall?: boolean } = {}) {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "project-memory-recall-")))
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "project-memory-recall-")))
   roots.push(root)
   const workspace = join(root, "workspace")
   const child = join(workspace, "billing")
