@@ -31,7 +31,7 @@
   ],
   "fail_next": [
     {
-      "method": "Capture",
+      "method": "capture",
       "code": "CaptureUnavailable",
       "reason": "minimized"
     }

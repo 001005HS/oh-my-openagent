@@ -95,7 +95,7 @@ pub struct CaptureResult {
     pub is_on_screen: Option<bool>,
     /// `true` when this capture ran through the legacy `screencapture`
     /// fallback instead of the ScreenCaptureKit worker (B9).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub legacy_capture: bool,
 }
 

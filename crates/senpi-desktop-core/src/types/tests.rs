@@ -30,7 +30,6 @@ fn unavailable_capabilities_serialize_the_frozen_camel_case_field_set() {
             "stopReason",
             "integrityLevel",
             "screenLocked",
-            "legacyCapture",
         ]
     );
 }

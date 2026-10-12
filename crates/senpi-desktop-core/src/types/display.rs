@@ -123,7 +123,7 @@ pub struct DesktopCapabilities {
     /// Captures run through the legacy `screencapture` path, not the
     /// ScreenCaptureKit worker (B9: macOS < 14, helper missing, or the
     /// helper failed to start).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub legacy_capture: bool,
 }
 
