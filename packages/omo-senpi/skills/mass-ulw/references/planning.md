@@ -100,7 +100,7 @@ if (findings.includes("critical")) {
 
 **Adaptive retries.** Read `result.nodes[id].error`, then recover IN PLACE on the same run: `retry` re-runs the failed nodes, and `amend` re-runs them with an edited definition. A new key is never the retry mechanism - it starts a different run. Re-issuing the SAME definition under the old key returns the existing run untouched (`reused: true`), so it never retries anything on its own.
 
-**Settle wakes drive the cell.** Call `start` and return. The session wakes when a run settles or pauses, never on a single node's completion. To act on part of a run before the rest settles, give that part its own run, or `monitor` the handoff file of the node that part ends in (its prompt writes the file as its final act) and start a separate run from it; `amend` and `retry` refuse a running run. `snapshot(run_id)` is a one-off read for a midpoint decision. Use `wait()` only inside a detached cell.
+**Settle wakes drive the cell.** Call `start` and return. The session wakes when a run settles or pauses, never on a single node's completion. To act on part of a run before the rest settles, give that part its own run, or `monitor` the handoff file of the node that part ends in (its prompt writes the file as its final act) and start a separate run from it; `amend` and `retry` refuse a running run. When a chain node fails while its siblings are still running, start that node and its dependents as a separate run at once rather than waiting for the run to settle: the failed chain would otherwise wait on the slowest sibling. `snapshot(run_id)` is a one-off read for a midpoint decision. Use `wait()` only inside a detached cell.
 
 One caveat:
 
