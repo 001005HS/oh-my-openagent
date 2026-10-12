@@ -4,7 +4,9 @@ import type { ManagedChildHandle } from "./child-handle"
 import type { ManagedStartSpec } from "./types"
 import { RunnerError } from "../runners/in-process/runner-error"
 import { bounded } from "../lifecycle/__fixtures__/live-parent-clock"
-import { readEvents } from "../lifecycle/__fixtures__/lifecycle-fakes"
+import { FakeRegistry, readEvents } from "../lifecycle/__fixtures__/lifecycle-fakes"
+import { createTaskLifecycle } from "../lifecycle"
+import { hostLifecycleDeps } from "../lifecycle/__fixtures__/host-session-fakes"
 import { isRevivalCandidate } from "../lifecycle/revival-selection"
 import { FakeRunner, baseSpec, cleanupProjects, makeManager, settings } from "./__fixtures__/manager-fakes"
 
@@ -35,6 +37,20 @@ class LaneThenBusyRunner extends FakeRunner {
     if (this.#starts === 1) return super.start(spec)
     this.heldStart.resolve(spec.taskId)
     return this.release.promise.then(() => super.start(spec))
+  }
+}
+
+// The resumed session's own registry: it owns its parent session's records, as the live engine does.
+class SessionOwningRegistry extends FakeRegistry {
+  readonly #parentSessionId: string
+
+  constructor(parentSessionId: string) {
+    super()
+    this.#parentSessionId = parentSessionId
+  }
+
+  ownsRecord(record: { readonly parent_session_id: string }): boolean {
+    return record.parent_session_id === this.#parentSessionId
   }
 }
 
@@ -257,8 +273,47 @@ describe("task start against a busy host (#10042)", () => {
     expect(parked.status).toBe("running")
     expect(parked.residency_state).toBe("persisted_only")
     expect(parked.host_pid).toBeUndefined()
+    expect(parked.started_at).toBeUndefined()
     expect(isRevivalCandidate(parked, parked.parent_session_id)).toBe(true)
     expect(readEvents(h.store, started.task_id)).toContain("suspended")
+  })
+
+  test("#given a launch parked unadmitted at shutdown #when its session resumes #then reconcile relaunches it fresh instead of expiring it as unresumable", async () => {
+    // given
+    const held = new BusyHostRunner()
+    const h = makeManager({ inProcess: held })
+    const started = await bounded(h.manager.start(baseSpec({ run_in_background: true })))
+    if (started.kind !== "started") throw new Error("fixture did not start")
+    await bounded(h.manager.settleLaunchesForShutdown?.(0) ?? Promise.resolve())
+    held.release.resolve(undefined)
+    await bounded(h.manager.whenLaunched?.(started.task_id) ?? Promise.resolve())
+    const parentSessionId = h.store.load(started.task_id)?.parent_session_id
+    if (parentSessionId === undefined) throw new Error("parked record missing")
+    const respawned: string[] = []
+    const host = hostLifecycleDeps({
+      store: h.store,
+      hostPid: 999_999_993,
+      respawn: async (record, resumeSessionPath) => {
+        respawned.push(`${record.task_id}:${resumeSessionPath ?? "fresh"}`)
+        return { ok: false, disposition: "retryable", code: "model_unavailable", reason: "fixture stops after the relaunch attempt" }
+      },
+    })
+    const lifecycle = createTaskLifecycle({
+      ...host.deps,
+      registry: new SessionOwningRegistry(parentSessionId),
+      config: settings(),
+      reserveReattach: () => ({ ok: true, release: () => undefined }),
+      reattach: async () => ({ ok: false, kind: "already_attached", reason: "fixture never attaches" }),
+    })
+
+    // when
+    const reconciled = await bounded(lifecycle.reconcileOnSessionStart(parentSessionId))
+    lifecycle.dispose?.()
+
+    // then
+    expect(respawned).toEqual([`${started.task_id}:fresh`])
+    const outcome = reconciled.outcomes.find((candidate) => candidate.task_id === started.task_id)
+    expect(outcome?.reason).not.toBe("transcript_unavailable")
   })
 
   test("#given a task queued for a lane #when the lane frees after session shutdown began #then no child starts and the task stays pending for shutdown to park", async () => {

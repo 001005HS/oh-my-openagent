@@ -790,8 +790,22 @@ class TaskManagerImpl implements TaskManager {
       await Promise.race([Promise.all(inFlight), bound])
       clearTimeout(timer)
     }
-    for (const taskId of this.#launching.keys()) {
-      this.#options.store.transition(taskId, { type: "persist_only", timestamp: nowIso(this.#now) })
+    for (const taskId of this.#launching.keys()) this.#parkUnadmittedLaunch(taskId)
+  }
+
+  // Parks only a launch that is still this host's and has never reached a child: no session, no pid.
+  // started_at goes too, so revival reads it as never started and relaunches it fresh instead of
+  // deferring it for a transcript that never existed. A launch cancelled or admitted meanwhile is left alone.
+  #parkUnadmittedLaunch(taskId: string): void {
+    let parked = false
+    this.#options.store.mutate(taskId, (fresh) => {
+      if (fresh.status !== "running" || fresh.host_pid !== this.#hostPid) return fresh
+      if (fresh.child_session_id !== undefined || fresh.host_session !== undefined || fresh.pid !== undefined) return fresh
+      parked = true
+      const { host_pid: _hostPid, started_at: _startedAt, ...rest } = fresh
+      return { ...rest, residency_state: "persisted_only", updated_at: nowIso(this.#now) }
+    })
+    if (parked) {
       this.#options.store.appendEvent(taskId, { type: "suspended", payload: { reason: "session_shutdown_before_admission" } })
     }
   }

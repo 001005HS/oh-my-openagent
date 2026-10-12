@@ -118,7 +118,7 @@ export function wireEventBridge(
     state.leadPollers.shutdown()
     await state.resumptionChannels.emitShutdown()
     // A first launch still being admitted gets a bounded chance to land, so suspension parks it like
-    // any resident child; one still unadmitted is parked as pending and never outlives the session (#10042).
+    // any resident child; one still unadmitted is parked to relaunch on resume and never outlives the session (#10042).
     await engine.manager.settleLaunchesForShutdown?.(SHUTDOWN_LAUNCH_SETTLE_MS)
     const shutdownEvent = payload as SessionShutdownEvent
     const parentSessionId = engine.runtime.sessionId()

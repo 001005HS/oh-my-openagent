@@ -200,6 +200,10 @@ function awaitTerminalTask(step: { name: string; tasksDir: string; timeoutMs: nu
       finish(false)
       return
     }
+    if (signal?.aborted === true) {
+      finish(false)
+      return
+    }
     timer = setTimeout(() => finish(false), step.timeoutMs)
     signal?.addEventListener("abort", () => finish(false))
     check()
