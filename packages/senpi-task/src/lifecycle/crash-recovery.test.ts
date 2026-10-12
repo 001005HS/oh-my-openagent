@@ -19,12 +19,13 @@ afterEach(async () => {
   cleanupManagers()
 })
 
-async function crashFixture(failRespawn = false, failContinuation = false) {
+async function crashFixture(failRespawn = false, failContinuation = false, stallReattach = false) {
   const f = liveParentFixture("host-session")
   f.dispose()
   const original = fakeSessionPort()
   const replacement = fakeSessionPort()
   const clock = manualRecoveryClock()
+  const armed = Promise.withResolvers<void>()
   const sessionPath = join(f.store.stateDir, "saved", "child.jsonl")
   mkdirSync(dirname(sessionPath), { recursive: true })
   writeFileSync(sessionPath, [
@@ -39,13 +40,21 @@ async function crashFixture(failRespawn = false, failContinuation = false) {
     const handle = createHostSessionHandle({
       client: original, session: identity, taskId: spec.taskId,
       heartbeatIntervalMs: 60_000, now: () => 0, closeGraceMs: 0, openDisposition: "attached",
-      transportRecovery: { clock },
+      transportRecovery: {
+        clock: {
+          schedule: (ms, expire) => {
+            const clear = clock.schedule(ms, expire)
+            armed.resolve()
+            return clear
+          },
+        },
+      },
       reattach: failContinuation
         ? async () => ({
             client: fakeSessionPort(() => Promise.reject(new Error("supervisor pid 4242 shard deadbeef failed delivery"))),
             session: identity, attached: false,
           })
-        : async () => undefined,
+        : async () => stallReattach ? Promise.withResolvers<undefined>().promise : undefined,
     })
     running.push(handle)
     return adaptRpcHandle(handle)
@@ -94,7 +103,7 @@ async function crashFixture(failRespawn = false, failContinuation = false) {
     for (const next of resumed) await next.dispose()
   }
   fixtures.push({ dispose })
-  return { ...f, lifecycle, id, original, specs, switched, replacement, launchRecords, sessionPath }
+  return { ...f, lifecycle, id, original, specs, switched, replacement, launchRecords, sessionPath, clock, armed }
 }
 
 describe("host crash uses existing bounded child recovery (#10023)", () => {
@@ -120,6 +129,21 @@ describe("host crash uses existing bounded child recovery (#10023)", () => {
       expect(f.messages).toHaveLength(0)
     })
   }
+
+  test("an unresponsive reattach reaches contextual respawn when its fake-clock bound expires", async () => {
+    const f = await crashFixture(false, false, true)
+    const attempted = f.wait("live_parent_recovery_attempt")
+    f.original.loseTransport()
+    await bounded(f.armed.promise)
+    expect(f.clock.pending()).toBe(1)
+    f.clock.expire()
+    await attempted
+    expect(f.specs).toHaveLength(1)
+    expect(f.specs[0]?.resumeSessionPath).toBe(f.sessionPath)
+    expect(f.store.load(f.id)?.status).toBe("running")
+    expect(f.messages).toHaveLength(0)
+    expect(f.clock.pending()).toBe(0)
+  })
 
   test("failed respawns stop at the persisted budget and deliver one plain reason and retry action", async () => {
     const f = await crashFixture(true)
