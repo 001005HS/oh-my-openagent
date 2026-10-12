@@ -9,7 +9,7 @@ metadata:
 
 Read this file IN FULL before you define any graph. A graph defined without it is unplanned work: real runs without this doctrine collapse to three `deep` nodes with no verification. Every section below exists because its absence was observed failing.
 
-Reading this file is not planning. Before `start`, write the run plan in one breath and then execute THAT plan: the topology (waves, plus the chain points where you synthesize between runs), wave sizes against the capacity model below, a one-line reason for every non-`quick` category, and the verification wave. When reality forces a change, replan out loud instead of drifting node by node.
+Reading this file is not planning. Before `start`, write the run plan in one breath and then execute THAT plan: the topology (every stage as dependency chains, the handoff file each node writes, and the settle wakes where you `amend` or start the next run), wave sizes against the capacity model below, a one-line reason for every non-`quick` category, and the verification wave. When reality forces a change, replan out loud instead of drifting node by node.
 
 ## Decomposition doctrine
 
@@ -23,7 +23,7 @@ Reading this file is not planning. Before `start`, write the run plan in one bre
 
 - **By component** - each independently-shippable part is its own lane.
 - **By file domain** - when one component spans disjoint file sets, one node per set.
-- **By phase** - collect lanes (investigate, in parallel) -> verify lanes (falsify the collections) -> synthesize (turn verified facts into the deliverable).
+- **By stage** - collect lanes (investigate, in parallel) -> verify lanes (falsify the collections) -> synthesize (turn verified facts into the deliverable).
 
 **Default shape is fan-out, then fan-in.** N parallel lanes with no dependencies, then one synthesis node that depends on all of them. The synthesis node starts cheap too (`quick` or `unspecified-low`): merging verified pieces is mechanical unless the merge itself needs judgment. A 2-node graph with no dependency between the nodes is not a dag - use plain parallel `task` spawns instead. Reach for `workflow` when ordering itself is the point.
 
@@ -60,7 +60,7 @@ A graph whose every node is `deep-low` or `deep-high` is a routing failure: it p
 
 ## Concurrency and write-scope rules
 
-- `dependsOn` is ORDERING ONLY - no upstream output is substituted into a downstream prompt. Every prompt stands alone (see the node prompt contract).
+- **`dependsOn` orders; files carry the data.** No upstream output is substituted into a downstream prompt, so when B needs what A found, A's prompt names the file it writes (for example `$SESSION_DIR/waves/<node-id>.md`) and B's prompt names the same path to read; the edge guarantees the file exists when B starts. Every prompt still stands alone (see the node prompt contract).
 - **Disjoint write scopes or serialize.** No two nodes that can run in parallel may edit the same file. If two lanes must touch the same files, chain them with `dependsOn` or merge them into one node. Declare each node's read/write scope inside its prompt.
 - **Never add a dependency to pass data.** If node B needs a fact node A produces, that is a real dependency - but if B only needs a fact YOU already know, paste the fact into B's prompt and leave the edge out.
 - **Dependency matrix self-check before `start`:** every `dependsOn` id exists in the graph; no cycles; no node depends on something it does not actually consume; every wave has at least one runnable node.
@@ -83,7 +83,7 @@ dag.node({ id: "synthesize", category: "unspecified-high", prompt: "...", depend
 const run = await sdk.start(dag)
 ```
 
-**Multi-run composition - the cell is the glue between runs.** This is the per-phase shape: one run per phase, with the next phase's graph built from the settled run's verified outputs. `dependsOn` never passes data inside a run, but the cell passes data BETWEEN runs: wait for run 1, read its node outputs, and paste the relevant facts into run 2's prompts. Branching on results is plain JavaScript, so arbitrary conditional workflows fall out naturally:
+**Multi-run composition - the cell is the glue between runs.** Chain runs between phases, and wherever the next graph's SHAPE depends on what a run found (which nodes exist, not only what they read): take the run's settle wake, read its outputs or handoff files, then start the next run or `amend` the settled one from them. Branching on results is plain JavaScript, so arbitrary conditional workflows fall out naturally:
 
 ```js
 const probe = await sdk.wait((await sdk.start(probeDag)).run_id)
@@ -101,7 +101,7 @@ if (findings.includes("critical")) {
 
 **Adaptive retries.** Read `result.nodes[id].error`, then recover IN PLACE on the same run: `retry` re-runs the failed nodes, and `amend` re-runs them with an edited definition. A new key is never the retry mechanism - it starts a different run. Re-issuing the SAME definition under the old key returns the existing run untouched (`reused: true`), so it never retries anything on its own.
 
-**Completion wakes drive the cell.** Call `start` and return; node completions and settle wake the session, and the wake handler builds the next run. `snapshot(run_id)` is a one-off read for a midpoint decision. Use `wait()` only inside a detached cell.
+**Settle wakes drive the cell.** Call `start` and return. The session wakes when a run settles or pauses, never on a single node's completion; to act on one cluster early, give it its own run or `monitor` its last handoff file. `snapshot(run_id)` is a one-off read for a midpoint decision. Use `wait()` only inside a detached cell.
 
 One caveat:
 
@@ -111,22 +111,22 @@ One caveat:
 
 The dag is not the only fan-out surface, and picking the wrong one strands the run. Decide before you plan:
 
-- **Chained dags** (the multi-run composition above) when the work is stage-shaped: every stage is a static graph and you synthesize between stages. Journaled resume, idempotent keys, and the `/dag` view come free.
+- **A dag** when the work is stage-shaped: every stage you can already write goes into one graph and hands off through files, and runs chain only where the next stage's shape depends on what was found. Journaled resume, idempotent keys, and the `/dag` view come free.
 - **A `team_create` team** when workers must talk DURING the work: broadcasting leads the moment they surface, multi-round debate, or members accumulating investigation context across re-tasking. A dag node takes ONE prompt at dispatch; `send` can steer or revive that node's child afterwards, but the graph has no mid-run conversation between nodes.
 - **A plain ulw-research request goes to the team path.** Cross-critique and expand loops are team mechanics; use a dag for the independent harvest stages only.
 - **A MASS research request goes to the dag path, at mass scale.** When the user combines the mass trigger with research ("mass ulw research", "mulw research", "ulw mass research"), they asked for over-collection no roster of 8 members can produce: run the harvest as chained dags under the section below, and keep a team only for the debate rounds the claim graph needs. Either path inherits ulw-research's delivery gates - rendered-page visual QA, then the proofread pass - for any report or PDF deliverable.
 
-## Mass research - over-collect in waves, then reduce
+## Mass research - over-collect through per-angle chains, then reduce
 
-A mass research run is a HARVEST, and the graph is sized by how many angles exist, not by what feels tidy. Read `ulw-research`'s SKILL.md for the epistemic contract it owns - the journal, claim graph, EXPAND markers, convergence rules, delivery gates - and run its collection phases as dag waves:
+A mass research run is a HARVEST, and the graph is sized by how many angles exist, not by what feels tidy. Read `ulw-research`'s SKILL.md for the epistemic contract it owns - the journal, claim graph, EXPAND markers, convergence rules, delivery gates - and define its collection in full before `start`:
 
-**Wave 1 opens at 60+ nodes, deliberately over-collecting.** Enumerate every angle the topic has - source territory, sub-question, entity, time window, competing approach, adjacent field - and give each one its own node. Sixty nodes is a floor for a genuinely broad topic, not a target to trim toward: coverage is the deliverable, and the slot limiter serializes width into queue time, never into lost correctness. Under-collecting wave 1 is the failure this mode exists to prevent.
+**The harvest opens at 60+ angles, deliberately over-collecting.** Enumerate every angle the topic has - source territory, sub-question, entity, time window, competing approach, adjacent field - and give each one its own chain. Sixty angles is a floor for a genuinely broad topic, not a target to trim toward: coverage is the deliverable, and the slot limiter serializes width into queue time, never into lost correctness. Under-collecting the harvest is the failure this mode exists to prevent.
 
-**Route the wave across the whole ladder in one graph.** Broad source sweeps and per-item harvest batches are `quick`. Angles needing a judgment call a template cannot make are `unspecified-low`. Angles with real integration surface across several territories are `unspecified-high`. Reserve `deep-low` for the few genuinely hairy cross-source contradictions, and `deep-high` only when one of them turns on a decision evidence cannot settle. One tier across sixty nodes is the routing failure named above - name the tier for every node as you define it, and honor a user's literal routing words ("quick", "deep", "all quick") exactly - a bare "deep" means `deep-low`.
+**Route the harvest across the whole ladder.** Broad source sweeps and per-item harvest batches are `quick`. Angles needing a judgment call a template cannot make are `unspecified-low`. Angles with real integration surface across several territories are `unspecified-high`. Reserve `deep-low` for the few genuinely hairy cross-source contradictions, and `deep-high` only when one of them turns on a decision evidence cannot settle. One tier across sixty nodes is the routing failure named above - name the tier for every node as you define it, and honor a user's literal routing words ("quick", "deep", "all quick") exactly - a bare "deep" means `deep-low`.
 
-**Each wave's discoveries define the next wave's nodes.** Read the settled run's node outputs in the cell, harvest every EXPAND lead they returned, deduplicate against the leads already seen, then build the next run's nodes FROM those leads - chase the tail until the leads run dry under ulw-research's convergence rules. A mass research run that stops after one wave collected breadth and no depth.
+**Each angle is a chain defined before `start`: `harvest-<a>` -> `expand-<a>` -> `verify-<a>`.** Harvest writes `$SESSION_DIR/waves/harvest-<a>.md` ending in its EXPAND tail; expand reads that file, chases every LEAD in it, and writes `waves/expand-<a>.md` with its own tail; verify reads both and runs the counter-search on every claim they make. A chain advances the moment its own upstream completes, so a fast angle reaches verify while slow ones still harvest. Group the angles into a few cluster runs, each under the node cap with headroom left under `task.dag.max_runs_per_session`, and end each in its slice reducer. When a cluster's run settles, `amend` it with nodes for the leads still open, deduplicated against every lead already seen: completed chains keep their cached results and only the reducer re-runs. Repeat per cluster until its leads run dry under ulw-research's convergence rules, while the other clusters keep moving. A mass research run that stops after the harvest collected breadth and no depth.
 
-**Synthesis reduces through several architects, then one reducer.** Never hand sixty raw node outputs to a single node. Fan the converged material into several parallel `architect` nodes, each owning one slice of the synthesis and reading bounded per-wave digests, then depend ONE final `architect` reducer on all of them to merge their verdicts into the deliverable. **When this session's config has no `architect` category, `ultrabrain` is its substitute** - and the graph's one-`ultrabrain`-per-run rule applies to the reducer alone, so the parallel slice nodes drop to `deep-low` in that configuration.
+**Synthesis reduces through several architects, then one reducer.** Never hand sixty raw node outputs to a single node. Each cluster's slice reducer is an `architect` node reading its cluster's `waves/verify-*.md` files, and ONE final `architect` reducer, started as its own run once every cluster has converged, reads the slice reducers' files and merges their verdicts into the deliverable. **When this session's config has no `architect` category, `ultrabrain` is its substitute** - and the one-`ultrabrain`-per-run rule applies to the final reducer alone, so the slice reducers drop to `deep-low` in that configuration.
 
 ## Node prompt contract
 
