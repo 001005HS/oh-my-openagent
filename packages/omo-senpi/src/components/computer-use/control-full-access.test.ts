@@ -151,6 +151,7 @@ describe("computer control in full access (#10022)", () => {
     })
     expect(engine.methods).toContain("control.grant")
     expect(engine.methods).toContain("control.revoke")
+    expect(pi.flags.map((flag) => flag.name)).toContain("permission-preset")
   })
 
   test("#given another preset #when the model acquires #then the confirm is asked and a refusal grants nothing", async () => {

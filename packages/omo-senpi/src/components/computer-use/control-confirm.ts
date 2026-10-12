@@ -27,7 +27,7 @@ export interface ControlConfirmOptions {
 
 /** The in-session note shown when full access grants foreground control without asking. */
 export function fullAccessControlNote(reason: string): string {
-  return `Computer use took foreground control (full access): ${reason}`
+  return `Computer use is taking foreground control (full access, no confirm needed): ${reason}`
 }
 
 const realScheduler: ControlTimeoutScheduler = (onTimeout, timeoutMs) => {
@@ -47,8 +47,9 @@ export async function confirmComputerControl(
   options: ControlConfirmOptions = {},
 ): Promise<boolean> {
   if (request.context.hasUI === false || request.signal.aborted) return false
-  if (options.fullAccess?.() === true) {
-    request.context.ui?.notify?.(fullAccessControlNote(request.reason), "info")
+  const notify = request.context.ui?.notify
+  if (options.fullAccess?.() === true && request.context.hasUI === true && notify !== undefined) {
+    notify(fullAccessControlNote(request.reason), "info")
     return true
   }
   const confirm = request.context.ui?.confirm

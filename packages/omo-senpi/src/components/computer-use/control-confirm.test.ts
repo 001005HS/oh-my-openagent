@@ -82,6 +82,17 @@ describe("confirmComputerControl in full access (#10022)", () => {
     expect({ approved, prompts }).toEqual({ approved: true, prompts: 1 })
   })
 
+  test("#given a full-access context that cannot show the note #when acquiring #then it falls back to the confirm path and never grants", async () => {
+    // given
+    const request = { context: hostContext({}), reason: "click Run", signal: new AbortController().signal }
+
+    // when
+    const approved = await confirmComputerControl(request, { fullAccess: () => true })
+
+    // then
+    expect(approved).toBe(false)
+  })
+
   test("#given a headless full-access run #when acquiring #then it never grants", async () => {
     // given
     const notes: string[] = []
