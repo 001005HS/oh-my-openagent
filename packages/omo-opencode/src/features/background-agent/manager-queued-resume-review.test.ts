@@ -4,7 +4,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { PluginInput } from "@opencode-ai/plugin"
 import { unsafeTestValue } from "../../../../../test-support/unsafe-test-value"
-import * as shared from "../../shared"
 import { releaseAllPromptAsyncReservationsForTesting } from "../../shared/prompt-async-gate"
 import { readContinuationMarker } from "../run-continuation-state"
 import { BackgroundManager } from "./manager"
@@ -16,6 +15,7 @@ type Internals = {
   tasksByParentSession: Map<string, Set<string>>
   completionTimers: Map<string, ReturnType<typeof setTimeout>>
   concurrencyManager: ConcurrencyManager
+  pendingByParent: Map<string, Set<string>>
   startResumedTask: (...args: unknown[]) => Promise<BackgroundTask>
 }
 
@@ -33,6 +33,10 @@ afterEach(async () => {
 async function queueResume(parentSessionId = "new-parent", busy = false) {
   const directory = mkdtempSync(join(tmpdir(), "omo-resume-review-"))
   const promptAsync = mock(async () => ({ data: {} }))
+  const log = mock((message: string, data?: unknown) => {
+    void message
+    void data
+  })
   const manager = new BackgroundManager({
     pluginContext: unsafeTestValue<PluginInput>({
       directory,
@@ -45,6 +49,7 @@ async function queueResume(parentSessionId = "new-parent", busy = false) {
     }),
     config: { defaultConcurrency: 1 },
     enableParentSessionNotifications: false,
+    log,
   })
   fixtures.push({ manager, directory })
   const internals = unsafeTestValue<Internals>(manager)
@@ -61,7 +66,7 @@ async function queueResume(parentSessionId = "new-parent", busy = false) {
   })
   await internals.concurrencyManager.acquire("explore")
   await manager.resume({ sessionId: "child", prompt: "latest", parentSessionId, parentMessageId: "new-message" })
-  return { manager, internals, task, directory, promptAsync }
+  return { manager, internals, task, directory, promptAsync, log }
 }
 
 // One event-loop turn drains admission and prompt-gate microtasks without a timed sleep.
@@ -120,8 +125,7 @@ describe("queued resume review regressions", () => {
 
   test("logs an admission failure even after the resume token was consumed", async () => {
     // given
-    const { internals, task } = await queueResume()
-    const log = spyOn(shared, "log")
+    const { internals, task, log } = await queueResume()
     spyOn(internals, "startResumedTask").mockImplementation(async () => {
       task.pendingResume = undefined
       throw new Error("admission-dispatch-failure")

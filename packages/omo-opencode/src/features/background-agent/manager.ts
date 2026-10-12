@@ -1408,7 +1408,7 @@ The fallback retry session is now created and can be inspected directly.
       }
       await this.startResumedTask(existingTask, input, resumeSnapshot, concurrencyKey)
     }).catch((error: unknown) => {
-      log("[background-agent] Queued resume was not admitted:", { taskId: existingTask.id, error: error instanceof Error ? error.message : String(error) })
+      this.logger("[background-agent] Queued resume was not admitted:", { taskId: existingTask.id, error: error instanceof Error ? error.message : String(error) })
       if (this.shutdownTriggered || existingTask.status !== "pending" || existingTask.pendingResume !== resumeToken) return
       existingTask.pendingResume = undefined
       this.restoreTaskAfterSkippedResume(existingTask, resumeSnapshot, "unavailable")
