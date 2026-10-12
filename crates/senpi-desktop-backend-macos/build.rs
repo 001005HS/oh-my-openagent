@@ -64,7 +64,13 @@ fn build_helper(out_dir: &Path, binary: &Path) -> PathBuf {
             println!(
                 "cargo:warning=capture helper clang build unavailable ({outcome:?}); the SCK worker is disabled and screencapture stays the capture path"
             );
-            out_dir.join("senpi-desktop-capture-helper.absent")
+            // An empty file makes `include_bytes!` yield `&[]`, which the
+            // crate reads as "no helper staged".
+            let absent = out_dir.join("senpi-desktop-capture-helper.absent");
+            if let Err(error) = std::fs::write(&absent, b"") {
+                println!("cargo:warning=cannot write the empty helper marker: {error}");
+            }
+            absent
         },
     }
 }
