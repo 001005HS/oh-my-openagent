@@ -101,8 +101,10 @@ impl Backend for Win32Backend {
         Win32Backend::capabilities(self)
     }
 
+    /// Every monitor, whatever the session's selector, so a per-call display
+    /// target can name one the session does not capture by default.
     fn displays(&mut self) -> CoreResult<Vec<DesktopDisplay>> {
-        self.capture.displays()
+        crate::capture::all_displays()
     }
 
     fn windows(&mut self) -> CoreResult<Vec<DesktopWindow>> {

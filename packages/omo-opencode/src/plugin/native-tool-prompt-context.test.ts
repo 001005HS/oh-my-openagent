@@ -10,12 +10,13 @@ import { interactive_bash } from "../tools/interactive-bash/tools"
 
 afterEach(clearSisyphusRuntimePromptContext)
 
-function createHarness(failSessionRead = false) {
+function createHarness(sessionRead: "ok" | "throw" | "malformed" = "ok") {
   const sessionPermissions = new Map<string, Array<{ permission: string; pattern: string; action: "allow" | "ask" | "deny" }>>()
   const ctx = {
     directory: "/workspace",
     client: { session: { get: async ({ path }: { path: { id: string } }) => {
-      if (failSessionRead) throw new Error("Session metadata unavailable")
+      if (sessionRead === "throw") throw new Error("Session metadata unavailable")
+      if (sessionRead === "malformed") return { data: { permission: "invalid" } }
       return { data: { permission: sessionPermissions.get(path.id) ?? [] } }
     } } },
   } as unknown as PluginInput
@@ -110,8 +111,8 @@ test("a scoped session exception keeps the tool visible as OpenCode does", async
   expect(output.system[0]).toContain("- read: HOST_SCOPED_READ")
 })
 
-test("unavailable session metadata retains the last tool context without failing the turn", async () => {
-  const { api } = createHarness(true)
+test.each(["throw", "malformed"] as const)("session metadata %s retains the last tool context without failing the turn", async (mode) => {
+  const { api } = createHarness(mode)
   const config: Parameters<NonNullable<typeof api.config>>[0] = {}
   await api.config!(config)
   const previous = config.agent!.oracle!.prompt!

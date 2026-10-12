@@ -18,8 +18,16 @@ import type { CreatedHooks } from "./create-hooks"
 import type { Managers } from "./create-managers"
 import { reconcileNativeModelPrompts } from "./agents/native-model-prompt"
 import type { NativePromptContext } from "./agents/native-prompt-frame"
-import type { Session as SessionV2 } from "@opencode-ai/sdk/v2"
+import { z } from "zod"
 import { log } from "./shared/logger"
+
+const sessionToolPermissionsSchema = z.object({
+  permission: z.array(z.object({
+    permission: z.string(),
+    pattern: z.string(),
+    action: z.enum(["allow", "ask", "deny"]),
+  })).optional(),
+})
 
 export function createPluginInterface(args: {
   ctx: PluginContext
@@ -99,8 +107,9 @@ export function createPluginInterface(args: {
           return undefined
         })
         if (!response?.data) return undefined
-        const session = response.data as typeof response.data & Pick<SessionV2, "permission">
-        return (session.permission ?? []).map((rule) => ({
+        const session = sessionToolPermissionsSchema.safeParse(response.data)
+        if (!session.success) return undefined
+        return (session.data.permission ?? []).map((rule) => ({
           pattern: rule.permission, permission: rule.action, scope: rule.pattern,
         }))
       },
