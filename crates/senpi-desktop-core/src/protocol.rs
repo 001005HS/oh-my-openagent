@@ -148,7 +148,7 @@ pub struct EngineErrorData {
     pub hint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission: Option<PermissionDeniedData>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, rename = "captureUnavailable", skip_serializing_if = "Option::is_none")]
     pub capture_unavailable: Option<CaptureUnavailableData>,
 }
 
