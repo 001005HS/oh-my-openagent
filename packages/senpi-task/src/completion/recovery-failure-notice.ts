@@ -12,21 +12,32 @@ const REASONS: Readonly<Record<string, string>> = {
   capacity: "there was no room to resume it before automatic retries ended",
 }
 
+const ACTIONS: Readonly<Record<string, string>> = {
+  model_unavailable: "Choose an available model or category, then submit a new task with the remaining work.",
+  tools_unavailable: "Enable the required tools, then submit a new task with the remaining work.",
+  spawn_spec_unavailable: "Submit a new task with the remaining work and its launch instructions.",
+  transcript_unavailable: "Submit a new task with the remaining work and any saved findings you still have.",
+  host_incompatible: "Update OmO to a compatible version and restart it, then submit the remaining work.",
+  store_index_unavailable: "Restore access and permissions to the task data directory, then submit the remaining work.",
+  isolated_not_revivable: "Inspect the retained checkout and its changes before submitting the remaining work in a new task.",
+}
+
 /** Plain recovery failure shared by the record and its one terminal completion. Raw causes stay in events. */
 export function recoveryFailureNotice(
   record: Pick<TaskRecord, "description" | "task_summary" | "revival_deferred_reason" | "suspension_reason">,
   confirmedStop: boolean,
 ): string {
   const task = record.description ?? record.task_summary ?? "Background task"
-  const reason = REASONS[record.revival_deferred_reason ?? record.suspension_reason ?? ""]
+  const cause = record.revival_deferred_reason ?? record.suspension_reason ?? ""
+  const reason = REASONS[cause]
     ?? "its interrupted session could not be reopened after automatic retries"
-  const retry = `Retry "${task}" with the task tool using its original request.`
+  const action = ACTIONS[cause] ?? `Retry "${task}" with the task tool using its original request.`
   return userActionNotice(
     confirmedStop
       ? `"${task}" stopped because ${reason}.`
       : `"${task}" could not be recovered because ${reason}. The earlier run may still be running; stopping it is being retried automatically.`,
     confirmedStop
-      ? retry
-      : `Check whether it already changed anything before retrying, to avoid doing the work twice. ${retry}`,
+      ? action
+      : `Check whether it already changed anything before starting another attempt, to avoid doing the work twice. ${action}`,
   )
 }

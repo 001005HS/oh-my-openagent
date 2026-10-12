@@ -7,7 +7,8 @@ import {
   type HostSessionReattachRefused,
 } from "./reattach"
 import type { HostParkReason, HostSessionCommand } from "./session-client"
-import { armRecoveryBound, withinBound, type RecoveryBound, type TransportRecoveryOptions } from "./transport-recovery"
+import { log } from "@oh-my-opencode/utils"
+import { armRecoveryBound, isTransportRecoveryExpired, withinBound, type RecoveryBound, type TransportRecoveryOptions } from "./transport-recovery"
 
 export interface HandleRecoveryHost {
   readonly taskId: string
@@ -136,11 +137,22 @@ export function createHandleRecovery(host: HandleRecoveryHost): HandleRecovery {
       },
       boundedReattach(reattach, bound),
     )
-      .catch((error: unknown) => host.continuationFailed(error))
-      .finally(() => {
+      .catch((error: unknown) => {
+        log("senpi-task host session reattach continuation failed", { taskId: host.taskId, error: String(error) })
+        if (isTransportLossError(error) || isTransportRecoveryExpired(error)) {
+          if (host.alive() && !host.stopRequested()) host.park("daemon_unavailable")
+        } else host.continuationFailed(error)
+      })
+      .finally(async () => {
         bound.settle()
-        reattaching = undefined
         host.recoveryEnded(adopted)
+        // A parked adopted port is no longer owned by this handle. Leave the session intact for
+        // contextual revival, but release this connection before another handle reattaches.
+        if (adopted && !host.alive() && !host.stopRequested()) {
+          try { await host.port().detach() }
+          catch (error) { log("senpi-task parked recovery detach failed", { taskId: host.taskId, error: String(error) }) }
+        }
+        reattaching = undefined
       })
   }
 

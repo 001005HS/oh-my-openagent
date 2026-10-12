@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**Interrupted background tasks recover without crash warnings.** Tasks that cannot reconnect resume automatically from their saved conversation and launch instructions within the existing retry budget. If recovery still fails, one notice names the task, explains why, and tells you how to retry; technical crash details stay in logs. ([#10023](https://github.com/code-yeongyu/oh-my-openagent/issues/10023))
+**Interrupted background tasks recover without crash warnings.** Tasks that cannot reconnect resume automatically from their saved conversation and launch instructions within the existing retry budget. If recovery still fails, one notice names the task and its handle, explains why, and gives the corrective action for that cause; technical crash details stay in logs. Finished tasks with undelivered queued messages ask you to resend those messages rather than repeat finished work. Recovery completions retain partial output, the transcript tail, and a file pointer for large results. ([#10023](https://github.com/code-yeongyu/oh-my-openagent/issues/10023))
 
 **Computer use can zoom into part of a screenshot at full detail without changing where clicks land.** `zoom(region)` on the desktop, a window or a display captures that region again at native resolution, while later clicks and typing still use the coordinates of the last full screenshot. ([#9651](https://github.com/code-yeongyu/oh-my-openagent/issues/9651))
 

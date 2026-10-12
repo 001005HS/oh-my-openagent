@@ -70,7 +70,7 @@ describe("live-parent suspended child recovery (#9350)", () => {
     expect(record?.residency_state).toBe("disposed")
     expect(f.messages).toHaveLength(1)
     expect(f.messages[0]?.content).toContain("may still be running")
-    expect(f.messages[0]?.content).toMatch(/Check.*before retrying/)
+    expect(f.messages[0]?.content).toMatch(/Check.*before starting another attempt/)
     expect(f.messages[0]?.content).not.toMatch(/suspended_unresumable|host_unreachable/)
     const next = await f.start()
     expect(f.store.load(next)?.status).toBe("running")

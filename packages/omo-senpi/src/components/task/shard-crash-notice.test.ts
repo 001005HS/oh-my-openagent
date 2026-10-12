@@ -1,19 +1,14 @@
 import { describe, expect, test } from "bun:test"
 
 import type { ReattachOutcome } from "@oh-my-opencode/senpi-task"
-import { createHostNotices } from "./host-execution-mode"
 import { createShardCrashNotices, SHARD_CRASH_DONE_TOKEN, SHARD_CRASH_TOKEN } from "./shard-crash-notice"
-import { SOCKET_A, uiRecorder } from "./shard-crash-notice.test-support"
+import { SOCKET_A } from "./shard-crash-notice.test-support"
 
 function harness() {
-  const notices = createHostNotices(() => undefined)
-  const { ui, notified } = uiRecorder()
   const logs: Array<{ readonly event: string; readonly facts: Record<string, unknown> }> = []
   const crashReads: string[] = []
   const events = createShardCrashNotices({
     agentDir: "/tmp/dh-t10-agent",
-    notices,
-    ui: () => ui,
     log: (event, facts) => logs.push({ event, facts }),
     readCrash: (_agentDir, socket, instanceId) => {
       crashReads.push(`${socket}#${instanceId}`)
@@ -24,19 +19,17 @@ function harness() {
     events.onTransportLost({ taskId, socket: SOCKET_A, instanceId, boundTaskIds, turnWasInFlight })
   const settle = (taskId: string, outcome: ReattachOutcome) =>
     events.onReattachOutcome({ taskId, socket: SOCKET_A, outcome })
-  return { notices, notified, logs, crashReads, lose, settle }
+  return { logs, crashReads, lose, settle }
 }
 
 describe("silent crash episode accounting (#10023)", () => {
-  test("full reattach emits zero UI or task_output notices and logs the crash and counts", () => {
+  test("full reattach logs the crash and counts", () => {
     const f = harness()
     f.lose("st_a", "gen-1", ["st_a", "st_b"])
     f.lose("st_b")
     f.settle("st_a", "continued")
     expect(f.logs.filter((entry) => entry.event === SHARD_CRASH_DONE_TOKEN)).toHaveLength(0)
     f.settle("st_b", "resumed")
-    expect(f.notices.list()).toEqual([])
-    expect(f.notified).toEqual([])
     expect(f.crashReads).toEqual([`${SOCKET_A}#gen-1`])
     expect(f.logs).toEqual([
       { event: SHARD_CRASH_TOKEN, facts: expect.objectContaining({ supervisorPid: 4242, cause: "SIGSEGV", members: 2, socket: SOCKET_A, instanceId: "gen-1" }) },
@@ -51,8 +44,6 @@ describe("silent crash episode accounting (#10023)", () => {
     f.settle("st_b", "attached")
     f.settle("st_c", "cancelled")
     f.settle("st_a", "lost")
-    expect(f.notices.list()).toEqual([])
-    expect(f.notified).toEqual([])
     expect(f.logs.filter((entry) => entry.event === SHARD_CRASH_DONE_TOKEN)).toEqual([
       { event: SHARD_CRASH_DONE_TOKEN, facts: expect.objectContaining({ reattached: 1, lost: 1, cancelled: 1 }) },
     ])
@@ -67,15 +58,12 @@ describe("silent crash episode accounting (#10023)", () => {
     f.settle("st_a", "continued")
     expect(f.crashReads).toEqual([`${SOCKET_A}#gen-1`, `${SOCKET_A}#gen-2`])
     expect(f.logs.filter((entry) => entry.event === SHARD_CRASH_TOKEN)).toHaveLength(2)
-    expect(f.notices.list()).toEqual([])
-    expect(f.notified).toEqual([])
   })
 
   test("idle-child reattach also stays silent", () => {
     const f = harness()
     f.lose("st_a", "gen-1", ["st_a"], false)
     f.settle("st_a", "resumed")
-    expect(f.notices.list()).toEqual([])
-    expect(f.notified).toEqual([])
+    expect(f.logs).toEqual([])
   })
 })

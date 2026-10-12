@@ -167,12 +167,10 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     },
     turnResumed: () => listeners.emitTurnResumed(),
     endLost: () => endSession({ kind: "transport_gone" }),
-    // Failed continuation belongs to the same bounded lifecycle recovery as failed reattach.
-    // Do not settle an error turn first: that would notify the parent before respawn is attempted.
+    // Transport failures park in recovery; a prompt rejection keeps its own actionable cause.
     continuationFailed: (error) => {
-      log("senpi-task host session reattach continuation failed", { taskId, error: String(error) })
       if (intent === "running" && !stop.requested() && !detached && outcome === undefined)
-        park({ sessionId: session.routingId, sessionPath: session.sessionPath, reason: "daemon_unavailable" })
+        settleTurn(promptFailureOutcome(error))
     },
     park: (reason) => park({ sessionId: session.routingId, sessionPath: session.sessionPath, reason }),
   })

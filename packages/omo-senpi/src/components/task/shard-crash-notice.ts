@@ -11,8 +11,6 @@ import {
 } from "@oh-my-opencode/senpi-task"
 
 import { hostDaemonDir } from "../../../../senpi-task/src/runners/rpc-host/host-daemon-dir"
-import type { HostNotices } from "./host-execution-mode"
-import type { CapturedUi } from "./runtime-context"
 
 // Generation-keyed crash accounting is diagnostic only. Exhausted child recovery reaches the
 // parent through the existing exactly-once completion notifier, never a second crash warning.
@@ -27,8 +25,6 @@ export interface ShardCrashFacts {
 
 export interface ShardCrashNoticeDeps {
   readonly agentDir: string
-  readonly notices: HostNotices
-  readonly ui: () => CapturedUi | undefined
   readonly now?: () => number
   readonly readCrash?: (agentDir: string, socket: string, instanceId: string, now: number) => ShardCrashFacts
   readonly log?: (event: string, facts: Record<string, unknown>) => void

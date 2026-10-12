@@ -212,7 +212,7 @@ export function createEngineHostRuntime(
     env,
     notices,
     shardEvents: createShardCrashNotices({
-      agentDir, notices, ui: () => runtime.ui?.(),
+      agentDir,
       ...(overrides.crashLog === undefined ? {} : { log: overrides.crashLog }),
     }),
     ...(overrides.ensureDaemon === undefined ? {} : { ensureDaemon: overrides.ensureDaemon }),

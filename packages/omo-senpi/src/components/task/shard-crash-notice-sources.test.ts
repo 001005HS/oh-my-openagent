@@ -14,7 +14,7 @@ import {
   rootResolution,
 } from "../../../../senpi-task/src/runners/rpc-host.test-support"
 import { buildProcessChildRunner, buildRespawnRunner, type RunnerBuildContext } from "./engine-runners"
-import { createEngineHostRuntime, createHostNotices } from "./host-execution-mode"
+import { createEngineHostRuntime } from "./host-execution-mode"
 import { TaskRuntimeContext } from "./runtime-context"
 import { createShardCrashNotices, readNewestHostCrash, SHARD_CRASH_DONE_TOKEN, SHARD_CRASH_TOKEN } from "./shard-crash-notice"
 import { SOCKET_A, uiRecorder } from "./shard-crash-notice.test-support"
@@ -52,12 +52,10 @@ describe("host runner feeding the crash notice", () => {
   test("#given two children mid-turn on one host #when it recovers #then logs count both and no notice is emitted", async () => {
     // given
     const host = await fakeHost()
-    const notices = createHostNotices(() => undefined)
     const closed = Promise.withResolvers<void>()
-    const { ui, notified } = uiRecorder()
     const logs: Array<{ event: string; facts: Record<string, unknown> }> = []
     const events = createShardCrashNotices({
-      agentDir: join(tmpdir(), "dh-t10-no-records"), notices, ui: () => ui,
+      agentDir: join(tmpdir(), "dh-t10-no-records"),
       log: (event, facts) => {
         logs.push({ event, facts })
         if (event === SHARD_CRASH_DONE_TOKEN) closed.resolve()
@@ -77,8 +75,6 @@ describe("host runner feeding the crash notice", () => {
     await closed.promise
 
     // then
-    expect(notices.list()).toEqual([])
-    expect(notified).toEqual([])
     expect(logs).toMatchObject([
       { event: SHARD_CRASH_TOKEN, facts: { members: 2 } },
       { event: SHARD_CRASH_DONE_TOKEN, facts: { reattached: 2, lost: 0, cancelled: 0 } },
