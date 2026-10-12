@@ -80,6 +80,7 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
     switches: () => resolveMemorySettings(options.loadConfig({ cwd: options.cwd() }).config.memory).project_scope,
     fallbackCwd: options.cwd,
     env: options.env,
+    ...(options.logger === undefined ? {} : { logger: options.logger }),
   })
 
   const recallWiring = createMemoryRecallWiring({

@@ -12,7 +12,7 @@ import {
 
 import { join } from "node:path"
 
-import type { SenpiExtensionAPI } from "../../extension/types"
+import type { ComponentLogger, SenpiExtensionAPI } from "../../extension/types"
 import type { MemoryIdentityContext } from "./context"
 import { grantProjectMemoryRead, revokeProjectMemoryReads } from "./project-memory-grants"
 import { isRecord, sessionIdFrom } from "./wiring-context"
@@ -33,6 +33,7 @@ export interface ProjectMemoryNudgeOptions {
   readonly switches: () => ProjectMemorySwitches
   readonly fallbackCwd: () => string
   readonly env?: Record<string, string | undefined>
+  readonly logger?: Pick<ComponentLogger, "warn">
 }
 
 interface SessionScope {
@@ -129,8 +130,12 @@ export function createProjectMemoryScope(options: ProjectMemoryNudgeOptions): Pr
     let notes: readonly RecallDocument[]
     try {
       notes = await notesOf(project)
-    } catch {
+    } catch (error) {
       // Advice only: a project repo that cannot be read leaves the tool result untouched and is retried on the next touch.
+      options.logger?.warn("omo-senpi project memory nudge skipped", {
+        project: project.projectDir,
+        error: error instanceof Error ? error.message : String(error),
+      })
       return undefined
     }
     scope.nudged.add(project.identity.id)
