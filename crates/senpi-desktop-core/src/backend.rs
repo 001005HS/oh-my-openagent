@@ -131,6 +131,27 @@ pub trait Backend: Send {
         Ok(())
     }
     fn key_chord(&mut self, target: &Target, keys: &[KeyName], mode: DeliveryMode) -> CoreResult<()>;
+    /// Native press/release around a session-owned interruptible wait.
+    /// Backends without bounded input refuse rather than synthesizing clicks.
+    fn hold_keys(
+        &mut self,
+        _target: &Target,
+        _keys: &[KeyName],
+        _mode: DeliveryMode,
+        _control: &crate::holds::HoldControl<'_>,
+    ) -> CoreResult<()> {
+        Err(DesktopError::input_failed("bounded key holds are unavailable on this backend"))
+    }
+
+    fn hold_mouse(
+        &mut self,
+        _target: &Target,
+        _hold: &crate::holds::MouseHold<'_>,
+        _mode: DeliveryMode,
+        _control: &crate::holds::HoldControl<'_>,
+    ) -> CoreResult<()> {
+        Err(DesktopError::input_failed("bounded mouse holds are unavailable on this backend"))
+    }
     fn raise_window(&mut self, id: &str) -> CoreResult<()>;
 
     /// The immediate children of `window`'s menu at `path` (empty = the menu

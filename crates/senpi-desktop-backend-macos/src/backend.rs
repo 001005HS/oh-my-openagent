@@ -166,6 +166,22 @@ impl Backend for MacosBackend {
         self.input.key_chord(target, keys, mode, &self.capture)
     }
 
+    fn hold_keys(
+        &mut self, target: &Target, keys: &[KeyName], mode: DeliveryMode,
+        control: &senpi_desktop_core::holds::HoldControl<'_>,
+    ) -> CoreResult<()> {
+        Self::require_input_permission()?;
+        self.input.hold_keys(target, keys, mode, &self.capture, control)
+    }
+
+    fn hold_mouse(
+        &mut self, target: &Target, hold: &senpi_desktop_core::holds::MouseHold<'_>,
+        mode: DeliveryMode, control: &senpi_desktop_core::holds::HoldControl<'_>,
+    ) -> CoreResult<()> {
+        Self::require_input_permission()?;
+        self.input.hold_mouse(target, hold, mode, &self.capture, control)
+    }
+
     fn menu_items(&mut self, window: &DesktopWindow, path: &[String]) -> CoreResult<Vec<MenuItem>> {
         Self::require_input_permission()?;
         crate::ax::menus::items(window, path)

@@ -208,6 +208,28 @@
         "type": "null"
       }
     },
+    "holdKeys": {
+      "effect": "exec",
+      "hostOnly": false,
+      "testOnly": false,
+      "params": {
+        "$ref": "#/definitions/HoldKeysParams"
+      },
+      "result": {
+        "type": "null"
+      }
+    },
+    "holdMouse": {
+      "effect": "exec",
+      "hostOnly": false,
+      "testOnly": false,
+      "params": {
+        "$ref": "#/definitions/HoldMouseParams"
+      },
+      "result": {
+        "type": "null"
+      }
+    },
     "raiseWindow": {
       "effect": "exec",
       "hostOnly": false,
@@ -1617,6 +1639,100 @@
       ],
       "additionalProperties": false
     },
+    "HoldKeysParams": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "duration": {
+          "type": "number",
+          "format": "double"
+        },
+        "opts": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PointerOptions"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "target",
+        "keys",
+        "duration"
+      ],
+      "description": "`holdKeys`: keys are always released before the request settles.",
+      "additionalProperties": false
+    },
+    "HoldMouseParams": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string"
+        },
+        "x": {
+          "type": "number",
+          "format": "double"
+        },
+        "y": {
+          "type": "number",
+          "format": "double"
+        },
+        "duration": {
+          "type": "number",
+          "format": "double"
+        },
+        "button": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "keys": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "frameId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "opts": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PointerOptions"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "target",
+        "x",
+        "y",
+        "duration"
+      ],
+      "description": "`holdMouse`: coordinates address the latest full capture, never a zoom.",
+      "additionalProperties": false
+    },
     "RaiseWindowParams": {
       "type": "object",
       "properties": {
@@ -2237,6 +2353,8 @@
         "scroll",
         "typeText",
         "keyChord",
+        "holdKeys",
+        "holdMouse",
         "raiseWindow",
         "menus.items",
         "menus.select",

@@ -27,6 +27,8 @@ export const ENGINE_METHODS = [
 	"scroll",
 	"typeText",
 	"keyChord",
+	"holdKeys",
+	"holdMouse",
 	"raiseWindow",
 	"menus.items",
 	"menus.select",

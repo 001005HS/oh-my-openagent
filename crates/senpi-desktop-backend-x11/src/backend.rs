@@ -191,6 +191,30 @@ impl<S: XServer + Send, I: InputServer + Send> Backend for X11Backend<S, I> {
         self.input()?.key_chord(target, keys, mode)
     }
 
+    fn hold_keys(
+        &mut self, target: &Target, keys: &[KeyName], mode: DeliveryMode,
+        control: &senpi_desktop_core::holds::HoldControl<'_>,
+    ) -> CoreResult<()> {
+        self.focus_restore_owner = foreground_owner(target, mode);
+        self.pointer_restore_owner = None;
+        self.input()?.hold_keys(target, keys, mode, control)
+    }
+
+    fn hold_mouse(
+        &mut self, target: &Target, hold: &senpi_desktop_core::holds::MouseHold<'_>,
+        mode: DeliveryMode, control: &senpi_desktop_core::holds::HoldControl<'_>,
+    ) -> CoreResult<()> {
+        self.focus_restore_owner = foreground_owner(target, mode);
+        self.pointer_restore_owner = None;
+        let (result, cursor) = {
+            let input = self.input()?;
+            let result = input.hold_mouse(target, hold, mode, control);
+            (result, input.last_pointer_motion())
+        };
+        self.pointer_restore_owner = cursor;
+        result
+    }
+
     fn raise_window(&mut self, id: &str) -> CoreResult<()> {
         self.window(id)?;
         self.input()?.raise_window(id)

@@ -5,6 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::protocol::RequestId;
+pub use crate::protocol_holds::{HoldKeysParams, HoldMouseParams};
 use crate::types::{AxQuery, AxSnapshotOptions, CaptureCaps, CaptureRegion, DesktopPoint, PointerOptions};
 
 /// Parameters of a method that takes none: `{}`.
