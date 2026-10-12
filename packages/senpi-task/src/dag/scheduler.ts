@@ -616,7 +616,9 @@ async function admitFrontier(context: SchedulerContext): Promise<boolean> {
     }
     const launch = (nodeIds: readonly DagNodeId[]): void => {
       for (const nodeId of nodeIds) {
-        admissionOrder.push(nodeId)
+        // One start per node at a time; the order records each node once, at its first admission.
+        if (inFlight.has(nodeId)) continue
+        if (!admissionOrder.includes(nodeId)) admissionOrder.push(nodeId)
         const started = (async () => {
           let settled: PromiseSettledResult<OwnedStartResult>
           try {
@@ -675,7 +677,7 @@ async function admitFrontier(context: SchedulerContext): Promise<boolean> {
       resolveAdmissionIdle(context)
     }
     if (context.suspended || context.cancellationStarted) return false
-    const nextDenied = [...new Set(admissionOrder)].filter((nodeId) => parked.has(nodeId))
+    const nextDenied = admissionOrder.filter((nodeId) => parked.has(nodeId))
     context.pendingAdmission.push(...nextDenied)
     // A fold during the batch may have freed a slot for a parked node: probe again at once.
     if (folded) continue

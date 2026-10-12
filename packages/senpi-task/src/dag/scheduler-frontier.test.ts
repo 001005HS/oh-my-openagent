@@ -622,6 +622,60 @@ describe("DAG scheduler folds settled children while admission is busy (#8934)",
     expect((await running).status).toBe("completed")
   })
 
+  test("#given a node denied on every probe #when two folds land while a slow start keeps the batch open #then each fold re-probes it exactly once", async () => {
+    // given - a and b run, p's lease stays contended, slow's start hangs.
+    const hostBusy = deferred<void>()
+    const pAttempts = new Map<number, ReturnType<typeof deferred<void>>>()
+    const pAttempt = (n: number) => {
+      let signal = pAttempts.get(n)
+      if (signal === undefined) {
+        signal = deferred<void>()
+        pAttempts.set(n, signal)
+      }
+      return signal
+    }
+    let leaseContended = true
+    let pDenials = 0
+    const manager = new FrontierFakeManager({
+      beforeStart: (nodeId, attempt) => (nodeId === "slow" && attempt === 1 ? hostBusy.promise : undefined),
+      leaseDenied: (nodeId) => {
+        if (nodeId !== "p" || !leaseContended) return false
+        pDenials += 1
+        pAttempt(pDenials).resolve()
+        return true
+      },
+    })
+    // The fake models lease acquisition as one macrotask; the next macrotask runs after the denial
+    // has been returned and parked by the scheduler, which is all microtasks from there.
+    const deniedAndParked = async (n: number) => {
+      await Promise.race([pAttempt(n).promise, timeout(`p's denial #${n}`)])
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+    const { scheduler } = frontierFixture(definition([node("a"), node("b"), node("p"), node("slow")]), manager)
+    const running = scheduler.run()
+    await Promise.race([Promise.all([manager.whenStarted("a"), manager.whenStarted("b")]), timeout("a and b to start")])
+    await deniedAndParked(1)
+
+    // when - two folds, each after the previous re-probe was seen.
+    manager.complete("a")
+    await deniedAndParked(2)
+    manager.complete("b")
+    await deniedAndParked(3)
+
+    // then - one probe per fold: never two concurrent starts of the same node.
+    const pProbes = manager.attempts.filter((attempt) => attempt === "p").length
+    expect(pProbes).toBe(3)
+
+    // cleanup
+    leaseContended = false
+    hostBusy.resolve()
+    for (const nodeId of ["p", "slow"]) {
+      await Promise.race([manager.whenStarted(nodeId), timeout(`${nodeId} to start during cleanup`)])
+      manager.complete(nodeId)
+    }
+    expect((await running).status).toBe("completed")
+  })
+
   test("#given admission re-probing a contended lease #when an attached child completes #then its node folds while the lease is still denied", async () => {
     // given - b's admission lease stays contended; a is attached and running.
     let leaseContended = true
