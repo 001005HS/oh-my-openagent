@@ -237,6 +237,13 @@ function registerTaskTools(
     ...createTaskSendTool({
       manager,
       resolveCallerSessionId,
+      deliverLateOutcome: (result) => {
+        const text = result.content.map((part) => (part.type === "text" ? part.text : "")).join("\n")
+        pi.sendMessage(
+          { customType: "senpi-task.send-outcome", content: `task_send outcome: ${text}`, display: false, details: result.details },
+          { triggerTurn: true, deliverAs: "steer" },
+        )
+      },
       teamRouting: { service: teamService, from: TEAM_LEAD_SENTINEL, ...(resolveDefaultTeamRunId !== undefined ? { resolveDefaultTeamRunId } : {}) },
     }),
   })

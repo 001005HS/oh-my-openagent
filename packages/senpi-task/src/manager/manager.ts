@@ -77,6 +77,11 @@ import type {
   TaskManagerOptions,
 } from "./types"
 import { describeStartFailure } from "./start-failure"
+import { settledWithin } from "./settled-within"
+
+// A start the task host answers this fast (a dead host's refusal, an in-process child) is reported
+// in the tool result; a slower one returns `starting` and its outcome arrives on the record (#10042).
+const START_REPORT_WINDOW_MS = 250
 import { failStrandedHandoff, type StrandedHandoffFailure } from "./fail-stranded-handoff"
 
 type PreparedIsolation = Extract<IsolationPreparation, { readonly ok: true }>
@@ -472,7 +477,22 @@ class TaskManagerImpl implements TaskManager {
     }
 
     if (lease !== undefined) {
-      const launched = await this.#launch(context)
+      const launching = this.#launch(context)
+      const reported = await settledWithin(launching, START_REPORT_WINDOW_MS)
+      if (!reported.settled) {
+        launching.catch((error: unknown) => {
+          log("senpi-task start still admitting failed", { taskId: finalRecord.task_id, error: String(error) })
+        })
+        return {
+          kind: "started",
+          task_id: finalRecord.task_id,
+          status: "running",
+          starting: true,
+          name: registration.name,
+          ...startParts,
+        }
+      }
+      const launched = reported.value
       if (!launched.ok) {
         return {
           kind: "start_failed",
