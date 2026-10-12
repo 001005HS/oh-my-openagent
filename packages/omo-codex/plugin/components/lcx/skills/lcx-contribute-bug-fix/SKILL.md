@@ -42,6 +42,7 @@ For `code-yeongyu/lazycodex`, create an issue (never a PR) that includes:
 3. Materialize the latest sources under `LAZYCODEX_SOURCE_ROOT="${LAZYCODEX_SOURCE_ROOT:-${TMPDIR:-/tmp}/lazycodex-sources}"`, then decide the target repository. Sync both checkouts on every run and compare them before choosing. Validate cached checkouts before reuse so an incomplete `.git` directory cannot route the fix to the wrong repo:
 
 ```bash
+# The default checkout cache is per-task under TMPDIR=$RUN_TMP.
 LAZYCODEX_SOURCE_ROOT="${LAZYCODEX_SOURCE_ROOT:-${TMPDIR:-/tmp}/lazycodex-sources}"
 mkdir -p "$LAZYCODEX_SOURCE_ROOT"
 
@@ -90,7 +91,7 @@ sync_latest_source openai/codex "$LAZYCODEX_SOURCE_ROOT/chatgpt-subscription-sou
 
 ```bash
 TARGET_REPO="code-yeongyu/lazycodex" # or openai/codex
-WORK_ROOT="$RUN_TMP"
+WORK_ROOT="${RUN_TMP:?apply ultrawork Task resources first}"
 gh repo clone "$TARGET_REPO" "$WORK_ROOT/repo" -- --depth=1
 cd "$WORK_ROOT/repo"
 BASE_BRANCH="$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')"
@@ -157,6 +158,7 @@ gh pr create --repo openai/codex --base "$BASE_BRANCH" --head "$GH_USER:$BRANCH_
 ```bash
 cd /
 git -C "$WORK_ROOT/repo" worktree remove "$WORK_ROOT/worktree"
+unset TMPDIR NODE_COMPILE_CACHE BUN_RUNTIME_TRANSPILER_CACHE_PATH
 find "$WORK_ROOT" -mindepth 1 -maxdepth 1 -exec rm -r -- {} +
 rmdir "$WORK_ROOT"
 test ! -e "$WORK_ROOT" && printf 'cleanup: worktree and caches REMOVED\n'

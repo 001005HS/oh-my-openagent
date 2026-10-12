@@ -35,9 +35,10 @@ are named in its prompt and read there, not here.
    the notepad.
 
 ## cleanup-step
-5. CLEANUP: Apply Task resources directory teardown at task end.
-   Before reporting, tear down QA processes, sessions, ports, containers
-   and temp paths; note their read-back receipts beside the artifact.
+5. CLEANUP: Follow the creation-time resource todo rule in Bootstrap section 3.
+   Before recording QA, tear down QA processes, sessions, ports, containers,
+   scripts and QA temp paths inside `$RUN_TMP`; record read-back receipts.
+   Remove the run root and eligible worktrees at task end under Task resources.
 
 ## evidence-step
 8. Evidence captured on the same commit and environment stays valid;
