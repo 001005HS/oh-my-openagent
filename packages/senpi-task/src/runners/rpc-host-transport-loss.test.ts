@@ -178,7 +178,7 @@ describe("a child whose host transport drops", () => {
     expect(done.error_message).toBeUndefined()
   })
 
-  test("#given a message queued for a parked child #when the respawned run finishes before that message is acknowledged #then the result keeps the answer, says the message may not have arrived and how to resend it, and nothing stays queued", async () => {
+  test("#given a message queued for a parked child #when the respawned run finishes before that message is acknowledged #then the result keeps the answer and says the message is still queued, and the next task_send delivers it first", async () => {
     // given
     const { world, parent, clock, live } = await laneOf(1)
     await parent.startChildren(1)
@@ -193,22 +193,31 @@ describe("a child whose host transport drops", () => {
     const sent = await runTaskSend(parent.manager, { to: child.task_id, message: "one more thing" }, parent.sessionId)
     expect(sent.details).toMatchObject({ kind: "queued" })
 
-    // when - the respawned child gets the message but the run ends before the host acknowledges it
+    // when - the respawned run ends before the host acknowledges the queued message
     world.host.withholdReply("steer")
-    const steered = world.host.waitForCommand("steer")
+    const firstSteer = world.host.waitForCommand("steer")
     live.advance(5_000)
-    await steered
+    await firstSteer
     world.host.completeTurn(routingOf(world, child), "done before the message landed")
 
     // then
     const done = await settled(parent, child.task_id)
     expect(done.status).toBe("completed")
     expect(done.final_response).toBe("done before the message landed")
-    expect(done.error_message).toContain("may not have reached it")
-    expect(done.error_message).toContain("task_send")
-    expect(done.pending_steering).toBeUndefined()
-    await live.until(() => live.messages.some((message) => JSON.stringify(message).includes("may not have reached it")))
+    expect(done.pending_steering?.map((entry) => entry.message)).toEqual(["one more thing"])
+    await live.until(() => live.messages.some((message) => JSON.stringify(message).includes(`id:${child.task_id} `)))
+    const results = live.messages.filter((message) => JSON.stringify(message).includes(`id:${child.task_id} `))
+    expect(results).toHaveLength(1)
+    expect(JSON.stringify(results[0])).toContain("still queued")
+    expect(JSON.stringify(results[0])).toContain("task_send")
+
+    // and the next continuation delivers the queued message first, in order
     world.host.allowReply("steer")
+    const continued = world.host.waitForCommand("prompt")
+    await runTaskSend(parent.manager, { to: child.task_id, message: "and this" }, parent.sessionId)
+    const prompt = JSON.stringify(await continued)
+    expect(prompt.indexOf("one more thing")).toBeGreaterThanOrEqual(0)
+    expect(prompt.indexOf("one more thing")).toBeLessThan(prompt.indexOf("and this"))
   })
 
   test("#given several children on one host #when the host crashes, comes back, and never accepts the continuation #then each parks with its lease released, nothing reports reattached, and after the recovery budget each ends with one plain notice", async () => {
