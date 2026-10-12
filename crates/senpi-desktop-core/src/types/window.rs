@@ -7,7 +7,7 @@ use super::DisplaySelector;
 /// `is_on_screen` distinguishes an on-Space window from a same-app window on
 /// another Space: both resolve as capture targets, but only an on-screen one
 /// is user-visible right now.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DesktopWindow {
     /// Backend-defined opaque window id, valid as a capture target while the
@@ -102,4 +102,15 @@ pub struct PointerOptions {
 pub struct DesktopPoint {
     pub x: f64,
     pub y: f64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DesktopWindow;
+
+    #[test]
+    fn desktop_window_retains_the_eq_trait_contract() {
+        fn require_eq<T: Eq>() {}
+        require_eq::<DesktopWindow>();
+    }
 }
