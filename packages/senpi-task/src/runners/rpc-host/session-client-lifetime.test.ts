@@ -79,7 +79,7 @@ describe("HostSessionClient connection lifetime", () => {
       expect(firstDisconnected).toBe(true)
       continueAttach.resolve()
       const attached = await pending
-      expect(attached.sessionId).toBe(survivor.sessionId)
+      expect(survivor.sessionId).toBe(attached.sessionId)
       expect((await survivor.getState()).sessionId).toBe(`durable-${attached.sessionId}`)
       expect(host.connections).toBe(1)
     } finally {
@@ -104,7 +104,7 @@ describe("HostSessionClient connection lifetime", () => {
     const opened = await revived.open(childOpenInput(path))
 
     // then
-    expect(opened.sessionId).toBe(revived.sessionId)
+    expect(revived.sessionId).toBe(opened.sessionId)
     expect(host.connections).toBe(1)
     expect(host.commands.filter((command) => command.type === "close_session")).toHaveLength(0)
   })
