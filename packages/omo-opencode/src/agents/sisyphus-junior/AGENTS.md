@@ -7,7 +7,7 @@ description: Sisyphus-Junior factory, shared Native model core, and OpenCode rol
 
 The category-spawned executor renders its model core through
 `native-model-prompt.ts` and appends its OpenCode role through
-`opencode-role-append.ts`. There are no local per-model prompt files or routing tables.
+`default.ts`. There are no local Native model-core copies or routing tables.
 The public Senpi preset contract owns both selection and content.
 
 - `agent.ts` owns the factory, defaults, permission merging and user appends.

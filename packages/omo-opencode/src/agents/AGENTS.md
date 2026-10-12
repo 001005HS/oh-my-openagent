@@ -8,10 +8,12 @@ description: Developer reference for all 11 Oh My OpenAgent agent definitions, f
 **Prompt ownership updated:** shared Native builders (PR #9856).
 
 Model-specific system cores come from `@code-yeongyu/senpi/prompt-presets` through
-`native-model-prompt.ts`. `opencode-role-append.ts` owns only the OpenCode role
-and runtime context. `native-prompt-frame.ts` lets system-transform rebuild
+`native-model-prompt.ts`. Existing OpenCode role builders and artifacts retain
+their instructions and runtime context. `native-prompt-frame.ts` lets system-transform rebuild
 the generated core for the actual request model without replacing user appends.
-Do not add local model bodies or per-model prompt dispatch tables.
+Do not add copies of Native model bodies. Existing role variants are separate
+from Native model calibration. Explore, librarian and multimodal-looker keep
+their original prompts without a Native core.
 
 ## OVERVIEW
 

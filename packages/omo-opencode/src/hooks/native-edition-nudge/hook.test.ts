@@ -143,13 +143,22 @@ describe("createNativeEditionNudgeHook", () => {
     expect(toasts).toHaveLength(0)
   })
 
-  it("#given a snoozed decision #then the launch toast still fires", async () => {
-    const { ctx, deps, toasts } = createCtx({ state: nudgeState("snoozed") })
-    const hook = createNativeEditionNudgeHook(ctx, deps)
+  it("#given a snoozed decision #then the toast waits until the promised eligibility time", async () => {
+    const nextEligibleAt = 7 * 24 * 60 * 60 * 1000
+    let now = nextEligibleAt - 1
+    const { ctx, deps, toasts, store } = createCtx({
+      state: { ...nudgeState("snoozed"), nextEligibleAt },
+    })
+    const hook = createNativeEditionNudgeHook(ctx, { ...deps, now: () => now })
 
+    await hook.event(sessionCreated())
+    expect(toasts).toHaveLength(0)
+    now = nextEligibleAt
+    await hook.event(sessionCreated())
     await hook.event(sessionCreated())
 
     expect(toasts).toHaveLength(1)
+    expect(store.writes).toHaveLength(0)
   })
 
   it("#given OmO Native already installed #then no toast fires", async () => {

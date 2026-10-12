@@ -12,6 +12,7 @@ Owns static mode and planning-role markdown prompt content (`prompts/` tree), bu
 |--------|----------|
 | `ultrawork/` | `default`, `gpt`, `gemini`, `glm`, `planner`, `codex` (6) |
 | `prometheus/` | `default` only (no model routing) |
+| `atlas/` | Existing OpenCode orchestration-role variants |
 | `mode/` | `hyperplan`, `team` |
 
 ## PUBLIC API (`src/index.ts`)
@@ -36,5 +37,5 @@ Owns static mode and planning-role markdown prompt content (`prompts/` tree), bu
 
 Per-model system prompts are not owned here. OpenCode imports Senpi's public
 `./prompt-presets` builders through its native-model-prompt adapter. Atlas
-markdown variants and their duplicated routing/calibration contract were removed.
-`resolveVariant` remains only for independent mode overlays and planning roles.
+markdown retains the existing OpenCode orchestration role and its variants.
+`resolveVariant` keeps its original table-order behavior for roles and mode overlays.

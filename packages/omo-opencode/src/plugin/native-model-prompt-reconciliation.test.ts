@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createSystemTransformHandler } from "./system-transform"
 import { createAtlasAgent } from "../agents/atlas"
-import { createHephaestusAgent, UnsupportedHephaestusModelError } from "../agents/hephaestus"
+import { createHephaestusAgent } from "../agents/hephaestus"
 import { createOracleAgent } from "../agents/oracle"
 import { createSisyphusAgent } from "../agents/sisyphus"
 import { buildSisyphusJuniorPrompt } from "../agents/sisyphus-junior/agent"
 import { getPrometheusPrompt } from "../agents/prometheus/system-prompt"
 import { clearSisyphusRuntimePromptContext } from "../agents/sisyphus-runtime-prompt-reconciler"
+import { createNoHephaestusNonGptHook } from "../hooks/no-hephaestus-non-gpt"
+import type { PluginInput } from "@opencode-ai/plugin"
 
 afterEach(clearSisyphusRuntimePromptContext)
 
@@ -23,17 +25,40 @@ describe("per-request Native model prompt selection", () => {
       { model: { providerID: "openai", id: "gpt-5.4" } }, output,
     )
 
-    expect(output.system).toEqual([
-      "HOST_SENTINEL", render("openai/gpt-5.4") + "\nUSER_APPEND_SENTINEL",
+    const marker = "\n</omo-model-core>"
+    const afterCore = render("openai/gpt-5.4")
+    expect(output.system).toEqual(["HOST_SENTINEL",
+      afterCore.slice(0, afterCore.indexOf(marker) + marker.length) +
+      before.slice(before.indexOf(marker) + marker.length) + "\nUSER_APPEND_SENTINEL",
     ])
   })
 
   test("keeps a provider namespace inside the model ID", async () => {
-    const output = { system: [createOracleAgent("anthropic/claude-opus-5-5").prompt ?? ""] }
+    const before = createOracleAgent("anthropic/claude-opus-5-5").prompt ?? ""
+    const output = { system: [before] }
     await createSystemTransformHandler()(
       { model: { providerID: "synthetic", id: "vendor/gpt-5.4" } }, output,
     )
-    expect(output.system).toEqual([createOracleAgent("synthetic/vendor/gpt-5.4").prompt ?? ""])
+    const marker = "\n</omo-model-core>"
+    const expected = createOracleAgent("synthetic/vendor/gpt-5.4").prompt ?? ""
+    expect(output.system).toEqual([expected.slice(0, expected.indexOf(marker) + marker.length)
+      + before.slice(before.indexOf(marker) + marker.length)])
+  })
+
+  test("the user's allow_non_gpt_model decision survives the per-request transform", async () => {
+    const warnings: unknown[] = []
+    const hook = createNoHephaestusNonGptHook({
+      client: { tui: { showToast: async (toast: unknown) => { warnings.push(toast) } } },
+    } as unknown as PluginInput, { allowNonGptModel: true })
+    await hook["chat.message"]({
+      sessionID: "override-session", agent: "hephaestus",
+      model: { providerID: "anthropic", modelID: "claude-opus-5-5" },
+    })
+    const previous = createHephaestusAgent("openai/gpt-5.4").prompt!
+    const output = { system: [previous] }
+    await createSystemTransformHandler()({ model: { providerID: "anthropic", id: "claude-opus-5-5" } }, output)
+    expect(warnings).toHaveLength(1)
+    expect(output.system).toEqual([previous])
   })
 
   test("does not interpret unframed custom system prompts", async () => {
@@ -44,11 +69,15 @@ describe("per-request Native model prompt selection", () => {
     expect(output.system).toEqual(["CUSTOM_PROMPT_SENTINEL"])
   })
 
-  test("retains Hephaestus model eligibility on a runtime switch", async () => {
-    const output = { system: [createHephaestusAgent("openai/gpt-5.4").prompt ?? ""] }
-    await expect(createSystemTransformHandler()(
-      { model: { providerID: "anthropic", id: "claude-opus-5-5" } }, output,
-    )).rejects.toThrow(UnsupportedHephaestusModelError)
+  test.each([
+    ["anthropic", "claude-opus-5-5"],
+    ["openai", "gpt-5.2"],
+    ["openai", "gpt-4.1"],
+  ])("keeps the previous Hephaestus prompt when the runtime switches to %s/%s", async (providerID, id) => {
+    const previous = createHephaestusAgent("openai/gpt-5.4").prompt + "\nUSER_APPEND_SENTINEL"
+    const output = { system: [previous] }
+    await createSystemTransformHandler()({ model: { providerID, id } }, output)
+    expect(output.system).toEqual([previous])
   })
 
   test.each([

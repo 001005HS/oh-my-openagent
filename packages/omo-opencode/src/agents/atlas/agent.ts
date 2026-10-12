@@ -1,15 +1,64 @@
-import type { AgentConfig } from "@opencode-ai/sdk"
-import type { AgentMode, AgentPromptMetadata } from "../types"
-import type { AvailableAgent, AvailableSkill, AvailableCategory } from "../dynamic-agent-prompt-builder"
 import { buildNativeAgentPrompt, getNativePromptSource } from "../native-model-prompt"
-import { buildOpenCodeRoleAppend } from "../opencode-role-append"
-import type { CategoryConfig } from "../../config/schema"
-import { mergeCategories } from "../../shared/merge-categories"
-import { getCategoryDescription } from "./prompt-section-builder"
-
-const MODE: AgentMode = "primary"
 export const getAtlasPromptSource = getNativePromptSource
 export type AtlasPromptSource = ReturnType<typeof getNativePromptSource>
+/**
+ * Atlas - Master Orchestrator Agent
+ *
+ * Orchestrates work via task() to complete ALL tasks in a todo list until fully done.
+ *
+ * Prompt routing (`getAtlasRoleSource`, evaluated by prompts-core variant order):
+ * 1. Claude Opus 4.7       → opus-4-7.md   (literal-following + explicit fan-out push)
+ * 2. GPT family            → gpt.md        (shared GPT-family calibration)
+ * 3. Gemini family         → gemini.md
+ * 4. Kimi K3              → kimi-k3.md    (K3-native; checked first among Kimi)
+ * 5. Kimi K2.7             → kimi-k2-7.md  (restrained, outcome-first; checked before generic kimi)
+ * 6. Kimi K2.x family      → kimi.md       (Claude-family base + K2.6 thinking-mode calibration)
+ * 7. GLM family            → glm.md        (GLM 5.2 calibration)
+ * 8. Default (Claude 4.6 family: opus-4-6, sonnet-4-6, haiku-4-5, etc.) → default.md
+ */
+
+import type { AgentConfig } from "@opencode-ai/sdk"
+import {
+  atlasPromptVariants,
+  loadPromptSync,
+  resolveVariant,
+  type SyncRuntimeInjection,
+} from "@oh-my-opencode/prompts-core"
+import type { AgentMode, AgentPromptMetadata } from "../types"
+import type { AvailableAgent, AvailableSkill, AvailableCategory } from "../dynamic-agent-prompt-builder"
+import { buildAgentIdentitySection, buildCategorySkillsDelegationGuide } from "../dynamic-agent-prompt-builder"
+import type { CategoryConfig } from "../../config/schema"
+import { mergeCategories } from "../../shared/merge-categories"
+
+import {
+  getCategoryDescription,
+  buildAgentSelectionSection,
+  buildCategorySection,
+  buildSkillsSection,
+  buildDecisionMatrix,
+} from "./prompt-section-builder"
+
+const MODE: AgentMode = "primary"
+
+type AtlasRoleSource = "default" | "gpt" | "gemini" | "kimi" | "kimi-k3" | "kimi-k2-7" | "opus-4-7" | "glm"
+
+class AtlasPromptVariantError extends Error {
+  readonly name = "AtlasPromptVariantError"
+
+  constructor(readonly variant: string) {
+    super(`Unknown Atlas prompt variant: ${variant}`)
+  }
+}
+
+function getAtlasRoleSource(model?: string): AtlasRoleSource {
+  const variant = resolveVariant({
+    agentName: "atlas",
+    modelID: model,
+    variants: atlasPromptVariants,
+  })
+  if (isAtlasRoleSource(variant)) return variant
+  throw new AtlasPromptVariantError(variant)
+}
 
 export interface OrchestratorContext {
   model?: string
@@ -18,13 +67,48 @@ export interface OrchestratorContext {
   userCategories?: Record<string, CategoryConfig>
 }
 
-function buildDynamicOrchestratorPrompt(ctx: OrchestratorContext): string {
-  const categories: AvailableCategory[] = Object.keys(mergeCategories(ctx.userCategories)).map((name) => ({
-    name, description: getCategoryDescription(name, ctx.userCategories),
+function isAtlasRoleSource(variant: string): variant is AtlasRoleSource {
+  return Object.prototype.hasOwnProperty.call(atlasPromptVariants, variant)
+}
+
+function buildDynamicOrchestratorPrompt(ctx?: OrchestratorContext): string {
+  const agents = ctx?.availableAgents ?? []
+  const skills = ctx?.availableSkills ?? []
+  const userCategories = ctx?.userCategories
+  const model = ctx?.model
+
+  const allCategories = mergeCategories(userCategories)
+  const availableCategories: AvailableCategory[] = Object.entries(allCategories).map(([name]) => ({
+    name,
+    description: getCategoryDescription(name, userCategories),
   }))
-  return buildNativeAgentPrompt(ctx.model, buildOpenCodeRoleAppend("atlas", {
-    agents: ctx.availableAgents, skills: ctx.availableSkills, categories,
-  }))
+
+  const categorySection = buildCategorySection(userCategories)
+  const agentSection = buildAgentSelectionSection(agents)
+  const decisionMatrix = buildDecisionMatrix(agents, userCategories)
+  const skillsSection = buildSkillsSection(skills)
+  const categorySkillsGuide = buildCategorySkillsDelegationGuide(availableCategories, skills)
+  const source = getAtlasRoleSource(model)
+  const runtimeInjections = [
+    { placeholder: "{CATEGORY_SECTION}", resolver: () => categorySection },
+    { placeholder: "{AGENT_SECTION}", resolver: () => agentSection },
+    { placeholder: "{DECISION_MATRIX}", resolver: () => decisionMatrix },
+    { placeholder: "{SKILLS_SECTION}", resolver: () => skillsSection },
+    { placeholder: "{{CATEGORY_SKILLS_DELEGATION_GUIDE}}", resolver: () => categorySkillsGuide },
+  ] satisfies readonly SyncRuntimeInjection[]
+
+  const agentIdentity = buildAgentIdentitySection(
+    "Atlas",
+    "Master Orchestrator agent from OhMyOpenCode that coordinates specialized agents to complete todo lists",
+  )
+  const basePrompt = loadPromptSync({
+    source: atlasPromptVariants[source],
+    name: "atlas",
+    variant: source,
+    inject: runtimeInjections,
+  }).body
+
+  return agentIdentity + "\n" + basePrompt
 }
 
 export function createAtlasAgent(ctx: OrchestratorContext): AgentConfig {
@@ -34,7 +118,7 @@ export function createAtlasAgent(ctx: OrchestratorContext): AgentConfig {
     mode: MODE,
     ...(ctx.model ? { model: ctx.model } : {}),
     temperature: 0.1,
-    prompt: buildDynamicOrchestratorPrompt(ctx),
+    prompt: buildNativeAgentPrompt(ctx.model, buildDynamicOrchestratorPrompt(ctx)),
     color: "#10B981",
   }
 

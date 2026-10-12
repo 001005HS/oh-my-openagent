@@ -8,7 +8,7 @@ import type {
 } from "../dynamic-agent-prompt-builder";
 import { categorizeTools } from "../dynamic-agent-prompt-builder";
 import { buildNativeAgentPrompt, getNativePromptSource } from "../native-model-prompt";
-import { buildOpenCodeRoleAppend } from "../opencode-role-append";
+import { buildHephaestusPrompt } from "./gpt";
 import { getFrontierToolSchemaPermission } from "../frontier-tool-schema-guard";
 
 const MODE: AgentMode = "primary";
@@ -39,10 +39,12 @@ export function getHephaestusPrompt(
 
 function buildDynamicHephaestusPrompt(ctx?: HephaestusContext): string {
   assertHephaestusSupportedModel(ctx?.model);
-  return buildNativeAgentPrompt(ctx?.model, buildOpenCodeRoleAppend("hephaestus", {
-    agents: ctx?.availableAgents, skills: ctx?.availableSkills,
-    categories: ctx?.availableCategories, useTaskSystem: ctx?.useTaskSystem,
-  }), ctx?.availableTools?.map((tool) => tool.name), "hephaestus", ctx?.useTaskSystem);
+  const role = buildHephaestusPrompt(
+    ctx?.availableAgents?.filter((agent) => ["explore", "librarian", "oracle"].includes(agent.name)),
+    ctx?.availableTools, ctx?.availableSkills, ctx?.availableCategories, ctx?.useTaskSystem,
+  );
+  return buildNativeAgentPrompt(ctx?.model, role,
+    ctx?.availableTools?.map((tool) => tool.name), "hephaestus", ctx?.useTaskSystem);
 }
 
 export function createHephaestusAgent(
@@ -53,7 +55,7 @@ export function createHephaestusAgent(
   availableCategories?: AvailableCategory[],
   useTaskSystem = false,
 ): AgentConfig {
-  const tools = availableToolNames ? categorizeTools(availableToolNames) : [];
+  const tools = availableToolNames ? categorizeTools(availableToolNames) : undefined;
 
   const prompt = buildDynamicHephaestusPrompt({
     model,

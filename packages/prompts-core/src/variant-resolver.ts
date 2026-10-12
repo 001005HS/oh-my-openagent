@@ -1,26 +1,37 @@
-import { isGeminiModel, isGlmModel, isGptModel, isKimiK2CodeModel, isKimiK2Model, isKimiK3Model, isMiniMaxModel, isSWE2Model } from "@oh-my-opencode/model-core"
+import {
+  isClaudeOpus47Model,
+  isGeminiModel,
+  isGlmModel,
+  isGptModel,
+  isKimiK2CodeModel,
+  isKimiK2Model,
+  isKimiK3Model,
+  isMiniMaxModel,
+  isSWE2Model,
+} from "@oh-my-opencode/model-core"
 import type { VariantTable } from "./types"
+
+type ModelMatcher = (modelID: string) => boolean
 
 export type ResolveVariantInput = {
   readonly modelID?: string
-  readonly providerID?: string
   readonly agentName?: string
   readonly variants: VariantTable
 }
 
-const PLANNER_AGENT_NAMES: ReadonlySet<string> = new Set(["prometheus"])
+const PLANNER_AGENT_NAMES: ReadonlySet<string> = new Set(["prometheus"] as const)
 
-// Mode overlays have coarse harness-specific families. System prompts do not use this resolver.
-const MODE_MATCHERS: ReadonlyArray<readonly [string, (model: string) => boolean]> = [
-  ["swe-2", isSWE2Model],
-  ["kimi-k3", isKimiK3Model],
-  ["kimi-k2-7", isKimiK2CodeModel],
-  ["gpt", isGptModel],
-  ["gemini", isGeminiModel],
-  ["kimi", isKimiK2Model],
-  ["glm", isGlmModel],
-  ["minimax", isMiniMaxModel],
-]
+const MODEL_MATCHERS: Readonly<Record<string, ModelMatcher>> = {
+  gpt: isGptModel,
+  gemini: isGeminiModel,
+  "kimi-k3": isKimiK3Model,
+  "swe-2": isSWE2Model,
+  "kimi-k2-7": isKimiK2CodeModel,
+  kimi: isKimiK2Model,
+  glm: isGlmModel,
+  "opus-4-7": isClaudeOpus47Model,
+  minimax: isMiniMaxModel,
+}
 
 export function resolveVariant(input: ResolveVariantInput): string {
   const variantNames = Object.keys(input.variants)
@@ -33,9 +44,8 @@ export function resolveVariant(input: ResolveVariantInput): string {
   }
 
   if (input.modelID !== undefined) {
-    for (const [variantName, matcher] of MODE_MATCHERS) {
-      if (!variantNames.includes(variantName)) continue
-      if (matcher(input.modelID)) return variantName
+    for (const variantName of variantNames) {
+      if (matchesModelVariant(variantName, input.modelID)) return variantName
     }
   }
 
@@ -46,4 +56,9 @@ export function resolveVariant(input: ResolveVariantInput): string {
 
 function isPlannerAgent(agentName: string | undefined): boolean {
   return agentName !== undefined && PLANNER_AGENT_NAMES.has(agentName.toLowerCase())
+}
+
+function matchesModelVariant(variantName: string, modelID: string): boolean {
+  const matcher = MODEL_MATCHERS[variantName]
+  return matcher?.(modelID) ?? false
 }

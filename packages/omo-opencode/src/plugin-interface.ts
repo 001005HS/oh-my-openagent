@@ -16,6 +16,10 @@ import { createToolExecuteBeforeHandler } from "./plugin/tool-execute-before"
 
 import type { CreatedHooks } from "./create-hooks"
 import type { Managers } from "./create-managers"
+import { reconcileNativeModelPrompts } from "./agents/native-model-prompt"
+import type { NativePromptContext } from "./agents/native-prompt-frame"
+import type { Session as SessionV2 } from "@opencode-ai/sdk/v2"
+import { log } from "./shared/logger"
 
 export function createPluginInterface(args: {
   ctx: PluginContext
@@ -32,6 +36,9 @@ export function createPluginInterface(args: {
 }): PluginInterface {
   const { ctx, pluginConfig, firstMessageVariantGate, managers, hooks, tools } =
     args
+  const toolSnippets = Object.fromEntries(
+    Object.entries(tools).map(([name, definition]) => [name, definition.description]),
+  )
 
   return {
     tool: tools,
@@ -80,9 +87,52 @@ export function createPluginInterface(args: {
       pluginConfig.default_mode,
       getUltraworkMessage,
       hooks.keywordDetector,
+      () => toolSnippets,
+      async (sessionID) => {
+        if (!sessionID) return []
+        const response = await ctx.client.session.get({
+          path: { id: sessionID },
+          query: { directory: ctx.directory },
+          signal: AbortSignal.timeout(3000),
+        }).catch((error: unknown) => {
+          log("[native-prompt] Could not refresh session tool permissions", { sessionID, error })
+          return undefined
+        })
+        if (!response?.data) return undefined
+        const session = response.data as typeof response.data & Pick<SessionV2, "permission">
+        return (session.permission ?? []).map((rule) => ({
+          pattern: rule.permission, permission: rule.action, scope: rule.pattern,
+        }))
+      },
     ),
 
-    config: managers.configHandler,
+    config: async (config) => {
+      await managers.configHandler(config)
+      for (const agent of Object.values(config.agent ?? {})) {
+        if (!agent || typeof agent.prompt !== "string") continue
+        const rules: NonNullable<NativePromptContext["toolPermissions"]> = []
+        for (const [pattern, enabled] of Object.entries(config.tools ?? {})) {
+          rules.push({ pattern, permission: enabled ? "allow" : "deny" })
+        }
+        for (const permissions of [config.permission, agent.permission]) {
+          for (const [pattern, permission] of Object.entries(permissions ?? {})) {
+            if (permission === "allow" || permission === "ask" || permission === "deny") {
+              rules.push({ pattern, permission })
+            } else if (typeof permission === "object" && permission !== null) {
+              for (const [scope, action] of Object.entries(permission)) {
+                if (action === "allow" || action === "ask" || action === "deny") {
+                  rules.push({ pattern, permission: action, scope })
+                }
+              }
+            }
+          }
+        }
+        for (const pattern of pluginConfig.disabled_tools ?? []) rules.push({ pattern, permission: "deny" })
+        const system = [agent.prompt]
+        reconcileNativeModelPrompts(system, undefined, toolSnippets, rules)
+        agent.prompt = system[0]
+      }
+    },
 
     event: createEventHandler({
       ctx,
@@ -94,6 +144,10 @@ export function createPluginInterface(args: {
 
     "tool.definition": createToolDefinitionHandler({
       hooks,
+      onDefinition: (name, description) => {
+        // OpenCode defines this error handler but never exposes it as a model tool.
+        if (name !== "invalid") toolSnippets[name] = description
+      },
     }),
 
     "tool.execute.before": createToolExecuteBeforeHandler({

@@ -9,7 +9,7 @@ by Native; uncatalogued IDs retain their provider and full remaining ID.
 For each supported agent/model pair, generation calls the Native
 `resolvePreset` with automatic selection. Models without a preset use
 `buildDynamicSystemPrompt`, the Native fallback. The builder receives the
-terminal surface, OmO application name and the available tool names. Context is appended by the
+terminal surface, OmO application name and actual registered tool names and descriptions. Context is appended by the
 OpenCode host rather than discovered by the engine's resource loader.
 
 ## The one host transform
@@ -25,16 +25,18 @@ removed: OpenCode's question tool waits itself and has no such parameter. No
 model-family text, whitespace, headings or calibration is normalized.
 
 The transformed core is followed by a JSON model identity containing the
-actual provider, full model ID and selected preset, then a model-independent
+actual provider, full model ID and selected preset, then the existing OpenCode
 role append. The core and identity are enclosed in an `omo-model-core` frame
-whose JSON metadata stores the configured model, tool names, task-system mode
+whose JSON metadata stores the configured model, tool names and snippets, permission rules, task-system mode
 and optional Hephaestus restriction. The per-request system transform rebuilds just that
 frame for the actual runtime model, preserving role and user appends. This
 also covers model changes after registration and model overrides applied by
 categories. Unframed custom prompts are left alone; malformed frames are not
-interpreted. Hephaestus's existing predicate also governs runtime switches.
+interpreted. An unsupported Hephaestus runtime model leaves the previous frame
+untouched; it must not turn an allowed user override into a failed request.
 
-The append describes the role's scope, available agents,
+The original role artifacts retain validation, verdict, output and tracking
+protocols, including Momus's `[OKAY]` / `[REJECT]` tokens. The append describes the role's scope, available agents,
 categories and skills, and the optional task-system interface. User prompt
 appends retain their existing host ordering; frame replacement preserves them
 byte for byte. The existing registration pipeline can append environment and
@@ -44,16 +46,33 @@ the ulw-plan workflow; it now receives the same model core as other agents.
 Native has no Sisyphus/Junior/Atlas persona selector. Its explicit custom
 system-prompt override replaces the model core; this adapter does not use
 that override. Roles are an OpenCode-specific append, not a second source
-of model calibration.
+of Native model calibration. Existing OpenCode role variants remain where
+their instructions differ. Explore, librarian and multimodal-looker are
+outside this composition change and keep their dev prompts unchanged.
 
-Hephaestus retains its existing supported-model predicate and rejection
-behavior. Content parity covers the models each agent permits; this change
+Hephaestus retains its existing supported-model predicate at construction.
+Content parity covers the models each agent permits; this change
 does not expand model eligibility.
+
+## Tool inputs
+
+`plugin-interface.ts` supplies the actual plugin tool definitions after agent
+registration and permission assembly. It records host-provided builtin/MCP
+descriptions through `tool.definition`; the request transform refreshes tool
+inputs even when the model has not changed. Global and per-agent permission
+rules, current session permissions and disabled tools filter the selected names.
+Session rules are read only during a request, with a bounded deadline; an
+unavailable session snapshot leaves the last tool context intact. Session
+restrictions are not baked into the persistent frame, so a CLI-only denial
+cannot leak into another session or later turn. No invented descriptions
+or host API calls during initialization are needed. Tool metadata belongs to
+one plugin instance, not a global registry shared across projects.
 
 ## Verification
 
 The parity matrix compares actual agent factory output with Native-generated
-content plus this transform and the independent role append. It enumerates
+content with real grep/glob definitions plus this transform. It separately
+checks that runtime replacement preserves the original role append. It enumerates
 catalog IDs as production `provider/model` strings and covers the unknown-model
 fallback too. Transform tests separately cover tool names, model identifiers,
 dynamic role context and user appends. Mutation runs substitute a different

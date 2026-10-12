@@ -4,7 +4,7 @@ import { isGlmModel, isGptModel, buildClaudeThinkingConfig } from "../types"
 import type { AgentOverrideConfig } from "../../config/schema"
 import { createAgentToolRestrictions, migrateAgentConfig, type PermissionValue } from "../../shared/permission-compat"
 import { buildNativeAgentPrompt, getNativePromptSource } from "../native-model-prompt"
-import { buildOpenCodeRoleAppend } from "../opencode-role-append"
+import { buildDefaultSisyphusJuniorPrompt } from "./default"
 import { resolvePromptAppend } from "../builtin-agents/resolve-file-uri"
 
 const MODE: AgentMode = "subagent"
@@ -18,7 +18,7 @@ export const getSisyphusJuniorPromptSource = getNativePromptSource
 export type SisyphusJuniorPromptSource = ReturnType<typeof getNativePromptSource>
 
 export function buildSisyphusJuniorPrompt(model: string | undefined, useTaskSystem: boolean, promptAppend?: string): string {
-  const prompt = buildNativeAgentPrompt(model, buildOpenCodeRoleAppend("sisyphus-junior", { useTaskSystem }), [], undefined, useTaskSystem)
+  const prompt = buildNativeAgentPrompt(model, buildDefaultSisyphusJuniorPrompt(useTaskSystem), undefined, undefined, useTaskSystem)
   return promptAppend ? prompt + "\n\n" + resolvePromptAppend(promptAppend) : prompt
 }
 

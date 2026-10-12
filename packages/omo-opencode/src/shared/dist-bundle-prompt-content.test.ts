@@ -6,9 +6,11 @@ import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
 import { getPrometheusPrompt } from "../agents/prometheus/system-prompt"
 import { getAgentListDisplayName } from "./agent-display-names"
+import { reconcileNativeModelPrompts } from "../agents/native-model-prompt"
 
 const DIST_INDEX = "dist/index.js"
 const PROMETHEUS_SOURCE = "packages/prompts-core/prompts/prometheus/default.md"
+const CONFIGURED_MODEL = "anthropic/claude-opus-5-5"
 const BUNDLE_PROBE_SCRIPT = `
 const [distUrl, projectDirectory] = process.argv.slice(1);
 const module = await import(distUrl);
@@ -23,7 +25,8 @@ try {
   const agents = Object.values(config.agent ?? {}).filter(
     (entry) => typeof entry === "object" && entry !== null && typeof entry.prompt === "string",
   );
-  process.stdout.write(JSON.stringify(agents));
+  const toolSnippets = Object.fromEntries(Object.entries(hooks.tool ?? {}).map(([name, tool]) => [name, tool.description]));
+  process.stdout.write(JSON.stringify({ agents, toolSnippets }));
 } finally {
   await hooks.dispose?.();
 }
@@ -48,6 +51,9 @@ describe("dist bundle prompt content", () => {
     await Promise.all([
       Bun.write(join(homeDirectory, ".keep"), ""),
       Bun.write(join(projectDirectory, ".keep"), ""),
+      Bun.write(join(projectDirectory, ".omo", "omo.jsonc"), JSON.stringify({
+        agents: { prometheus: { model: CONFIGURED_MODEL } },
+      })),
     ])
 
     try {
@@ -78,13 +84,22 @@ describe("dist bundle prompt content", () => {
       ])
       expect(exitCode, `${stdout}\n${stderr}`.trim()).toBe(0)
 
-      const runtimeAgents = JSON.parse(stdout) as RuntimeAgent[]
+      const { agents: runtimeAgents, toolSnippets } = JSON.parse(stdout) as {
+        agents: RuntimeAgent[]
+        toolSnippets: Record<string, string>
+      }
 
       const sourcePrompt = await readFile(PROMETHEUS_SOURCE, "utf8")
       const runtimeAgent = runtimeAgents.find((agent) => agent.name === getAgentListDisplayName("prometheus"))
       expect(runtimeAgent, "Prometheus was not returned by the built plugin runtime").toBeDefined()
       if (!runtimeAgent) throw new Error("Missing bundled Prometheus agent")
-      expect(runtimeAgent.prompt).toBe(getPrometheusPrompt(runtimeAgent.model))
+      expect(runtimeAgent.model).toBe(CONFIGURED_MODEL)
+      const metadata = JSON.parse(runtimeAgent.prompt.slice("<omo-model-core>".length).split("\n")[0])
+      const expected = [getPrometheusPrompt(CONFIGURED_MODEL)]
+      reconcileNativeModelPrompts(expected, CONFIGURED_MODEL, toolSnippets, metadata.toolPermissions)
+      expect(runtimeAgent.prompt).toBe(expected[0])
+      expect(toolSnippets.grep).toBeDefined()
+      expect(runtimeAgent.prompt).toContain("- grep: " + toolSnippets.grep)
       const frameEnd = "\n</omo-model-core>\n\n"
       const roleOffset = runtimeAgent.prompt.indexOf(frameEnd)
       expect(roleOffset).toBeGreaterThanOrEqual(0)

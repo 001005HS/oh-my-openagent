@@ -3,6 +3,12 @@ import { z } from "zod"
 export const NativePromptContext = z.object({
   model: z.string(),
   tools: z.array(z.string()),
+  toolSnippets: z.record(z.string(), z.string()).optional(),
+  toolPermissions: z.array(z.object({
+    pattern: z.string(),
+    permission: z.enum(["allow", "ask", "deny"]),
+    scope: z.string().optional(),
+  })).optional(),
   restriction: z.literal("hephaestus").optional(),
   useTaskSystem: z.boolean().optional(),
 })
@@ -16,8 +22,9 @@ export function frameNativePrompt(body: string, context: NativePromptContext): s
 
 export function replaceNativePromptFrames(
   system: string[],
-  model: string,
-  render: (context: NativePromptContext) => string,
+  model: string | undefined,
+  render: (context: NativePromptContext) => string | undefined,
+  refreshTools = false,
 ): void {
   for (const [index, part] of system.entries()) {
     system[index] = part.replace(
@@ -31,8 +38,8 @@ export function replaceNativePromptFrames(
           throw error
         }
         const context = NativePromptContext.safeParse(parsed)
-        if (!context.success || context.data.model === model) return frame
-        return render({ ...context.data, model })
+        if (!context.success || (!refreshTools && context.data.model === model)) return frame
+        return render({ ...context.data, model: model ?? context.data.model }) ?? frame
       },
     )
   }

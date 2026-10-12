@@ -11,6 +11,7 @@ export type {
   SyncRuntimeInjection,
   VariantTable,
 } from "./types"
+export { atlasPromptVariants } from "./atlas-prompts"
 export { prometheusPromptVariants } from "./prometheus-prompts"
 export {
   CODEX_ULTRAWORK_PROMPT,

@@ -22,6 +22,7 @@ export function detectNativeEdition(): boolean {
 type NativeEditionNudgeDeps = {
   readonly store?: NudgeStateStore
   readonly detectNativeEdition?: () => boolean
+  readonly now?: () => number
 }
 
 export function createNativeEditionNudgeHook(ctx: PluginInput, deps: NativeEditionNudgeDeps = {}) {
@@ -31,6 +32,7 @@ export function createNativeEditionNudgeHook(ctx: PluginInput, deps: NativeEditi
   let shownThisProcess = false
   const store = deps.store ?? createNudgeStateStore(nativeEditionStateDir())
   const detect = deps.detectNativeEdition ?? detectNativeEdition
+  const now = deps.now ?? Date.now
 
   return {
     event: async ({ event }: { event: { type: string; properties?: unknown } }) => {
@@ -43,6 +45,9 @@ export function createNativeEditionNudgeHook(ctx: PluginInput, deps: NativeEditi
       if (detect()) return
       const state = store.read()
       if (state !== "missing" && state !== "corrupt" && (state.decision === "never" || state.decision === "migrated")) {
+        return
+      }
+      if (state !== "missing" && state !== "corrupt" && state.decision === "snoozed" && state.nextEligibleAt > now()) {
         return
       }
       const tui = ctx.client?.tui
