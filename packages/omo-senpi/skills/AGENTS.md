@@ -28,7 +28,7 @@ Native Senpi skills authored directly against the Senpi tool surface (not ported
 ## ANTI-PATTERNS
 
 - init-deep: the main session NEVER reads raw chunk reports or node outputs (ALWAYS-REDUCE); scanners never write AGENTS.md; existing files are read before overwrite; generated managed blocks are never hand-edited.
-- mass-ulw: no dag before reading `references/planning.md`; no dependency edges merely to pass data; no code-changing graph without a final verification node.
+- mass-ulw: no dag before reading `references/planning.md`; no dependency edge for a fact the orchestrator already knows (paste it into the prompt); no code-changing graph without a final verification node.
 - ulw-plan: no self-activation; no implementer dispatch (read-only lane); waits for explicit approval; never begins execution.
 - ulw-loop: no sleep/timed polling for async state. ultrawork: no `tmux capture-pane` as visual evidence; paired cleanup required.
 - Workers never edit outside the assigned scope and never commit.

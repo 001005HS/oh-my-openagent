@@ -8,7 +8,7 @@ metadata:
 
 # mass-ulw
 
-Use this skill when the user asks for `mass-ulw`, a task DAG, staged fan-out, or any multi-agent job where real dependencies exist: task C needs A and B finished first. For fully independent workers, plain parallel `task` spawns are simpler. Reach for `workflow` when the ordering itself is the point. A run covers ONE phase, the unit your loop checkpoints (a goal criterion, a worktree, an evidence gate), and NEVER a whole multi-phase job; a research wave or a pipeline stage is not a phase. Define EVERY stage of the phase you can already write (harvest, expand, verify, reduce) in that run before `start`, chained with `dependsOn`; start a NEW run for the next phase, and `amend` a settled run to add nodes whose prompts need content you must read first. Under `ulw-loop` or `ulw-execute`, that contract owns the goal, criteria, evidence, and checkpoints; this skill owns only how each phase's run is defined, driven, and recovered.
+Use this skill when the user asks for `mass-ulw`, a task DAG, staged fan-out, or any multi-agent job where real dependencies exist: task C needs A and B finished first. For fully independent workers, plain parallel `task` spawns are simpler. Reach for `workflow` when the ordering itself is the point. A run covers ONE phase, the unit your loop checkpoints (a goal criterion, a worktree, an evidence gate, a ulw-execute plan wave), and NEVER a whole multi-phase job; a harvest wave or a pipeline stage is not a phase. Define EVERY stage of the phase you can already write (harvest, expand, verify, reduce) in that run before `start`, chained with `dependsOn`; split it across concurrent runs only when it would exceed `task.dag.max_nodes_per_run`, and start a reducer that reads several runs as its own run once they settle. Start a NEW run for the next phase, and `amend` a settled run to add nodes whose prompts need content you must read first. Under `ulw-loop` or `ulw-execute`, that contract owns the goal, criteria, evidence, and checkpoints; this skill owns only how each phase's run is defined, driven, and recovered.
 
 ## Planning - MANDATORY first step
 
@@ -61,7 +61,7 @@ await sdk.cancel(runId, "superseded by a new plan")
 ```
 
 - `attach` re-binds to a live run you already own, for example after your own context was rebuilt.
-- `start` returns at once; the session wakes when the run settles or pauses, never per node, and each wake carries the TREAT-AS-FALSE verification directive. Do independent work between wakes; to act on one node early, `monitor` its handoff file.
+- `start` returns at once; the session wakes when the run settles or pauses, never per node, and each wake carries the TREAT-AS-FALSE verification directive. Do independent work between wakes; to act on one node before the run settles, `monitor` its handoff file and start a separate run from it (`amend` and `retry` refuse a running run).
 - `snapshot` is a one-off read of status and node counts when a midpoint decision needs it, never a polling loop.
 - `wait` blocks the cell until the run settles (the SDK passes `detach: false`; the bare tool action detaches by default against a live run). Use it only inside a detached cell or when nothing else remains.
 - `cancel` stops the run; pass a reason so the record says why.
