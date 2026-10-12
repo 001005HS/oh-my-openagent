@@ -16,7 +16,27 @@
             "jsonrpc": "2.0",
             "id": 1,
             "result": {
-              "capabilities": {"backend":"fake","displayServer":null,"capture":true,"input":true,"ax":true,"backgroundWindowInput":true,"deliveryModes":["background","foreground"],"capturePermission":"granted","inputPermission":"granted","axPermission":"granted","displayCount":2,"focusGuard":true,"stopPath":"none","stopReason":null,"integrityLevel":null,"screenLocked":false},
+              "capabilities": {
+                "backend": "fake",
+                "displayServer": null,
+                "capture": true,
+                "input": true,
+                "ax": true,
+                "backgroundWindowInput": true,
+                "deliveryModes": [
+                  "background",
+                  "foreground"
+                ],
+                "capturePermission": "granted",
+                "inputPermission": "granted",
+                "axPermission": "granted",
+                "displayCount": 2,
+                "focusGuard": true,
+                "stopPath": "none",
+                "stopReason": null,
+                "integrityLevel": null,
+                "screenLocked": false
+              },
               "resumeToken": "per-process-random"
             }
           },
@@ -43,8 +63,20 @@
             "id": 2,
             "result": {
               "mode": "inline-png",
+              "data": "iVBORw0KGgo=",
               "mimeType": "image/png",
+              "artifactPath": null,
+              "width": 640,
+              "height": 360,
+              "sourceWidth": 2560,
+              "sourceHeight": 1440,
+              "scale": 0.25,
               "target": "desktop",
+              "frameId": "frame-1",
+              "note": null,
+              "coordinateWidth": 640,
+              "coordinateHeight": 360,
+              "region": null,
               "legacyCapture": true
             }
           },
