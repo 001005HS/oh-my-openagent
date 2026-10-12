@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Computer use screenshots the monitor you are working on by default, and `computer.display(id)` reaches any other one.** An unset `computer.display` now captures the active monitor, the one the focused window mostly sits on, instead of compositing every display; `"all"` and display ids work as before. `computer.display("all" | "active" | id)` gives a screenshot and input handle for one display without changing the session default, and `computer.displays()` lists every monitor. ([#9651](https://github.com/code-yeongyu/oh-my-openagent/issues/9651), [#9995](https://github.com/code-yeongyu/oh-my-openagent/pull/9995))
+
 **OpenCode requests now follow the selected model's live capabilities instead of a stale model cache.** When OpenCode passes the live model to `chat.params`, its variants, thinking support, temperature support and output limit take precedence over the cached provider list, and the SDK's `provider.info.id` provider context is accepted alongside `provider.id`; calls that carry only model IDs keep the cached and bundled fallback. Thanks to @MoerAI. ([#10001](https://github.com/code-yeongyu/oh-my-openagent/pull/10001))
 
 **`background_task.taskCleanupDelayMs` now also sets how long finished background tasks stay retrievable.** A delay longer than 30 minutes is no longer cut short; leaving it unset keeps the existing timing. Thanks to @imadal1n. ([#9984](https://github.com/code-yeongyu/oh-my-openagent/pull/9984))
