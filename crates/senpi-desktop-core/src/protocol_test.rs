@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 
 use super::*;
 use crate::engine_schema;
+use crate::error::DesktopError;
 use crate::methods::{Effect, Exposure, Method, Notification, METHODS};
 
 const SCHEMA_PATH: &str = "schema/engine.schema.json";
