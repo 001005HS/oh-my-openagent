@@ -45,7 +45,7 @@ pub(crate) async fn settle<T>(
 
 #[cfg(test)]
 mod tests {
-    use std::future::{pending, ready};
+    use std::future::{pending, ready, Future};
 
     use super::settle;
 
@@ -88,6 +88,6 @@ mod tests {
         }).await;
         // Then settlement requires the worker's actual reply.
         released.send(()).unwrap();
-        assert!(result.await.is_err());
+        assert_eq!(result.await, Err(crate::rpc::Failure::cancelled()));
     }
 }
