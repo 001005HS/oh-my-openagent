@@ -1,6 +1,7 @@
 //! Private helper; EOF closes the panel and ends the process.
 use super::{
-    motion::Motion,
+    coordination,
+    motion::{Frame, Motion},
     panel::CursorPanel,
     wire::{self, Command},
 };
@@ -8,6 +9,8 @@ use objc2::{rc::autoreleasepool, MainThreadMarker};
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSScreen};
 use objc2_foundation::{NSDate, NSRunLoop};
 use std::io;
+use std::fs::File;
+use std::path::Path;
 use std::sync::mpsc::{sync_channel, TryRecvError};
 use std::time::{Duration, Instant};
 
@@ -23,6 +26,8 @@ pub(crate) fn run() -> io::Result<()> {
         ));
     }
     let panel = CursorPanel::new(mtm);
+    let lock_path = coordination::path();
+    let mut visible = None;
     let (send, receive) = sync_channel(1);
     let reader = std::thread::Builder::new()
         .name("cursor-overlay-ipc".to_owned())
@@ -53,17 +58,18 @@ pub(crate) fn run() -> io::Result<()> {
                             return Err(io::Error::other("non-finite cursor target"));
                         }
                         motion.target(x, y, now_ms);
-                        panel.render(motion.frame(now_ms), mtm)?;
+                        render(&panel, motion.frame(now_ms), mtm, &mut visible, &lock_path)?;
                         wire::write(&mut output, &panel.reply(token)?)?;
                     }
                     Command::Hide { .. } => {
                         motion.suspend(token);
                         panel.orderOut(None);
+                        visible = None;
                         hidden = Some((token, Instant::now()));
                     }
                     Command::Resume { .. } => {
                         motion.resume(token);
-                        panel.render(motion.frame(now_ms), mtm)?;
+                        render(&panel, motion.frame(now_ms), mtm, &mut visible, &lock_path)?;
                         wire::write(&mut output, &panel.reply(token)?)?;
                     }
                 }
@@ -90,9 +96,30 @@ pub(crate) fn run() -> io::Result<()> {
             }
         }
         autoreleasepool(|_| {
-            panel.render(motion.frame(now_ms), mtm)?;
+            render(&panel, motion.frame(now_ms), mtm, &mut visible, &lock_path)?;
             runloop.runUntilDate(&NSDate::dateWithTimeIntervalSinceNow(1.0 / 60.0));
             Ok::<(), io::Error>(())
         })?;
     }
+}
+
+fn render(
+    panel: &CursorPanel,
+    frame: Option<Frame>,
+    mtm: MainThreadMarker,
+    visible: &mut Option<File>,
+    lock_path: &Path,
+) -> io::Result<()> {
+    if !frame.as_ref().is_some_and(|frame| frame.alpha > 0.0) {
+        panel.render(None, mtm)?;
+        *visible = None;
+        return Ok(());
+    }
+    if visible.is_none() {
+        *visible = coordination::visible(coordination::open(lock_path)?)?;
+        if visible.is_none() {
+            return panel.render(None, mtm);
+        }
+    }
+    panel.render(frame, mtm)
 }

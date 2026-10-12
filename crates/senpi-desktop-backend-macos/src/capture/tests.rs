@@ -15,18 +15,20 @@ use super::MacCapture;
 const DEADLINE: Duration = Duration::from_secs(60);
 
 #[test]
-fn window_list_excludes_all_overlay_owner_windows_without_hiding_other_apps() {
+fn window_list_excludes_two_helpers_by_title_without_hiding_reused_pids() {
     // Given: two overlay windows and two real application windows.
-    let window = |id: &str, pid| senpi_desktop_core::types::DesktopWindow {
-        id: id.to_owned(), title: id.to_owned(), app: "fixture".to_owned(), pid,
+    let window = |id: &str, title: &str, pid| senpi_desktop_core::types::DesktopWindow {
+        id: id.to_owned(), title: title.to_owned(), app: "fixture".to_owned(), pid,
         x: 0, y: 0, width: 100, height: 100, focused: false, elevated: None,
     };
     let mut windows = vec![
-        window("overlay-arrow", Some(77)), window("app", Some(78)),
-        window("overlay-label", Some(77)), window("unknown-owner", None),
+        window("overlay-one", "senpi-desktop-cursor-overlay", Some(77)),
+        window("app", "Document", Some(77)),
+        window("overlay-two", "senpi-desktop-cursor-overlay", Some(88)),
+        window("unknown-owner", "Document", None),
     ];
-    // When: the same PID filter used by MacCapture::windows runs.
-    super::exclude_overlay_windows(&mut windows, Some(77));
+    // When: enumeration's process-independent title filter runs.
+    super::exclude_overlay_windows(&mut windows);
     // Then: sibling-window/focus consumers cannot see either overlay window.
     let ids: Vec<_> = windows.iter().map(|window| window.id.as_str()).collect();
     assert_eq!(ids, ["app", "unknown-owner"]);

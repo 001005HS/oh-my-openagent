@@ -44,6 +44,7 @@ impl CursorPanel {
                 backing: NSBackingStoreType::Buffered, defer: false]
         };
         panel.setOpaque(false);
+        panel.setTitle(&NSString::from_str(super::WINDOW_TITLE));
         panel.setBackgroundColor(Some(&NSColor::clearColor()));
         panel.setHasShadow(false);
         panel.setIgnoresMouseEvents(true);

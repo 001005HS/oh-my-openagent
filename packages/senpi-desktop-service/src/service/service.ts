@@ -126,7 +126,7 @@ export class DesktopService {
 	async capabilities(): Promise<DesktopCapabilities> {
 		const result = await this.call("capabilities", {}, { timeoutMs: CAPABILITIES_TIMEOUT_MS });
 		if (!isDesktopCapabilities(result)) throw malformed("capabilities");
-		return result;
+		return { ...result, cursorOverlay: result.cursorOverlay ?? false };
 	}
 
 	/** Reads the live stop-path state; it never arms or latches anything. */

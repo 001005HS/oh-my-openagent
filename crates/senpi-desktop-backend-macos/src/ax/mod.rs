@@ -47,10 +47,20 @@ impl MacAx {
     }
 
     pub(crate) fn show_typing_target(&self, window: &DesktopWindow) {
+        if !self.overlay.available() {
+            return;
+        }
         let focused = window.pid
             .and_then(|pid| i32::try_from(pid).ok())
             .and_then(|pid| element::create_application(pid).ok())
-            .and_then(|app| element::copy_element(&app, "AXFocusedUIElement"));
+            .and_then(|app| {
+                element::set_timeout(&app).ok()?;
+                element::copy_element(&app, "AXFocusedUIElement")
+            })
+            .and_then(|focused| {
+                element::set_timeout(&focused).ok()?;
+                Some(focused)
+            });
         if let Some(focused) = focused {
             if element::owner_window_id(&focused).map(|id| id.to_string()).as_deref() == Some(window.id.as_str()) {
                 if let Some(bounds) = element::bounds(&focused) {

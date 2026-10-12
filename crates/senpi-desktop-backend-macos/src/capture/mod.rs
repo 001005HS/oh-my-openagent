@@ -59,12 +59,11 @@ impl MacCapture {
 
     pub(crate) fn windows(&self) -> CoreResult<Vec<DesktopWindow>> {
         self.require_permission()?;
-        let mut windows = windows::enumerate()?;
-        exclude_overlay_windows(&mut windows, self.overlay.owner_pid());
-        Ok(windows)
+        windows::enumerate()
     }
 
     pub(crate) fn capture(&self, target: &Target) -> CoreResult<(RgbaImage, FrameGeometry)> {
+        self.require_permission()?;
         // The guard surrounds the entire dispatch, not just screencapture.
         // It therefore also covers multi-display batches and CoreGraphics.
         self.overlay.capture(|| match target {
@@ -127,10 +126,8 @@ impl MacCapture {
     }
 }
 
-fn exclude_overlay_windows(windows: &mut Vec<DesktopWindow>, overlay_pid: Option<u32>) {
-    if let Some(pid) = overlay_pid {
-        windows.retain(|window| window.pid != Some(pid));
-    }
+fn exclude_overlay_windows(windows: &mut Vec<DesktopWindow>) {
+    windows.retain(|window| window.title != crate::overlay::WINDOW_TITLE);
 }
 
 #[cfg(test)]

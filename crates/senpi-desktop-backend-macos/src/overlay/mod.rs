@@ -1,5 +1,6 @@
 //! Optional display-only helper shared by native input, AX and capture.
 mod client;
+mod coordination;
 mod helper;
 mod motion;
 mod panel;
@@ -14,11 +15,12 @@ use wire::Command;
 
 pub(crate) use helper::run;
 
+/// WindowServer identity shared by every session's private overlay helper.
+pub(crate) const WINDOW_TITLE: &str = "senpi-desktop-cursor-overlay";
+
 #[derive(Debug, Default)]
 struct State {
     helper: Option<Helper>,
-    /// Retain after failure until WindowServer confirms disappearance.
-    pid: Option<u32>,
     token: u64,
 }
 
@@ -32,7 +34,6 @@ impl Overlay {
         if enabled {
             match Helper::start() {
                 Ok(helper) => {
-                    state.pid = Some(helper.pid());
                     state.helper = Some(helper);
                 }
                 Err(error) => eprintln!("cursor-overlay: unavailable: {error}"),
@@ -59,8 +60,12 @@ impl Overlay {
         }
     }
 
+    #[cfg(test)]
     pub fn owner_pid(&self) -> Option<u32> {
-        self.0.lock().pid
+        if !self.available() {
+            return None;
+        }
+        self.0.lock().helper.as_ref().map(Helper::pid)
     }
 
     pub fn target(&self, x: f64, y: f64) {
@@ -94,27 +99,34 @@ impl Overlay {
                     }
                 }
             }
-            if let Some(pid) = state.pid {
-                let windows = focus::window_info().map_err(|error| {
-                    DesktopError::capture_failed(format!("cannot verify cursor exclusion: {error}"))
-                })?;
-                if windows
-                    .iter()
-                    .any(|window| window.pid == pid && window.on_screen)
-                {
-                    return Err(DesktopError::capture_failed(
-                        "cursor overlay is still visible; capture refused",
-                    ));
-                }
-            }
             token
         };
         let _hidden = Hidden {
             overlay: self.clone(),
             token,
         };
+        // A title check alone races another session's next render. The
+        // exclusive scope prevents every helper from appearing during pixels.
+        let _capture = coordination::open(&coordination::path())
+            .and_then(coordination::capture)
+            .map_err(|error| {
+                DesktopError::capture_failed(format!("cursor exclusion unavailable; capture refused: {error}"))
+            })?;
+        let windows = focus::window_info().map_err(|error| {
+            DesktopError::capture_failed(format!("cannot verify cursor exclusion: {error}"))
+        })?;
+        ensure_hidden(&windows)?;
         capture()
     }
+}
+
+fn ensure_hidden(windows: &[focus::WindowInfo]) -> CoreResult<()> {
+    if windows.iter().any(|window| window.cursor_overlay && window.on_screen) {
+        return Err(DesktopError::capture_failed(
+            "a cursor overlay is still visible; capture refused",
+        ));
+    }
+    Ok(())
 }
 
 struct Hidden {
@@ -136,3 +148,7 @@ impl Drop for Hidden {
 
 #[cfg(test)]
 mod motion_tests;
+
+#[cfg(test)]
+#[path = "visibility_tests.rs"]
+mod visibility_tests;

@@ -130,7 +130,6 @@ mod tests {
             .spawn()
             .unwrap();
         let input = child.stdin.take().unwrap();
-        let pid = child.id();
         assert!(child.wait().unwrap().success());
         let (_sender, replies) = mpsc::channel();
         let overlay = Overlay(Arc::new(Mutex::new(State {
@@ -139,11 +138,11 @@ mod tests {
                 input,
                 replies,
             }),
-            pid: Some(pid),
             token: 1,
         })));
 
         assert!(!overlay.available(), "an exited helper is not available");
         assert!(overlay.0.lock().helper.is_none());
+        assert_eq!(overlay.owner_pid(), None, "an exited helper leaves no cached PID");
     }
 }

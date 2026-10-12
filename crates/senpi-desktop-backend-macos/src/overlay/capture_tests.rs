@@ -40,10 +40,8 @@ fn live_overlay() -> Overlay {
         }
     });
     helper.receive(0).unwrap();
-    let pid = helper.pid();
     Overlay(Arc::new(Mutex::new(State {
         helper: Some(helper),
-        pid: Some(pid),
         token: 1,
     })))
 }

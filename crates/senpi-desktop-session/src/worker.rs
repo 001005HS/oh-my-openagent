@@ -50,7 +50,10 @@ impl Worker {
         capabilities: Arc<Mutex<DesktopCapabilities>>,
         safety: SessionSafety,
     ) -> Self {
-        let backend = factory.create(&DesktopSessionOptions::default());
+        let backend = factory.create(&DesktopSessionOptions {
+            show_cursor: false,
+            ..DesktopSessionOptions::default()
+        });
         let mut worker = Self {
             factory,
             backend,

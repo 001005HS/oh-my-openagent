@@ -24,6 +24,7 @@ pub(crate) struct WindowInfo {
     pub(crate) window_number: u32,
     pub(crate) layer: i32,
     pub(crate) on_screen: bool,
+    pub(crate) cursor_overlay: bool,
 }
 
 #[link(name = "CoreGraphics", kind = "framework")]
@@ -89,6 +90,7 @@ pub(crate) fn window_info() -> CoreResult<Vec<WindowInfo>> {
     let number_key = CFString::from_str("kCGWindowNumber");
     let layer_key = CFString::from_str("kCGWindowLayer");
     let on_screen_key = CFString::from_str("kCGWindowIsOnscreen");
+    let title_key = CFString::from_str("kCGWindowName");
     Ok(array
         .iter()
         .filter_map(|entry| {
@@ -117,6 +119,9 @@ pub(crate) fn window_info() -> CoreResult<Vec<WindowInfo>> {
                     .downcast::<CFBoolean>()
                     .ok()?
                     .as_bool(),
+                cursor_overlay: entry.get(&title_key)
+                    .and_then(|title| title.downcast::<CFString>().ok())
+                    .is_some_and(|title| title.to_string() == crate::overlay::WINDOW_TITLE),
             })
         })
         .collect())

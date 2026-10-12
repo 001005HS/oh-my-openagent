@@ -8,30 +8,35 @@ fn chooses_first_visible_normal_window_of_frontmost_process() {
         WindowInfo {
             pid: 12,
             window_number: 1,
+            cursor_overlay: false,
             layer: 0,
             on_screen: true,
         },
         WindowInfo {
             pid: 7,
             window_number: 2,
+            cursor_overlay: false,
             layer: 3,
             on_screen: true,
         },
         WindowInfo {
             pid: 7,
             window_number: 3,
+            cursor_overlay: false,
             layer: 0,
             on_screen: false,
         },
         WindowInfo {
             pid: 7,
             window_number: 4,
+            cursor_overlay: false,
             layer: 0,
             on_screen: true,
         },
         WindowInfo {
             pid: 7,
             window_number: 5,
+            cursor_overlay: false,
             layer: 0,
             on_screen: true,
         },
@@ -49,12 +54,14 @@ fn returns_none_when_no_normal_on_screen_window_matches() {
         WindowInfo {
             pid: 7,
             window_number: 2,
+            cursor_overlay: false,
             layer: 0,
             on_screen: false,
         },
         WindowInfo {
             pid: 7,
             window_number: 3,
+            cursor_overlay: false,
             layer: 1,
             on_screen: true,
         },
@@ -82,7 +89,7 @@ fn hand_back_reactivates_only_while_the_engine_activation_is_front() {
 }
 
 fn window(pid: u32, layer: i32, on_screen: bool) -> WindowInfo {
-    WindowInfo { pid, window_number: pid * 10, layer, on_screen }
+    WindowInfo { pid, window_number: pid * 10, layer, on_screen, cursor_overlay: false }
 }
 
 #[test]

@@ -52,6 +52,7 @@ pub(crate) fn enumerate() -> CoreResult<Vec<DesktopWindow>> {
             elevated: None,
         });
     }
+    super::exclude_overlay_windows(&mut result);
     Ok(result)
 }
 

@@ -31,6 +31,21 @@ afterEach(async () => {
 });
 
 describe("DesktopService", HANG_GUARD, () => {
+	it("opens and reads capabilities from an older engine without cursorOverlay", async () => {
+		// Given: the real wire fixture advertises the pre-cursor capability shape.
+		const log = fakeEngineFactory({ FAKE_ENGINE_CURSOR_OMITTED: "1" });
+		const service = serviceOver(log);
+
+		// When: both session.open and the capabilities RPC cross the host parser.
+		const opened = await service.open({});
+		const current = await service.capabilities();
+
+		// Then: the older engine remains usable and does not advertise overlay support.
+		expect(opened.cursorOverlay).toBe(false);
+		expect(current.cursorOverlay).toBe(false);
+		expect(current.backend).toBe("fake");
+	});
+
 	it("opens with engine.hello then session.open and resumes with the token the service kept", async () => {
 		// Given
 		const log = fakeEngineFactory();

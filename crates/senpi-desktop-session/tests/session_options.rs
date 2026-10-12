@@ -48,10 +48,10 @@ async fn session_reconfiguration_passes_the_selected_canary_policy_to_each_backe
     session.open(enabled.clone()).wait().await.expect("reopens");
     session.close().wait().await.expect("closes");
 
-    // Then: the probe uses defaults and each real open receives its own complete options.
+    // Then: the startup probe never enables the GUI helper; real opens keep their preferences.
     assert_eq!(
         *options.lock(),
-        vec![DesktopSessionOptions::default(), disabled, enabled]
+        vec![DesktopSessionOptions { show_cursor: false, ..DesktopSessionOptions::default() }, disabled, enabled]
     );
 }
 
@@ -78,5 +78,5 @@ async fn cursor_only_reconfiguration_does_not_recreate_the_backend() {
     session.close().wait().await.expect("closes");
 
     // Then: only the probe and initial open created backends.
-    assert_eq!(*options.lock(), vec![DesktopSessionOptions::default(), shown]);
+    assert_eq!(*options.lock(), vec![DesktopSessionOptions { show_cursor: false, ..DesktopSessionOptions::default() }, shown]);
 }
