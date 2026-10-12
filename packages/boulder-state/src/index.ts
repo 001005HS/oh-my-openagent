@@ -23,6 +23,7 @@ export {
   getWorkForSession,
   getWorkResumeOptions,
   isWorkStale,
+  markCompletionNudged,
   normalizeSessionId,
   readBoulderState,
   reconcileStaleWorks,

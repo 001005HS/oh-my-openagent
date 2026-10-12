@@ -5,6 +5,7 @@ import {
   formatDurationHuman,
   getWorkById,
   getWorkForSession,
+  markCompletionNudged,
 } from "../../features/boulder-state"
 import {
   isAgentRegistered,
@@ -66,7 +67,7 @@ export async function handleCompletedBoulderIdle(input: {
     return
   }
 
-  if (sessionState.boulderCompletionNudgedAt?.[work.work_id]) {
+  if (work.completion_nudged_at !== undefined || sessionState.boulderCompletionNudgedAt?.[work.work_id]) {
     log(`[${HOOK_NAME}] Boulder complete`, { sessionID, plan: boulderState.plan_name })
     return
   }
@@ -125,10 +126,7 @@ export async function handleCompletedBoulderIdle(input: {
     })
     if (!isInternalPromptDispatchAccepted(promptResult)) {
       if (promptResult.status === "failed" && isAmbiguousPostDispatchPromptFailure(promptResult)) {
-        sessionState.boulderCompletionNudgedAt = {
-          ...(sessionState.boulderCompletionNudgedAt ?? {}),
-          [work.work_id]: Date.now(),
-        }
+        recordCompletionNudge(ctx.directory, sessionState, work.work_id)
       }
       log(`[${HOOK_NAME}] Boulder completion nudge skipped by promptAsync gate`, {
         sessionID,
@@ -136,11 +134,16 @@ export async function handleCompletedBoulderIdle(input: {
       })
       return
     }
-    sessionState.boulderCompletionNudgedAt = {
-      ...(sessionState.boulderCompletionNudgedAt ?? {}),
-      [work.work_id]: Date.now(),
-    }
+    recordCompletionNudge(ctx.directory, sessionState, work.work_id)
   }
 
   log(`[${HOOK_NAME}] Boulder complete`, { sessionID, plan: boulderState.plan_name })
+}
+
+function recordCompletionNudge(directory: string, sessionState: SessionState, workId: string): void {
+  sessionState.boulderCompletionNudgedAt = {
+    ...(sessionState.boulderCompletionNudgedAt ?? {}),
+    [workId]: Date.now(),
+  }
+  markCompletionNudged(directory, workId)
 }

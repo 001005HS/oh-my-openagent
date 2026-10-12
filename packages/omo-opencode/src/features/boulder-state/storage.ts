@@ -19,6 +19,7 @@ export {
   getWorkForSession,
   getWorkResumeOptions,
   isStructuredTaskRow,
+  markCompletionNudged,
   normalizeSessionId,
   readBoulderState,
   reconcileStaleWorks,
