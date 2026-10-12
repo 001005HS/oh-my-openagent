@@ -59,8 +59,11 @@ pub(crate) enum Reply {
         #[serde(rename = "byteLength")]
         byte_length: usize,
         bounds: ReplyBounds,
-        #[serde(default)]
+        #[serde(default, rename = "isOnScreen")]
         is_on_screen: Option<bool>,
+        /// The owning process of a window frame; `0` or absent when unknown.
+        #[serde(default)]
+        pid: Option<i32>,
     },
     Error {
         code: String,

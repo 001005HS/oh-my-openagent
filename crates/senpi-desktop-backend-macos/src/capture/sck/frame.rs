@@ -11,6 +11,7 @@ pub(crate) struct Frame {
     pub image: RgbaImage,
     pub bounds: (f64, f64, f64, f64),
     pub is_on_screen: Option<bool>,
+    pub pid: Option<i32>,
 }
 
 impl Frame {
@@ -70,6 +71,7 @@ pub(crate) fn decode(
         image,
         bounds,
         is_on_screen,
+        pid: None,
     })
 }
 

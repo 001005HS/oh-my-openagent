@@ -5,6 +5,7 @@
 
 mod displays;
 mod fallback;
+mod minimized;
 mod route;
 mod sck;
 mod screencapture;

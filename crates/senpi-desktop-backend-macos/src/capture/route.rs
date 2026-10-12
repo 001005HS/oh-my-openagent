@@ -116,6 +116,14 @@ impl MacCapture {
                         "capture worker returned a batch for a single window request",
                     )
                 })?;
+                if frame.is_on_screen == Some(false)
+                    && frame.pid.and_then(|pid| super::minimized::window_minimized(pid, window_id)) == Some(true)
+                {
+                    return Err(DesktopError::capture_unavailable(
+                        "minimized",
+                        format!("window '{id}' is minimized; restore it, or read it through accessibility"),
+                    ));
+                }
                 let (width, height) = (frame.image.width(), frame.image.height());
                 let (x, y, logical_width, logical_height) = frame.bounds;
                 let window = DesktopWindow {

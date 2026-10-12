@@ -113,6 +113,7 @@ impl HelperClient {
                     byte_length,
                     bounds,
                     is_on_screen,
+                    pid,
                 } => {
                     if index != expected || !bounds.valid() {
                         return Err(DesktopError::capture_failed(
@@ -121,14 +122,16 @@ impl HelperClient {
                     }
                     frame_bytes(width, height)?;
                     let pixels = read_pixels(&mut self.output, byte_length, deadline)?;
-                    frames.push(decode(
+                    let mut frame = decode(
                         width,
                         height,
                         byte_length,
                         pixels,
                         (bounds.x, bounds.y, bounds.width, bounds.height),
                         is_on_screen,
-                    )?);
+                    )?;
+                    frame.pid = pid.filter(|pid| *pid > 0);
+                    frames.push(frame);
                 },
             }
         }

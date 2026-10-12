@@ -70,14 +70,14 @@ static void CaptureNext(SCShareableContent *content, NSArray *requests, NSUInteg
 	SCContentFilter *filter = nil;
 	CGRect bounds = CGRectZero;
 	BOOL onScreen = YES;
+	pid_t ownerPid = 0;
 	if ([kind isEqualToString:@"window"]) {
 		for (SCWindow *window in content.windows) {
 			if (window.windowID != identifier) continue;
-			if (!window.isOnScreen) {
-				Unavailable(@"minimized", @"The window is minimized or on another Space");
-				done(); return;
-			}
+			// isOnScreen is NO for a minimized window and for one on another Space alike;
+			// the engine tells them apart through AXMinimized and refuses only the former.
 			filter = [[SCContentFilter alloc] initWithDesktopIndependentWindow:window];
+			ownerPid = window.owningApplication.processID;
 			bounds = window.frame;
 			onScreen = window.isOnScreen;
 			break;
@@ -137,7 +137,7 @@ static void CaptureNext(SCShareableContent *content, NSArray *requests, NSUInteg
 			CGContextDrawImage(bitmap, CGRectMake(0, 0, pixelWidth, pixelHeight), image);
 			CGContextRelease(bitmap);
 			Header(@{ @"kind": @"frame", @"index": @(index), @"width": @(pixelWidth), @"height": @(pixelHeight),
-				@"byteLength": @(length), @"isOnScreen": @(onScreen),
+				@"byteLength": @(length), @"isOnScreen": @(onScreen), @"pid": @(ownerPid),
 				@"bounds": @{ @"x": @(bounds.origin.x), @"y": @(bounds.origin.y),
 					@"width": @(bounds.size.width), @"height": @(bounds.size.height) } });
 			if (!WriteAll(pixels.bytes, pixels.length)) _exit(74);
