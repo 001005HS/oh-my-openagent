@@ -71,6 +71,19 @@ describe("computer tool execute", HANG_GUARD, () => {
 		expect(result.details.value).toMatchObject({ ax: "button Run [ref=e1]" });
 	});
 
+	it("keeps a short printed string in the returned value", async () => {
+		// Given
+		const { handle } = desktopFixture();
+		const params = { action: "run" as const, code: "console.log('Terminal'); return { title: 'Terminal' };" };
+
+		// When
+		const result = await toolFor(handle).execute("call-print", params, undefined, undefined, hostContext());
+
+		// Then
+		const texts = result.content.flatMap((part) => (part.type === "text" ? [part.text] : []));
+		expect(texts.at(-1)).toContain('"title": "Terminal"');
+	});
+
 	it("rejects a userReset chain as an unknown method before any engine is started", async () => {
 		// Given
 		const { handle, log } = desktopFixture();

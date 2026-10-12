@@ -6,7 +6,8 @@ use std::future::Future;
 ///
 /// When both are ready at once the outcome wins: the session thread has
 /// already committed the request (an observe's frame and refs, an input),
-/// so answering `Cancelled` would hide state the engine kept.
+/// so answering `Cancelled` would hide state the engine kept. A cancel can still win when it lands
+/// within the same poll as the worker's reply; that window is one poll wide.
 pub(crate) async fn settle<T>(
     outcome: impl Future<Output = T>,
     cancel: impl Future,
