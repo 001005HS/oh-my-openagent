@@ -119,7 +119,12 @@ describe("HostSessionClient connection lifetime", () => {
     const released = host.waitForConnections(0)
 
     // when
-    await expect(client.close()).rejects.toThrow("host_draining")
+    const refusal = await client.close().then(
+      () => undefined,
+      (error: unknown) => error,
+    )
+    expect(refusal).toBeInstanceOf(Error)
+    expect(String(refusal)).toContain("host_draining")
 
     // then
     const disconnected = await observedWithin(released)
