@@ -76,7 +76,7 @@ export type ConversationTail = {
 export async function sessionTailReconciliation(
   sessionPath: string,
   ignoredUserPrompts: readonly string[] = [],
-): Promise<(ConversationTail & { readonly finishedText?: string; readonly needsContinuation: boolean }) | undefined> {
+): Promise<(ConversationTail & { readonly finishedText?: string; readonly needsContinuation: boolean; readonly endsAtIgnoredUserPrompt: boolean }) | undefined> {
   try {
     const tail = await readConversationTail(sessionPath)
     if (tail === undefined) return undefined
@@ -84,6 +84,8 @@ export async function sessionTailReconciliation(
       ...tail,
       finishedText: tailFinishedText(tail),
       needsContinuation: tailNeedsContinuation(tail) && ignoredUserPrompts.every(prompt => tailNeedsContinuation(tail, prompt)),
+      endsAtIgnoredUserPrompt: tail.lastMessage.role === "user" &&
+        ignoredUserPrompts.some(prompt => isIgnoredUserPrompt(tail.lastMessage, prompt)),
     }
   } catch (error) {
     if (error instanceof SyntaxError || (error instanceof Error && "code" in error && error.code === "ENOENT")) return undefined

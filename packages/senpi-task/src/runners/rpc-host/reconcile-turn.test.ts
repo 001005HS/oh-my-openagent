@@ -2,11 +2,18 @@ import { appendFileSync, writeFileSync } from "node:fs"
 import * as fsPromises from "node:fs/promises"
 import { join } from "node:path"
 import { afterEach, describe, expect, spyOn, test } from "bun:test"
-import { cleanupProjects, tempProject } from "../../manager/__fixtures__/manager-fakes"
+import { cleanupProjects, makeManager, tempProject } from "../../manager/__fixtures__/manager-fakes"
+import { adaptRpcHandle } from "../../manager/child-handle"
+import { createTaskRecord } from "../../state"
+import { runTaskOutput } from "../../tools/output/output"
 import type { RunnerOutcome } from "../in-process/child-handle"
-import { reconcileHostTurn, type InputEffectStatus, type ReconciledTurnNotice } from "./reconcile-turn"
+import { isHostSessionHandle } from "../rpc-host"
+import { childSpec, hostRunnerHarness } from "../rpc-host.test-support"
+import { HOST_RESPAWN_CONTINUATION, reconcileHostTurn, type InputEffectStatus, type ReconciledTurnNotice } from "./reconcile-turn"
+import { reattachContinuationPrompt } from "./reattach"
 
-afterEach(cleanupProjects)
+const harness = hostRunnerHarness()
+afterEach(async () => { await harness.release(); cleanupProjects() })
 
 function scenario(options: {
   readonly streaming?: boolean
@@ -33,6 +40,80 @@ function scenario(options: {
 }
 
 describe("host turn reconciliation authority", () => {
+  for (const prompt of [reattachContinuationPrompt(), HOST_RESPAWN_CONTINUATION]) {
+    test(`idle unanswered ${prompt === HOST_RESPAWN_CONTINUATION ? "respawn" : "reattach"} continuation interrupts instead of empty success`, async () => {
+      const f = scenario({ receipt: { state: "applied" } })
+      appendFileSync(f.path, `\n${JSON.stringify({
+        type: "message", message: { role: "user", content: [{ type: "text", text: prompt }] },
+      })}\n`)
+      expect(await reconcileHostTurn(f.port, {}, f.path)).toBe("interrupted")
+      expect(f.outcomes).toEqual([{ status: "cancelled" }])
+      expect(f.notices).toEqual([{
+        kind: "interrupted",
+        reason: expect.any(String),
+        action: expect.stringContaining("task_send"),
+      }])
+    })
+  }
+
+  test("host dies after a delivered continuation before child output and leaves an actionable interrupted task", async () => {
+    const recovering = [Promise.withResolvers<void>(), Promise.withResolvers<void>()]
+    const reopen = [Promise.withResolvers<void>(), Promise.withResolvers<void>()]
+    let recovery = 0
+    const host = await harness.fakeHost({ transcripts: true })
+    const runner = harness.runnerOver(host, {
+      reattachDelaysMs: [0],
+      sleep: () => {
+        const index = recovery++
+        recovering[index]?.resolve()
+        return reopen[index]?.promise ?? Promise.reject(new Error("unexpected third recovery"))
+      },
+    })
+    const project = tempProject()
+    const initial = createTaskRecord({
+      parent_session_id: "parent", root_session_id: "parent", depth: 1,
+      execution_mode: "process", model: "anthropic/claude-sonnet-4-5", notify_on_terminal: false,
+    }, 0)
+    const handle = await runner.start(childSpec({ state_dir: project, task_id: initial.task_id }))
+    if (!isHostSessionHandle(handle)) throw new Error("expected host session")
+    const { manager, store } = makeManager({ project })
+    const record = { ...initial, status: "running" as const, host_pid: process.pid }
+    store.save(record)
+    expect(await manager.reattach(record, adaptRpcHandle(handle))).toEqual({ ok: true })
+    try {
+      // The first host dies during the original turn. Reopening delivers one continuation.
+      const delivered = host.waitForCommand("prompt")
+      await host.restart()
+      await recovering[0]!.promise
+      reopen[0]!.resolve()
+      const continuation = await delivered
+      expect(continuation.payload.message).toBe(reattachContinuationPrompt())
+      await handle.getEntries()
+      expect(store.load(record.task_id)?.status).toBe("running")
+
+      // The next host dies after that delivery, with no assistant message ever written.
+      const outcome = handle.waitForOutcome()
+      await host.restart()
+      await recovering[1]!.promise
+      reopen[1]!.resolve()
+      await handle.getEntries()
+      expect(await outcome).toEqual({ status: "cancelled" })
+      const stopped = store.load(record.task_id)
+      expect(stopped?.status).toBe("interrupted")
+      expect(stopped?.final_response).toBeUndefined()
+      expect(stopped?.error_message).toContain("continuation")
+      expect(stopped?.error_message).toContain("task_send")
+      const output = await runTaskOutput({ manager, stateDir: store.stateDir }, { task_id: record.task_id }, "parent")
+      const rendered = output.content[0]
+      if (rendered?.type !== "text" || stopped?.error_message === undefined) throw new Error("missing interruption output")
+      expect(rendered.text).toContain(stopped.error_message)
+      expect(host.commands.filter(command => command.type === "prompt")).toHaveLength(2)
+    } finally {
+      for (const gate of reopen) gate.resolve()
+      await handle.dispose()
+    }
+  }, 5_000)
+
   test("streaming execution outranks a completed receipt and final transcript", async () => {
     const f = scenario({ streaming: true, receipt: { state: "done", outcome: { kind: "completed" } } })
     expect(await reconcileHostTurn(f.port, {}, f.path)).toBe("streaming")

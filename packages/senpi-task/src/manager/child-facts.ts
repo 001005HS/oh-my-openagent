@@ -33,8 +33,10 @@ export function subscribeChildFacts(input: {
         ...(fresh.host_session === undefined ? {} : { host_session: { ...fresh.host_session, adopted_entry_id: notice.entryId } }),
       }))
     } else {
-      const needsAction = notice.kind === "idle_queued" || notice.deadline !== undefined
-      input.store.transition(taskId, { type: "interrupt", timestamp, ...(needsAction ? { error_message: notice.reason } : {}) })
+      const action = notice.kind === "interrupted" ? notice.action : undefined
+      const needsAction = notice.kind === "idle_queued" || notice.deadline !== undefined || action !== undefined
+      const reason = action === undefined ? notice.reason : `${notice.reason} Action: ${action}`
+      input.store.transition(taskId, { type: "interrupt", timestamp, ...(needsAction ? { error_message: reason } : {}) })
       if (notice.kind === "interrupted" && notice.deadline !== undefined) {
         input.store.mutate(taskId, (fresh) => ({ ...fresh, stop_reason: "deadline", deadline: notice.deadline }))
       }

@@ -18,11 +18,11 @@ export type InputEffectStatus = {
   }
 }
 
-export type HostTurnReconciliation = "streaming" | "adopted" | "continued" | "idle_queued" | "idle_empty" | "stopped_deadline" | "failed"
+export type HostTurnReconciliation = "streaming" | "adopted" | "continued" | "idle_queued" | "idle_empty" | "interrupted" | "stopped_deadline" | "failed"
 
 export type ReconciledTurnNotice =
   | { readonly kind: "adopted"; readonly entryId: string }
-  | { readonly kind: "interrupted"; readonly reason: string; readonly deadline?: Readonly<Record<string, unknown>> }
+  | { readonly kind: "interrupted"; readonly reason: string; readonly action?: string; readonly deadline?: Readonly<Record<string, unknown>> }
   | { readonly kind: "idle_queued"; readonly reason: string }
 
 export interface ReconcileTurnPort {
@@ -107,6 +107,15 @@ export async function reconcileHostTurn(
     if (entryId !== undefined && entryId !== record.host_session?.adopted_entry_id) port.notify({ kind: "adopted", entryId })
     port.settle({ status: "completed", finalResponse: finished ?? "" })
     return "adopted"
+  }
+  if (outcome === undefined && tail?.endsAtIgnoredUserPrompt === true) {
+    port.notify({
+      kind: "interrupted",
+      reason: "The child's delivered continuation was interrupted before it produced a response.",
+      action: "Inspect task_output, then use task_send to continue the child.",
+    })
+    port.settle({ status: "cancelled" })
+    return "interrupted"
   }
   if (receipt?.state === "applied" || (tail === undefined && port.interruptedWithoutTranscript === true) ||
     tail?.needsContinuation === true) {
