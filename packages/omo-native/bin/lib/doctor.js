@@ -126,6 +126,14 @@ function isEngine(entry) {
   return ENGINE_MARKERS.some((marker) => entry.command.includes(marker)) || isBinaryEngine(entry.command)
 }
 
+// A daemon started by an older engine as `... app-server` keeps running after an upgrade. It has no
+// `--mode` and is reparented to init, so it would otherwise read as an orphaned session.
+const RETIRED_APP_SERVER = /(?:senpi[\\/]dist[\\/](?:bundle[\\/])?cli\.js|[\\/]binary-runtime[\\/][^\\/\s]+[\\/]omo(?:\.exe)?)\s+app-server(?=\s|$)/
+
+function isRetiredAppServer(entry) {
+  return RETIRED_APP_SERVER.test(entry.command)
+}
+
 function isInteractive(entry) {
   return !entry.command.includes(MANAGED_MODE_FLAG)
 }
@@ -144,7 +152,7 @@ export function classifyEngineProcesses(entries) {
   for (const entry of entries) {
     if (!isEngine(entry)) continue
     if (!isInteractive(entry)) managed.push(entry)
-    else if (entry.ppid === 1) stale.push(entry)
+    else if (entry.ppid === 1) stale.push(isRetiredAppServer(entry) ? { ...entry, retiredAppServer: true } : entry)
     else attached.push(entry)
   }
   return { stale, attached, managed }
@@ -153,7 +161,9 @@ export function classifyEngineProcesses(entries) {
 export function formatStaleEngineLines(stale) {
   if (stale.length === 0) return []
   const lines = stale.map((entry) =>
-    `WARN stale engine pid ${entry.pid} (age ${entry.elapsed}, tty ${entry.tty}) has no launcher; it was orphaned by a signaled launcher`
+    entry.retiredAppServer
+      ? `WARN pid ${entry.pid} (age ${entry.elapsed}, tty ${entry.tty}) is an app-server daemon started by an older version; that command was removed, so stop it`
+      : `WARN stale engine pid ${entry.pid} (age ${entry.elapsed}, tty ${entry.tty}) has no launcher; it was orphaned by a signaled launcher`
   )
   lines.push(`INFO reap them explicitly by pid: omo doctor --reap ${stale.map((entry) => entry.pid).join(" ")}`)
   return lines
