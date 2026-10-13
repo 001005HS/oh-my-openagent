@@ -130,11 +130,12 @@ pub(crate) fn window_info() -> CoreResult<Vec<WindowInfo>> {
                     .downcast::<CFNumber>()
                     .ok()?
                     .as_i32()?,
+                // WindowServer omits kCGWindowIsOnscreen for off-screen windows (another Space,
+                // minimized, or not yet drawn); absence means off-screen, not unidentifiable.
                 on_screen: entry
-                    .get(&on_screen_key)?
-                    .downcast::<CFBoolean>()
-                    .ok()?
-                    .as_bool(),
+                    .get(&on_screen_key)
+                    .and_then(|value| value.downcast::<CFBoolean>().ok())
+                    .is_some_and(|value| value.as_bool()),
                 cursor_overlay,
             }))();
             if cursor_overlay && window.is_none() {

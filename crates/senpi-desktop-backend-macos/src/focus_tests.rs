@@ -168,3 +168,12 @@ fn a_restore_leaves_an_app_the_user_switched_to_in_front() {
     // Then
     assert_eq!(step, RestoreStep::UserMovedOn);
 }
+
+#[test]
+fn window_list_keeps_off_screen_windows_whose_onscreen_key_is_absent() {
+    // Given: the live WindowServer list, which always has off-screen windows (other Spaces, menus).
+    let windows = super::window_info().expect("WindowServer window list");
+    // Then: they are listed as off-screen instead of dropped; a dropped helper window was
+    // reported as "cannot identify a cursor-helper window" and broke every capture.
+    assert!(windows.iter().any(|window| !window.on_screen), "{} windows, none off-screen", windows.len());
+}
