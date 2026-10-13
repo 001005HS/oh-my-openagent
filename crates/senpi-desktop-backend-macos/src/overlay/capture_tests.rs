@@ -53,6 +53,10 @@ fn crop(image: &RgbaImage, display: &DesktopDisplay) -> RgbaImage {
     let y = 155 * image.height() / display.height;
     let width = 90 * image.width() / display.width;
     let height = 55 * image.height() / display.height;
+    println!(
+        "pixel_roi display={}x{} scale={} image={}x{} crop={x},{y},{width},{height}",
+        display.width, display.height, display.scale, image.width(), image.height(),
+    );
     image::imageops::crop_imm(image, x, y, width, height).to_image()
 }
 
@@ -219,6 +223,7 @@ fn capture_succeeds_without_foreign_cursor_pixels_while_another_helper_is_active
     let primary = displays.into_iter().find(|d| d.is_primary).unwrap();
     let _fixture = Fixture::start();
     let baseline = crop(&capture.capture(&Target::Desktop).unwrap().0, &primary);
+    baseline.save(evidence.join("foreign-baseline.png")).unwrap();
     assert!(baseline.pixels().all(|p| p[0] < p[1] && p[1] < p[2] && p[2] < 100));
     let foreign = live_overlay();
     let foreign_pid = foreign.owner_pid().expect("live foreign helper");
@@ -228,20 +233,19 @@ fn capture_succeeds_without_foreign_cursor_pixels_while_another_helper_is_active
             .unwrap().0,
         &primary,
     );
-    assert!(changed(&baseline, &visible) > 10, "negative control must contain foreign cursor pixels");
-    baseline.save(evidence.join("foreign-baseline.png")).unwrap();
     visible.save(evidence.join("foreign-raw-visible.png")).unwrap();
+    assert!(changed(&baseline, &visible) > 10, "negative control must contain foreign cursor pixels");
 
     // When: a backend with no ownership of that helper captures while target/ACK traffic continues.
     let guarded = crop(
         &capture.capture(&Target::Desktop).expect("foreign overlay must not prevent capture").0,
         &primary,
     );
+    guarded.save(evidence.join("foreign-guarded.png")).unwrap();
 
     // Then: capture succeeds, its pixels omit the foreign overlay, and window enumeration omits it.
     assert_eq!(changed(&baseline, &guarded), 0, "foreign cursor pixels leaked");
     assert!(capture.windows().unwrap().iter().all(|w| w.pid != Some(foreign_pid)));
-    guarded.save(evidence.join("foreign-guarded.png")).unwrap();
     println!(
         "foreign_helper_pid={foreign_pid} raw_overlay_pixels={} guarded_overlay_pixels=0",
         changed(&baseline, &visible),
