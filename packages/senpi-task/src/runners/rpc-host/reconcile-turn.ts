@@ -1,3 +1,5 @@
+import { log } from "@oh-my-opencode/utils"
+
 import { sessionTailReconciliation } from "../../manager/interrupted-turn"
 import type { TaskRecord } from "../../state"
 import type { RunnerOutcome } from "../in-process/child-handle"
@@ -44,7 +46,17 @@ export async function reconcileHostTurn(
   record: Pick<TaskRecord, "host_session" | "final_response">,
   sessionPath: string,
 ): Promise<HostTurnReconciliation> {
-  const state = await port.getState()
+  let state: HostSessionLiveness
+  try {
+    state = await port.getState()
+  } catch (error) {
+    log("senpi-task host turn state read failed", {
+      sessionPath,
+      reason: error instanceof Error ? error.message : String(error),
+      action: "Keep the child tracked as streaming and wait for its next outcome without sending input.",
+    })
+    return "streaming"
+  }
   if (state.isStreaming === true || state.isCompacting === true) return "streaming"
   const receipt = port.lastInputEffect
   if (receipt?.state === "accepted") {

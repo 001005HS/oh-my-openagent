@@ -10,7 +10,7 @@ import { respawnManagedTask } from "./manager-respawn"
 const harness = hostRunnerHarness()
 afterEach(async () => { await harness.release(); cleanupProjects() })
 
-async function detachedChild(deadline = false, aborted = false) {
+async function detachedChild(deadline = false, aborted = false, rejectState = false) {
   const project = tempProject()
   const host = await harness.fakeHost({ transcripts: true })
   const runner = harness.runnerOver(host)
@@ -37,16 +37,44 @@ async function detachedChild(deadline = false, aborted = false) {
     host_session: { socket: host.socketPath, routing_id: session.routingId, session_path: session.sessionPath, instance_id: session.instanceId },
   }
   store.save(record)
+  const beforeRespawn = host.commands.length
+  if (rejectState) {
+    host.emitRecord(session.routingId, { type: "agent_start" })
+    host.failReply("get_state", "Synthetic state read unavailable")
+  }
   const result = await respawnManagedTask({
     beforeLaunch: () => undefined, record, sessionPath: session.sessionPath, stateDir: project,
     runners: { "in-process": { start: async () => { throw new Error("unused") } }, process: { start: async () => { throw new Error("unused") } } },
     rpcRunner: runner,
   })
   if (!result.ok) throw new Error(result.reason)
-  return { host, result, record, manager, store }
+  return { host, result, record, manager, store, respawnCommands: host.commands.slice(beforeRespawn) }
 }
 
 describe("respawn reconciliation on the real host runner", () => {
+  test("a rejected get_state preserves the attached child and arms manager tracking without input", async () => {
+    const f = await detachedChild(false, false, true)
+    try {
+      expect(f.result.handle.kind).toBe("host-session")
+      expect(f.result.handle.hasExited?.()).toBe(false)
+      expect(f.host.connections).toBe(1)
+      expect(f.respawnCommands.filter(command =>
+        ["prompt", "steer", "follow_up", "abort", "close_session", "detach_session"].includes(command.type),
+      )).toEqual([])
+      expect(await f.manager.reattach(f.record, f.result.handle)).toEqual({ ok: true })
+      expect(f.store.load(f.record.task_id)?.status).toBe("running")
+      expect(f.store.load(f.record.task_id)?.final_response).toBeUndefined()
+      f.host.failReply("get_state", undefined)
+      const finished = f.manager.waitFor(f.record.task_id, { signal: AbortSignal.timeout(5_000) })
+      const session = f.host.sessions()[0]
+      if (session === undefined) throw new Error("missing attached session")
+      f.host.completeTurn(session.routingId, "LIVE RESPAWN ANSWER")
+      expect((await finished).final_response).toBe("LIVE RESPAWN ANSWER")
+    } finally {
+      await f.result.handle.dispose()
+    }
+  }, 5_000)
+
   test("attached idle finished tail settles the real answer without another prompt", async () => {
     const f = await detachedChild()
     expect(await f.result.handle.waitForOutcome()).toEqual({ status: "completed", finalResponse: "REAL FINAL ANSWER" })
