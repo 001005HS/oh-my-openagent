@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**A task child started as its own process never receives its fallback chain after its first prompt.** When the engine answered the capability check only after the chain deadline, the runner still sent `set_retry_fallback` once the first prompt was already out; it now drops the chain at the deadline, and the child keeps the manager's fallback with the usual "no answer" warning. This was the intermittent windows-latest test failure. ([#9582](https://github.com/code-yeongyu/oh-my-openagent/issues/9582), [#10087](https://github.com/code-yeongyu/oh-my-openagent/pull/10087))
+
 ## [5.1.32] - 2026-10-12
 
 **5.1.32 is the release that 5.1.31 was meant to be: 5.1.31 never reached npm.** Two checks in the release pipeline stopped it before any package was published, one on the macOS Intel desktop engine and one on the Linux musl builds. omo itself did not change between the two, so every entry below is new to anyone upgrading from 5.1.30. The notarization check now waits for Apple's ticket to reach Gatekeeper, and the musl smoke no longer reports an exited host supervisor as a leak. ([#10081](https://github.com/code-yeongyu/oh-my-openagent/pull/10081), [#10082](https://github.com/code-yeongyu/oh-my-openagent/pull/10082))
