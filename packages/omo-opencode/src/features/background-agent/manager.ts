@@ -1381,19 +1381,18 @@ The fallback retry session is now created and can be inspected directly.
     const concurrencyKey = this.concurrencyManager.getConcurrencyKey(
       existingTask.concurrencyGroup ?? existingTask.agent,
     )
-    const queuedBefore = this.concurrencyManager.getQueueLength(concurrencyKey)
-    const admission = this.concurrencyManager.acquire(concurrencyKey, existingTask.id)
-    const mustWait = this.concurrencyManager.getQueueLength(concurrencyKey) > queuedBefore
-    if (!mustWait) {
+    if (this.concurrencyManager.tryAcquire(concurrencyKey)) {
       // Reserve the task before yielding: a concurrent resume in the same turn must be refused, not queued behind this one.
       this.resumesAwaitingAdmission.add(existingTask.id)
       try {
-        await admission
+        // Yield one turn so a same-turn second resume observes the reservation before this task flips to running.
+        await Promise.resolve()
         return await this.startResumedTask(existingTask, input, resumeSnapshot, concurrencyKey)
       } finally {
         this.resumesAwaitingAdmission.delete(existingTask.id)
       }
     }
+    const admission = this.concurrencyManager.acquire(concurrencyKey, existingTask.id)
     const resumeToken = {}
     existingTask.pendingResume = resumeToken
     existingTask.status = "pending"
@@ -1583,6 +1582,16 @@ The fallback retry session is now created and can be inspected directly.
       const errorMessage = errorInfo.message ?? (error instanceof Error ? error.message : String(error))
       existingTask.error = errorMessage
       existingTask.completedAt = new Date()
+      this.taskHistory.record(existingTask.parentSessionId, {
+        id: existingTask.id,
+        sessionID: existingTask.sessionId,
+        agent: existingTask.agent,
+        description: existingTask.description,
+        status: "interrupt",
+        category: existingTask.category,
+        startedAt: existingTask.startedAt,
+        completedAt: existingTask.completedAt,
+      })
       if (existingTask.rootSessionId) {
         this.unregisterRootDescendant(existingTask.rootSessionId)
       }
