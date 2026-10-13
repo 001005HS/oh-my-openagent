@@ -106,7 +106,9 @@ for (const kind of ["stdio", "host"] as const) {
     })
     tracker.trackOutcome(record.task_id, managed, record.model, record.notification.run_epoch)
     await clock.advance(40_000)
-    expect(await Promise.race([h.handle.waitForOutcome(), Promise.resolve("still pending")]))
+    const waitForOutcome = h.handle.waitForOutcome
+    if (waitForOutcome === undefined) throw new Error("the child handle did not expose its outcome wait")
+    expect(await Promise.race([waitForOutcome(), Promise.resolve("still pending")]))
       .toMatchObject({ status: "error", failure: { kind: "child-unresponsive" } })
     await persisted.promise
     expect(store.load(record.task_id)).toMatchObject({ status: "error", failure_kind: "child-unresponsive" })

@@ -6,7 +6,7 @@ export function silentChild() {
   const commands: Array<{ type: string; id: string }> = []
   const stdin = new PassThrough()
   const stdout = new PassThrough()
-  const child = Object.assign(new EventEmitter(), { stdin, stdout, stderr: new PassThrough() }) as ChildProcess
+  const child = Object.assign(new EventEmitter(), { stdin, stdout, stderr: new PassThrough() }) as unknown as ChildProcess
   stdin.on("data", (bytes: Buffer) => commands.push(JSON.parse(bytes.toString())))
   return {
     child,
