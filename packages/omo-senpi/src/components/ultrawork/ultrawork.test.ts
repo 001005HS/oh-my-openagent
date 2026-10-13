@@ -35,6 +35,31 @@ describe("omo-senpi ultrawork component", () => {
     }
   })
 
+  it("#given a relayed lane report that merely mentions ulw-loop mid-sentence #when it reaches a session #then it does not arm", async () => {
+    // Live evidence 2026-10-13: a relayed lane status report reading "...ulw-loop G002 checkpoint..."
+    // mid-sentence armed the receiving session. The keyword form matches by design (the skill form
+    // "mass ulw-loop" must keep arming when TYPED); the only correct suppression layer is the relay
+    // layer's provenance mark. The report body matches no relay-header pattern, so the header
+    // heuristics never see it - this is a mention, not an instruction.
+    const laneReport =
+      "Lane checkpoint: the ulw-loop G002 checkpoint is green, two PRs waiting on CI, next is the bundle regen"
+    expect(classifyUltraworkInput(
+      { text: laneReport, source: "interactive", origin: "relayed" },
+      { wasArmed: false, compactRearmPending: false },
+    )).toMatchObject({ effective: false, stage: "none", route: "none", suppressionReason: "relayed_origin" })
+    const pi = new FakeExtensionAPI()
+    await registerIsolatedUltrawork(pi)
+    expectNoInjection(
+      pi,
+      await dispatchInput(pi, { type: "input", text: laneReport, source: "interactive", origin: "relayed" }),
+    )
+    // The same sentence typed by the session owner still arms: only provenance changed.
+    const typed = new FakeExtensionAPI()
+    await registerIsolatedUltrawork(typed)
+    const typedResult = await dispatchInput(typed, laneReport, "interactive", undefined, sessionEventCtx("session-typed-mention"))
+    expectHiddenInjection(typed, typedResult)
+  })
+
   it("#given the session owner opted in to relayed ultrawork #when a relayed message carries the keyword #then it arms", () => {
     expect(classifyUltraworkInput(
       { text: "ulw fix the flaky test", source: "interactive", origin: "relayed", allowRelayed: true },

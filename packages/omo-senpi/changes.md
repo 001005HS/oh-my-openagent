@@ -6,7 +6,7 @@ A chat bot built on OmO printed ULTRAWORK banners when a third party typed `ulw`
 
 The field on the input event is the senpi host contract (senpi adds `InputOrigin` to `InputEvent`); this component reads it, and the omo gateway sets it after. The suppression is inert until both land, so it fixes nothing on its own until the gateway setter ships.
 
-Tests (`ultrawork.test.ts`): a relayed-origin keyword does not arm (classification `relayed_origin` and `expectNoInjection` for interactive and rpc), and the owner opt-in arms; both fail on the pre-change code for the intended reason. The existing owner-`"ulw do it"`-over-rpc guard is unchanged. `bun test packages/omo-senpi/src/components/ultrawork/`: 77 pass / 0 fail.
+Tests (`ultrawork.test.ts`): a relayed-origin keyword does not arm (classification `relayed_origin` and `expectNoInjection` for interactive and rpc), a relayed lane report that merely mentions `ulw-loop` mid-sentence does not arm (live-evidence regression: the duty lane's `[DUTY] ... ulw-loop G002 checkpoint` report armed the lead's session; the same sentence typed by the session owner still arms), and the owner opt-in arms; each fails on the pre-change code for the intended reason. The existing owner-`"ulw do it"`-over-rpc guard is unchanged. `bun test packages/omo-senpi/src/components/ultrawork/`: 78 pass / 0 fail.
 
 ## 2026-10-11 - The control confirm drops its redundant time floor (#9967)
 
