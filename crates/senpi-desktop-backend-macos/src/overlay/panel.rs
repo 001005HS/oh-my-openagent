@@ -50,7 +50,7 @@ impl CursorPanel {
         panel.setIgnoresMouseEvents(true);
         panel.setHidesOnDeactivate(false);
         panel.setBecomesKeyOnlyIfNeeded(true);
-        panel.setLevel(1000);
+        panel.setLevel(super::WINDOW_LEVEL as isize);
         panel.setCollectionBehavior(
             NSWindowCollectionBehavior::CanJoinAllSpaces
                 | NSWindowCollectionBehavior::FullScreenAuxiliary

@@ -22,6 +22,11 @@ unsafe extern "C" {
     safe fn CGPreflightScreenCaptureAccess() -> bool;
 }
 
+/// Whether captures can hide cursor-helper windows per frame (macOS 14+).
+pub(crate) fn filtered_capture_supported() -> bool {
+    filtered::supported()
+}
+
 /// Whether this process may capture the screen, without prompting.
 pub(crate) fn capture_permission() -> bool {
     CGPreflightScreenCaptureAccess()
@@ -80,11 +85,11 @@ impl MacCapture {
         })?;
         self.overlay.capture(&lock_path, crate::focus::window_info, std::thread::sleep, |excluded| {
             let result = match target {
-            Target::Desktop | Target::Display(_) => {
-                let selector = target.display_selector().unwrap_or_else(|| self.selector.clone());
-                self.capture_desktop(&selector, excluded)
-            }
-            Target::Window(id) => self.capture_window(id, excluded),
+                Target::Desktop | Target::Display(_) => {
+                    let selector = target.display_selector().unwrap_or_else(|| self.selector.clone());
+                    self.capture_desktop(&selector, excluded)
+                }
+                Target::Window(id) => self.capture_window(id, excluded),
             }?;
             // A launcher with another cache domain must not introduce an unfiltered helper.
             let after = crate::focus::window_info()?;
@@ -133,13 +138,15 @@ impl MacCapture {
                 let id = display.id.parse::<u32>()
                     .map_err(|_| DesktopError::capture_failed("filtered display has no native ID"))?;
                 filtered::capture(Some(id), None, display.pixel_width, display.pixel_height, excluded)?
-            } else { match self.shooter.run(&display_args(display)) {
-                Ok(image) => image,
-                Err(ShotError::Unavailable(reason)) => {
-                    return fallback::capture_primary(&displays, &reason);
+            } else {
+                match self.shooter.run(&display_args(display)) {
+                    Ok(image) => image,
+                    Err(ShotError::Unavailable(reason)) => {
+                        return fallback::capture_primary(&displays, &reason);
+                    }
+                    Err(ShotError::Fatal(error)) => return Err(error),
                 }
-                Err(ShotError::Fatal(error)) => return Err(error),
-            }};
+            };
             if image.width() == 0 || image.height() == 0 {
                 return Err(DesktopError::capture_failed(format!(
                     "capture of display '{}' returned an empty image",
@@ -163,10 +170,9 @@ impl MacCapture {
         let window = windows::find(id)?;
         let image = if !excluded.is_empty() {
             filtered::capture(None, Some(window_id), window.width, window.height, excluded)?
-        } else { self
-            .shooter
-            .run(&window_args(window_id))
-            .map_err(DesktopError::from)? };
+        } else {
+            self.shooter.run(&window_args(window_id)).map_err(DesktopError::from)?
+        };
         if image.width() == 0 || image.height() == 0 {
             return Err(DesktopError::capture_failed(format!(
                 "capture of window '{id}' returned an empty image"
@@ -177,8 +183,15 @@ impl MacCapture {
     }
 }
 
-fn exclude_overlay_windows(windows: &mut Vec<DesktopWindow>) {
-    windows.retain(|window| window.title != crate::overlay::WINDOW_TITLE);
+/// Hides helper windows from the window list. `helper_ids` are the windows WindowServer
+/// reports as helpers (title and level); without that list every title match is hidden.
+fn exclude_overlay_windows(windows: &mut Vec<DesktopWindow>, helper_ids: Option<&[u32]>) {
+    windows.retain(|window| {
+        if window.title != crate::overlay::WINDOW_TITLE {
+            return true;
+        }
+        helper_ids.is_some_and(|ids| window.id.parse::<u32>().map_or(true, |id| !ids.contains(&id)))
+    });
 }
 
 #[cfg(test)]

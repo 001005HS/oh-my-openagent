@@ -32,6 +32,23 @@ fn pixels(image: *mut CGImage) -> CoreResult<RgbaImage> {
         .map_err(|e| DesktopError::capture_failed(format!("cannot decode filtered capture: {e}")))
 }
 
+/// Whether this OS offers per-frame window exclusion (`SCScreenshotManager`, macOS 14+).
+pub(crate) fn supported() -> bool {
+    let Some(manager) = AnyClass::get(c"SCScreenshotManager") else {
+        return false;
+    };
+    // SAFETY: NSObject class introspection accepts this selector and has no side effects.
+    unsafe {
+        msg_send![manager, respondsToSelector: sel!(captureImageWithFilter:configuration:completionHandler:)]
+    }
+}
+
+/// Exclusion IDs still present in the content snapshot; a helper that closed between
+/// enumeration and capture has no pixels left to hide, so it must not fail the frame.
+pub(super) fn present_exclusions(excluded: &[u32], present: impl Fn(u32) -> bool) -> Vec<u32> {
+    excluded.iter().copied().filter(|id| present(*id)).collect()
+}
+
 pub(super) fn capture(
     display: Option<u32>,
     window: Option<u32>,
@@ -39,14 +56,8 @@ pub(super) fn capture(
     height: u32,
     excluded_ids: &[u32],
 ) -> CoreResult<RgbaImage> {
-    let manager = AnyClass::get(c"SCScreenshotManager")
-        .ok_or_else(|| DesktopError::capture_failed("filtered screenshots require macOS 14 or later"))?;
-    // SAFETY: NSObject class introspection accepts this selector and has no side effects.
-    let supported: bool = unsafe {
-        msg_send![manager, respondsToSelector: sel!(captureImageWithFilter:configuration:completionHandler:)]
-    };
-    if !supported {
-        return Err(DesktopError::capture_failed("filtered screenshot API is unavailable"));
+    if !supported() {
+        return Err(DesktopError::capture_failed("filtered screenshots require macOS 14 or later"));
     }
     let excluded_ids = excluded_ids.to_vec();
     let (send, receive) = mpsc::channel();
@@ -58,13 +69,10 @@ pub(super) fn capture(
                 .ok_or_else(|| DesktopError::capture_failed("cannot enumerate filtered capture content"))?;
             // SAFETY: These getters return immutable arrays retained for this scope.
             let windows = unsafe { content.windows() };
-            let mut excluded = Vec::with_capacity(excluded_ids.len());
-            for id in &excluded_ids {
-                // SAFETY: Every entry is a live SCWindow from SCShareableContent.
-                let matched = windows.iter().find(|w| unsafe { w.windowID() } == *id)
-                    .ok_or_else(|| DesktopError::capture_failed(format!("cannot exclude cursor window {id}")))?;
-                excluded.push(matched);
-            }
+            // SAFETY: Every entry is a live SCWindow from SCShareableContent.
+            let present = present_exclusions(&excluded_ids, |id| windows.iter().any(|w| unsafe { w.windowID() } == id));
+            // SAFETY: Every entry is a live SCWindow from SCShareableContent.
+            let excluded: Vec<_> = windows.iter().filter(|w| present.contains(&unsafe { w.windowID() })).collect();
             let filter = if let Some(id) = window {
                 // SAFETY: Every entry is a live SCWindow from SCShareableContent.
                 let target = windows.iter().find(|w| unsafe { w.windowID() } == id)
@@ -128,3 +136,7 @@ pub(super) fn capture(
     receive.recv_timeout(Duration::from_secs(5))
         .map_err(|e| DesktopError::capture_failed(format!("filtered capture did not complete: {e}")))?
 }
+
+#[cfg(test)]
+#[path = "filtered_tests.rs"]
+mod tests;

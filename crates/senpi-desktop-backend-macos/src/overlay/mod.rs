@@ -20,6 +20,8 @@ pub(crate) use coordination::path as lock_path;
 
 /// WindowServer identity shared by every session's private overlay helper.
 pub(crate) const WINDOW_TITLE: &str = "senpi-desktop-cursor-overlay";
+/// Window level of the helper panel; together with the title it identifies a helper.
+pub(crate) const WINDOW_LEVEL: i32 = 1000;
 
 #[derive(Debug, Default)]
 struct State {
@@ -32,9 +34,17 @@ pub(crate) struct Overlay(Arc<Mutex<State>>);
 
 impl Overlay {
     pub fn configure(&self, enabled: bool) {
+        self.configure_for(enabled, crate::capture::filtered_capture_supported());
+    }
+
+    /// Capture must exclude a visible helper per frame; without that API (macOS < 14)
+    /// every screenshot taken while the helper is up would fail, so it is never started.
+    pub(crate) fn configure_for(&self, enabled: bool, exclusion_supported: bool) {
         let mut state = self.0.lock();
         state.helper = None;
-        if enabled {
+        if enabled && !exclusion_supported {
+            eprintln!("cursor-overlay: unavailable: per-frame capture exclusion requires macOS 14 or later");
+        } else if enabled {
             match Helper::start() {
                 Ok(helper) => {
                     state.helper = Some(helper);
@@ -136,3 +146,6 @@ mod capture_budget_tests;
 
 #[cfg(test)]
 mod account_path_tests;
+
+#[cfg(test)]
+mod exclusion_gate_tests;

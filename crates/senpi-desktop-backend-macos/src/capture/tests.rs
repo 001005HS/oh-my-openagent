@@ -22,16 +22,41 @@ fn window_list_excludes_two_helpers_by_title_without_hiding_reused_pids() {
         x: 0, y: 0, width: 100, height: 100, focused: false, elevated: None,
     };
     let mut windows = vec![
-        window("overlay-one", "senpi-desktop-cursor-overlay", Some(77)),
+        window("101", "senpi-desktop-cursor-overlay", Some(77)),
         window("app", "Document", Some(77)),
-        window("overlay-two", "senpi-desktop-cursor-overlay", Some(88)),
+        window("202", "senpi-desktop-cursor-overlay", Some(88)),
         window("unknown-owner", "Document", None),
     ];
-    // When: enumeration's process-independent title filter runs.
-    super::exclude_overlay_windows(&mut windows);
+    // When: enumeration filters the helpers WindowServer reports (title and level).
+    super::exclude_overlay_windows(&mut windows, Some(&[101, 202]));
     // Then: sibling-window/focus consumers cannot see either overlay window.
     let ids: Vec<_> = windows.iter().map(|window| window.id.as_str()).collect();
     assert_eq!(ids, ["app", "unknown-owner"]);
+}
+
+#[test]
+fn user_window_sharing_the_helper_title_stays_listed() {
+    // Given: a user document titled like the helper, at a normal window level.
+    let window = |id: &str| senpi_desktop_core::types::DesktopWindow {
+        id: id.to_owned(), title: "senpi-desktop-cursor-overlay".to_owned(), app: "TextEdit".to_owned(),
+        pid: Some(5), x: 0, y: 0, width: 100, height: 100, focused: false, elevated: None,
+    };
+    let mut windows = vec![window("303"), window("404")];
+    // When: only 404 is a helper according to WindowServer.
+    super::exclude_overlay_windows(&mut windows, Some(&[404]));
+    // Then: the user's window remains visible to window consumers.
+    let ids: Vec<_> = windows.iter().map(|window| window.id.as_str()).collect();
+    assert_eq!(ids, ["303"]);
+}
+
+#[test]
+fn unknown_helper_list_hides_every_title_match() {
+    let mut windows = vec![senpi_desktop_core::types::DesktopWindow {
+        id: "303".to_owned(), title: "senpi-desktop-cursor-overlay".to_owned(), app: "x".to_owned(),
+        pid: None, x: 0, y: 0, width: 100, height: 100, focused: false, elevated: None,
+    }];
+    super::exclude_overlay_windows(&mut windows, None);
+    assert!(windows.is_empty());
 }
 
 #[test]

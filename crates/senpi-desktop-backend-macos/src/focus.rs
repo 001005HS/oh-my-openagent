@@ -107,9 +107,13 @@ pub(crate) fn window_info() -> CoreResult<Vec<WindowInfo>> {
             // and CFType values; downcasts below reject absent or wrong types.
             let entry =
                 unsafe { CFRetained::cast_unchecked::<CFDictionary<CFString, CFType>>(entry) };
+            // Title alone could match a user window; the helper panel also sits at its own level.
             let cursor_overlay = entry.get(&title_key)
                 .and_then(|title| title.downcast::<CFString>().ok())
-                .is_some_and(|title| title.to_string() == crate::overlay::WINDOW_TITLE);
+                .is_some_and(|title| title.to_string() == crate::overlay::WINDOW_TITLE)
+                && entry.get(&layer_key)
+                    .and_then(|layer| layer.downcast::<CFNumber>().ok()?.as_i32())
+                    == Some(crate::overlay::WINDOW_LEVEL);
             let window = (|| Some(WindowInfo {
                 pid: u32::try_from(entry.get(&pid_key)?.downcast::<CFNumber>().ok()?.as_i64()?)
                     .ok()?,
