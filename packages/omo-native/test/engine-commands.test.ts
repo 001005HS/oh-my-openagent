@@ -40,7 +40,9 @@ describe("every one-shot engine command reaches the engine with the command firs
     expect(engine.packageVerbs.length).toBeGreaterThan(0)
     // when
     const routed = [
-      ...engine.argvConstants.map((entry) => [entry.command]),
+      // app-server is retired here: omo refuses it itself (bin/lib/retired-command.js) even while an
+      // installed engine still declares it.
+      ...engine.argvConstants.filter((entry) => entry.name !== "APP_SERVER_COMMAND_ARGV").map((entry) => [entry.command]),
       ...engine.packageVerbs.map((verb) => [verb]),
       ...["uninstall"].filter((alias) => engine.isPackageCommandArgv([alias])).map((alias) => [alias]),
       ["auth"],
@@ -57,8 +59,8 @@ describe("every one-shot engine command reaches the engine with the command firs
   test("#given argv the engine does not dispatch #when checked #then omo keeps it a launch with the plugin", async () => {
     // given
     const engine = await engineDispatch()
-    // when / then: a prompt or a bare mode flag stays a chat launch with the plugin
-    for (const args of [["models"], ["models", "are", "great"], ["say", "hi"], []]) {
+    // when / then: the retired app-server is never handed to the engine, and a prompt is a chat launch
+    for (const args of [["app-server"], ["models"], ["models", "are", "great"], ["say", "hi"], []]) {
       expect({ args, routedByOmo: isEngineCommand(args) }).toEqual({ args, routedByOmo: false })
     }
     expect(engine.isModelsDiscoverCommand(["models", "are", "great"])).toBe(false)
