@@ -49,7 +49,7 @@ export function sessionIsIdle(state: {
 export function createTurnSettlement(input: TurnSettlementInput): TurnSettlement {
   let held: RunnerOutcome | undefined
   const endOutcome = (event: AgentEndEvent): RunnerOutcome =>
-    input.abortedByUser() ? { status: "cancelled" } : agentEndOutcome(event, input.baseline(), input.finalText())
+    agentEndOutcome(event, input.baseline(), input.finalText(), input.abortedByUser())
   return {
     observe: (event) => {
       switch (event.type) {

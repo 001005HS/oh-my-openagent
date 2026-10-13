@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**A background child aborted by another client no longer reports a failure.** Another client's user abort on a shared child session now ends that task as `interrupted` with whatever partial answer it had produced, instead of `error`: `task_output` keeps the partial text, no failure notification fires, and the task stays resumable with `task_send`. The parent's own abort still ends the task as `cancelled`, and provider or host-system aborts keep the failure classification.
+
 **Daemon-hosted background tasks keep running when their parent exits or starts a new session.** The parent detaches without aborting their turns. On `/new` or exit, one notice names the old session and the `omo --resume` command to collect results; children stay owned by that session. Local in-process and stdio children retain their shutdown behavior. ([#8517](https://github.com/code-yeongyu/oh-my-openagent/issues/8517), [#10018](https://github.com/code-yeongyu/oh-my-openagent/issues/10018))
 
 **A child that stops answering no longer hangs a task indefinitely.** Stdio RPC requests have deadlines, and both process runners keep one heartbeat in flight. Three missed ten-second probes end a running child as `child-unresponsive`, preserve its transcript, and name how to inspect and rerun it in `task_output`. The last successful heartbeat appears as `last_seen_at` in the live task snapshot. ([#10017](https://github.com/code-yeongyu/oh-my-openagent/issues/10017))
