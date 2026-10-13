@@ -1,8 +1,11 @@
 import {
+  EFFECTIVE_MODEL_CHANGE_KINDS,
   EFFECTIVE_MODEL_SOURCES,
   RESOLVED_MODEL_SOURCES,
   RUNNER_KINDS,
   SUSPENSION_REASONS,
+  type EffectiveModelChange,
+  type EffectiveModelChangeKind,
   type EffectiveModelRecord,
   type EffectiveModelSource,
   type HostSessionIdentity,
@@ -250,15 +253,25 @@ export function parseOptionalResolvedModel(
 }
 
 // effective_model accepts the wider live-event source set and the operator flag (F12); every
-// other resolved-model field is shared with readResolvedModel.
+// other resolved-model field is shared with readResolvedModel. On disk the live-event detail
+// lives in a nested `change` block while `source` keeps an old-union value pre-F12 builds parse
+// (store/storable-record.ts); records this branch's earlier heads persisted with a live kind
+// directly in `source` map back unchanged.
 export function parseOptionalEffectiveModel(
   record: Record<string, unknown>,
-  key: "effective_model" = "effective_model",
 ): EffectiveModelRecord | undefined {
-  const value = record[key]
+  const value = record["effective_model"]
   if (value === undefined) return undefined
-  if (!isRecord(value)) throw new Error(`${key} is not an object`)
+  if (!isRecord(value)) throw new Error("effective_model is not an object")
   const base = readResolvedModelFields(value)
+  const change = readEffectiveModelChange(value)
+  if (change !== undefined) {
+    return {
+      ...base,
+      source: change.kind,
+      ...(change.switched_by_operator === undefined ? {} : { switched_by_operator: change.switched_by_operator }),
+    }
+  }
   const source = readString(value, "source")
   if (!(EFFECTIVE_MODEL_SOURCES as readonly string[]).includes(source)) {
     throw new Error(`effective_model.source must be ${EFFECTIVE_MODEL_SOURCES.join(" or ")}`)
@@ -267,6 +280,21 @@ export function parseOptionalEffectiveModel(
   return {
     ...base,
     source: source as EffectiveModelSource,
+    ...(switchedByOperator === undefined ? {} : { switched_by_operator: switchedByOperator }),
+  }
+}
+
+function readEffectiveModelChange(value: Record<string, unknown>): EffectiveModelChange | undefined {
+  const change = value["change"]
+  if (change === undefined) return undefined
+  if (!isRecord(change)) throw new Error("effective_model.change is not an object")
+  const kind = readString(change, "kind")
+  if (!(EFFECTIVE_MODEL_CHANGE_KINDS as readonly string[]).includes(kind)) {
+    throw new Error(`effective_model.change.kind must be ${EFFECTIVE_MODEL_CHANGE_KINDS.join(" or ")}`)
+  }
+  const switchedByOperator = readOptionalBoolean(change, "switched_by_operator")
+  return {
+    kind: kind as EffectiveModelChangeKind,
     ...(switchedByOperator === undefined ? {} : { switched_by_operator: switchedByOperator }),
   }
 }

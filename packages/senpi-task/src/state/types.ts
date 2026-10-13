@@ -82,6 +82,18 @@ export type EffectiveModelRecord = Omit<ResolvedModelRecord, "source"> & {
   readonly switched_by_operator?: boolean
 }
 
+// The live-event half of EFFECTIVE_MODEL_SOURCES: kinds that only ever describe a model change
+// after spawn, never the spawn plan itself. On disk these live in effective_model.change while
+// `source` keeps an old-union value pre-F12 builds can parse (see store/storable-record.ts).
+export const EFFECTIVE_MODEL_CHANGE_KINDS = ["set", "cycle", "restore", "fallback", "fallback-revert"] as const
+
+export type EffectiveModelChangeKind = (typeof EFFECTIVE_MODEL_CHANGE_KINDS)[number]
+
+export type EffectiveModelChange = {
+  readonly kind: EffectiveModelChangeKind
+  readonly switched_by_operator?: boolean
+}
+
 export const BACKGROUND_MODES = ["foreground", "background", "promoted"] as const
 
 export type BackgroundMode = (typeof BACKGROUND_MODES)[number]

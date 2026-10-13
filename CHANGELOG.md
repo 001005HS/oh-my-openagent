@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**A child task keeps reporting the model it is actually running.** A `set_model` or model cycle applied to a child by any client, and a fallback that later reverts, now update the child's record as they happen: `task_output`, `/tasks`, the desktop task snapshot and the completion notice show the live model, and a switch omo did not make is marked `(switched by operator)`. ([#10020](https://github.com/code-yeongyu/oh-my-openagent/issues/10020))
+**A child task keeps reporting the model it is actually running.** A `set_model` or model cycle applied to a child by any client, and a fallback that later reverts, now update the child's record as they happen: `task_output`, `/tasks`, the desktop task snapshot and the completion notice show the live model, and a switch omo did not make is marked `(switched by operator)`. The persisted record keeps `effective_model.source` within the values earlier builds parse (the live switch detail moves into a nested block those builds ignore), so a downgrade or an older omo sharing the task store still loads these records. ([#10020](https://github.com/code-yeongyu/oh-my-openagent/issues/10020))
 
 ## [5.1.33] - 2026-10-13
 
