@@ -1,7 +1,10 @@
 import {
+  EFFECTIVE_MODEL_SOURCES,
   RESOLVED_MODEL_SOURCES,
   RUNNER_KINDS,
   SUSPENSION_REASONS,
+  type EffectiveModelRecord,
+  type EffectiveModelSource,
   type HostSessionIdentity,
   type PendingSteeringEntry,
   type ResolvedModelRecord,
@@ -238,12 +241,34 @@ export function parseOptionalPendingSteering(
 
 export function parseOptionalResolvedModel(
   record: Record<string, unknown>,
-  key: "requested_model" | "resolved_model" | "effective_model" = "resolved_model",
+  key: "requested_model" | "resolved_model" = "resolved_model",
 ): ResolvedModelRecord | undefined {
   const value = record[key]
   if (value === undefined) return undefined
   if (!isRecord(value)) throw new Error(`${key} is not an object`)
   return readResolvedModel(value)
+}
+
+// effective_model accepts the wider live-event source set and the operator flag (F12); every
+// other resolved-model field is shared with readResolvedModel.
+export function parseOptionalEffectiveModel(
+  record: Record<string, unknown>,
+  key: "effective_model" = "effective_model",
+): EffectiveModelRecord | undefined {
+  const value = record[key]
+  if (value === undefined) return undefined
+  if (!isRecord(value)) throw new Error(`${key} is not an object`)
+  const base = readResolvedModelFields(value)
+  const source = readString(value, "source")
+  if (!(EFFECTIVE_MODEL_SOURCES as readonly string[]).includes(source)) {
+    throw new Error(`effective_model.source must be ${EFFECTIVE_MODEL_SOURCES.join(" or ")}`)
+  }
+  const switchedByOperator = readOptionalBoolean(value, "switched_by_operator")
+  return {
+    ...base,
+    source: source as EffectiveModelSource,
+    ...(switchedByOperator === undefined ? {} : { switched_by_operator: switchedByOperator }),
+  }
 }
 
 export function parseOptionalResolvedModelArray(
@@ -273,6 +298,14 @@ export function parseNotification(record: Record<string, unknown>): TaskNotifica
 }
 
 function readResolvedModel(value: Record<string, unknown>): ResolvedModelRecord {
+  return { ...readResolvedModelFields(value), source: readResolvedModelSource(value) }
+}
+
+// Everything but the source, shared by the resolved and effective model readers: each
+// validates its own source union.
+function readResolvedModelFields(
+  value: Record<string, unknown>,
+): Omit<ResolvedModelRecord, "source"> {
   const variant = readOptionalString(value, "variant")
   const legacyReasoningEffort = readOptionalString(value, "reasoning_effort")
   const reasoning = readOptionalString(value, "reasoning")
@@ -280,7 +313,6 @@ function readResolvedModel(value: Record<string, unknown>): ResolvedModelRecord 
     provider: readString(value, "provider"),
     model_id: readString(value, "model_id"),
     display: readString(value, "display"),
-    source: readResolvedModelSource(value),
     ...(variant === undefined ? {} : { variant }),
     ...(legacyReasoningEffort === undefined ? {} : { reasoning_effort: legacyReasoningEffort }),
     ...(reasoning === undefined ? {} : { reasoning }),

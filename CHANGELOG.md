@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**A child task keeps reporting the model it is actually running.** A `set_model` or model cycle applied to a child by any client, and a fallback that later reverts, now update the child's record as they happen: `task_output`, `/tasks`, the desktop task snapshot and the completion notice show the live model, and a switch omo did not make is marked `(switched by operator)`. ([#10020](https://github.com/code-yeongyu/oh-my-openagent/issues/10020))
+
 **Daemon-hosted background tasks keep running when their parent exits or starts a new session.** The parent detaches without aborting their turns. On `/new` or exit, one notice names the old session and the `omo --resume` command to collect results; children stay owned by that session. Local in-process and stdio children retain their shutdown behavior. ([#8517](https://github.com/code-yeongyu/oh-my-openagent/issues/8517), [#10018](https://github.com/code-yeongyu/oh-my-openagent/issues/10018))
 
 **A child that stops answering no longer hangs a task indefinitely.** Stdio RPC requests have deadlines, and both process runners keep one heartbeat in flight. Three missed ten-second probes end a running child as `child-unresponsive`, preserve its transcript, and name how to inspect and rerun it in `task_output`. The last successful heartbeat appears as `last_seen_at` in the live task snapshot. ([#10017](https://github.com/code-yeongyu/oh-my-openagent/issues/10017))

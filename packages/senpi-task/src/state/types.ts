@@ -61,6 +61,27 @@ export const RESOLVED_MODEL_SOURCES = ["category", "explicit", "agent"] as const
 
 export type ResolvedModelSource = (typeof RESOLVED_MODEL_SOURCES)[number]
 
+export const EFFECTIVE_MODEL_SOURCES = [
+  "category",
+  "explicit",
+  "agent",
+  "set",
+  "cycle",
+  "restore",
+  "fallback",
+  "fallback-revert",
+] as const
+
+export type EffectiveModelSource = (typeof EFFECTIVE_MODEL_SOURCES)[number]
+
+// The record's effective_model: a resolved-model record whose source also names live model
+// events (F12) - a set/cycle by any client, a restore, a fallback hop or its revert - with
+// switched_by_operator marking a set/cycle switch omo did not mint itself.
+export type EffectiveModelRecord = Omit<ResolvedModelRecord, "source"> & {
+  readonly source: EffectiveModelSource
+  readonly switched_by_operator?: boolean
+}
+
 export const BACKGROUND_MODES = ["foreground", "background", "promoted"] as const
 
 export type BackgroundMode = (typeof BACKGROUND_MODES)[number]

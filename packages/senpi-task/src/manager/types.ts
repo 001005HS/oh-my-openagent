@@ -7,6 +7,7 @@ import type { IsolationRuntime, IsolationStartedDetails } from "../isolation"
 import type { KernelToolBindingRegistry } from "../kernel-tools/bindings"
 import type { KernelToolGrant } from "../kernel-tools/resolve"
 import type {
+  EffectiveModelRecord,
   ResolvedModelRecord,
   TaskRecord,
   TaskRunStats,
@@ -153,7 +154,7 @@ export type StartResult =
       readonly resolved_model?: ResolvedModelRecord
       // The model the child ACTUALLY started on, read from the child itself (never the plan) -
       // absent for a queued start that has not launched yet (#9722).
-      readonly effective_model?: ResolvedModelRecord
+      readonly effective_model?: EffectiveModelRecord
       readonly queue_position?: number
       readonly name_warning?: string
       // Where an isolated child is working. The merge outcome is NOT here: it does not exist yet.
