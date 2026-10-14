@@ -1,4 +1,14 @@
-/** The slice of the extension API that tells the session's permission preset. */
+/**
+ * The slice of the extension API that tells the session's permission preset.
+ *
+ * TODO(#2465): consume the senpi engine's exported full-access check once desk-feat-a's
+ * engine PR ships it (the permission system's own export, branch fix/2465-full-access-live).
+ * Today this flag read is equivalent (it reads the same `permission-preset` flag the
+ * permission system enforces), but the decision must live in ONE place in the engine,
+ * not be re-derived per component — when the export lands, feed `isFullAccess` from it
+ * instead of this local read. Tracked in the #2465 audit ("computer use: foreground
+ * control confirm, omo control-confirm.ts").
+ */
 export interface PermissionPresetSource {
   getFlag?(name: string): boolean | string | undefined
 }
