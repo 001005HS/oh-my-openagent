@@ -61,7 +61,7 @@ function productionLane(options: LaneOptions = {}) {
       destruction: {
         destroyResidentTask: async (taskId: string, cause: DestroyCause) => {
           const during = hook?.current
-          if (cause === "redispatch" && during !== undefined) {
+          if (cause === "redispatch" && hook !== undefined && during !== undefined) {
             hook.current = undefined
             await during()
           }
@@ -165,6 +165,36 @@ describe("TaskManager.redispatchTask with the real destruction port (senpi#3266)
       expect(lane.runner.startedSpecs).toHaveLength(1)
       expect(lane.manager.residentTaskIds()).toEqual([])
       expect(lane.concurrency.hasFreeSlot("anthropic/claude")).toBe(true)
+    } finally {
+      lane.dispose()
+    }
+  })
+  test("#given the flag is withdrawn while the old session is closing #when the re-dispatch resumes #then a fresh child still launches instead of stranding the task", async () => {
+    // given: a delivery that read the old handle before the abandon withdraws the flag mid-teardown
+    const duringRedispatchTeardown: { current?: () => Promise<void> } = {}
+    const lane = productionLane({ duringRedispatchTeardown })
+    try {
+      const { taskId, oldHandle } = await flaggedOn(lane)
+      duringRedispatchTeardown.current = async () => {
+        lane.store.mutate(taskId, (record) => {
+          const { awaiting_input: _withdrawn, ...rest } = record
+          return rest
+        })
+      }
+
+      // when
+      const outcome = await lane.manager.redispatchTask(taskId, "parent-1")
+
+      // then
+      expect(outcome).toMatchObject({ kind: "redispatched", task_id: taskId })
+      const record = lane.store.load(taskId)
+      expect(record?.status).toBe("running")
+      expect(record?.residency_state).toBe("resident")
+      const freshHandle = lane.manager.getResidentHandle(taskId)
+      expect(freshHandle).toBeDefined()
+      expect(freshHandle).not.toBe(oldHandle)
+      expect(lane.runner.startedSpecs).toHaveLength(2)
+      expect(lane.concurrency.hasFreeSlot("anthropic/claude")).toBe(false)
     } finally {
       lane.dispose()
     }
