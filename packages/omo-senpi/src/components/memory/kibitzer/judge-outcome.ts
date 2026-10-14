@@ -27,7 +27,8 @@ const EMPTY_RESPONSE_TWICE = "Model returned an empty response twice"
  */
 export function classifyJudgeTurn(outcome: RunnerOutcome, accepted: readonly RecallNudge[]): JudgeTurnClassification {
   if (outcome.status === "completed") return { status: "completed" }
-  if (outcome.status === "cancelled") return { status: "dropped", cause: "cancelled" }
+  // A judge turn stopped from outside (its session replaced) is dropped like a cancel: there is no verdict to read.
+  if (outcome.status === "cancelled" || outcome.status === "interrupted") return { status: "dropped", cause: "cancelled" }
   const reason = normalizeGateReason(outcome.failure.message)
   if (reason === EMPTY_RESPONSE_TWICE) return accepted.length > 0 ? { status: "completed" } : { status: "empty" }
   if (reason === undefined) return { status: "failed", cause: "child_failed" }
