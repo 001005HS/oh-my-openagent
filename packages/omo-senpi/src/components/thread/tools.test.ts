@@ -162,7 +162,6 @@ describe("thread links", () => {
     expect(linkTarget(handed.thread.link)).toEqual({ threadId: "dur-peer" })
     expect(String(read.link)).toStartWith("[peer]")
   })
-
 })
 
 describe("thread session controls", () => {
