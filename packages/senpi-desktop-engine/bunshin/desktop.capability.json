@@ -118,12 +118,22 @@
 							"type": "null"
 						}
 					]
+				},
+				"excludeWindowTitles": {
+					"type": [
+						"array",
+						"null"
+					],
+					"items": {
+						"type": "string"
+					},
+					"description": "Titles of windows to exclude from a display capture."
 				}
 			},
 			"required": [
 				"target"
 			],
-			"description": "`capture`: one target (`desktop` or a window id) under optional caps.",
+			"description": "`capture`: one target (`desktop` or a window id) under optional caps.\n`excludeWindowTitles` applies to display captures only: every window with\na matching title is left out of the screenshot (B9, macOS ScreenCaptureKit;\nempty elsewhere and ignored by older engines).",
 			"additionalProperties": false,
 			"definitions": {
 				"CaptureCaps": {
