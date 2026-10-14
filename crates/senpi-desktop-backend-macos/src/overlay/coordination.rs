@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 /// adding to a hold. Concurrent captures then queue instead of failing, and a
 /// wedged helper still fails captures within a bound. First helper
 /// publication holds the lock only briefly.
-const CAPTURE_WAIT: Duration = Duration::from_secs(8);
+pub(super) const CAPTURE_WAIT: Duration = Duration::from_secs(8);
 const RETRY_INTERVAL: Duration = Duration::from_millis(20);
 
 pub(crate) fn path() -> io::Result<PathBuf> {

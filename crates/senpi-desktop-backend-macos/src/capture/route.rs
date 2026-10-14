@@ -123,7 +123,10 @@ impl MacCapture {
         match routed {
             Some(captured) => Ok(captured),
             // The fallback takes its own lock hold, so one capture never holds
-            // the lock for an SCK budget plus a legacy capture.
+            // the lock for an SCK budget plus a legacy capture. Worst case for
+            // one capture, every bound hit: 5 s warm-up + 8 s lock wait + 6 s
+            // SCK + 8 s lock wait + 5 s filtered legacy = 32 s; a timeout then
+            // keeps SCK off for 30 s, so the next captures skip the first three.
             None => self.with_overlay_exclusion(|excluded| self.capture_via_legacy(target, excluded)),
         }
     }

@@ -115,8 +115,8 @@ if first_start:
 #[test]
 fn the_in_lock_budget_grows_per_target_and_is_capped() {
     use std::time::Duration;
-    assert_eq!(super::in_lock_budget(1), Duration::from_millis(2400));
-    assert_eq!(super::in_lock_budget(3), Duration::from_millis(3200));
+    assert_eq!(super::in_lock_budget(1), Duration::from_millis(2500));
+    assert_eq!(super::in_lock_budget(3), Duration::from_millis(3500));
     assert_eq!(super::in_lock_budget(64), super::IN_LOCK_MAX);
 }
 
@@ -137,4 +137,21 @@ fn a_stalled_warm_up_keeps_the_worker_off_instead_of_retrying_each_capture() {
     assert_eq!(super::TEST_STARTS.get() - before, 1);
     super::WARM_STALLED_UNTIL.set(None);
     super::TEST_WARM_TIMEOUT.set(Some(std::time::Duration::from_secs(30)));
+}
+
+#[test]
+fn an_in_lock_timeout_keeps_the_worker_off_for_the_next_captures() {
+    // Given: a warm helper that stalls on every capture
+    let dir = tempfile::tempdir().unwrap();
+    let helper = fake_helper(&dir, &format!("{PY_PREAMBLE}\nimport time\nread_request()\ntime.sleep(30)\n"));
+    let _program = ProgramGuard::new(helper);
+    SckWorker::prepare().unwrap();
+    // When: the capture exceeds its in-lock budget
+    let timed_out = SckWorker::capture(&[target_window(42)]);
+    assert!(matches!(timed_out, Err(SckCaptureError::TimedOut(_))), "{timed_out:?}");
+    // Then: the next warm-up is refused at once without starting a helper
+    let before = super::TEST_STARTS.get();
+    assert!(SckWorker::prepare().is_err());
+    assert_eq!(super::TEST_STARTS.get(), before);
+    super::WARM_STALLED_UNTIL.set(None);
 }
