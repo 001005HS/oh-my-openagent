@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **A client re-attaching to a retained session gets the full task snapshot again, and can pull it on demand.** The task RPC bridge listens for `session_resumed`, which senpi fires when the first client re-attaches to a still-open session, and re-emits the complete `omo.task.updated` snapshot instead of waiting for the next store change to alter its fingerprint; a new `omo.task.list` request answers the same payload for the parent session it names. ([#10016](https://github.com/code-yeongyu/oh-my-openagent/issues/10016))
 
+**A screenshot never captures a live virtual cursor that capture could not exclude.** When another session's cursor helper is still open but missing from what ScreenCaptureKit lists, the capture now fails instead of taking a frame that could show that cursor; a helper that has really closed is still skipped without an error. ([#10161](https://github.com/code-yeongyu/oh-my-openagent/pull/10161), follow-up to [#9889](https://github.com/code-yeongyu/oh-my-openagent/pull/9889))
+
 **macOS computer use shows a display-only virtual cursor by default.** The overlay follows the agent's pointer actions without moving your real cursor or changing input permissions; set `computer.showCursor: false` to hide it. ([#9887](https://github.com/code-yeongyu/oh-my-openagent/issues/9887), [#9889](https://github.com/code-yeongyu/oh-my-openagent/pull/9889))
 
 **Internal: the model-version migration skip bookkeeping is cleaned up.** The set of already-migrated models is now built once per run, and the comment describes the source-keyed rule; behaviour is unchanged. ([#10145](https://github.com/code-yeongyu/oh-my-openagent/pull/10145))
