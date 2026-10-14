@@ -7,8 +7,9 @@
 #
 # --sign-only signs and verifies (team, hardened runtime) without notarizing, for code that is
 # never assessed by Gatekeeper, such as a helper written unquarantined at runtime. That holds
-# only while the writer does not opt into quarantine; an app bundle that sets
-# LSFileQuarantineEnabled would need the helper notarized again.
+# only while neither the engine nor the app that launches it opts into quarantine (quarantine
+# opt-in is inherited by child processes); if either sets LSFileQuarantineEnabled, the helper
+# needs notarization again.
 #
 # Signing material comes from the environment (GitHub Actions secrets):
 #   CSC_LINK          base64 of the Developer ID Application .p12
