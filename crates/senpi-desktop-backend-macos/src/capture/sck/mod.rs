@@ -111,7 +111,9 @@ thread_local! {
 
 /// After a warm-up or an in-lock capture times out, the worker stays off this
 /// long; captures use the legacy path meanwhile instead of each paying the
-/// timeout again (and, in-lock, blocking other sessions for it).
+/// timeout again (and, in-lock, blocking other sessions for it). Like the
+/// worker itself, the cooldown is per session thread: another session on the
+/// same slow Mac pays its own first timeout before its cooldown starts.
 const WARM_STALL_COOLDOWN: Duration = Duration::from_secs(30);
 
 /// In-lock capture budget, sized from warm batches through the real helper on
@@ -167,7 +169,7 @@ impl SckWorker {
             let now = std::time::Instant::now();
             if WARM_STALLED_UNTIL.get().is_some_and(|until| now < until) {
                 return Err(DesktopError::capture_failed(
-                    "the capture worker stalled during warm-up recently; using the screencapture fallback",
+                    "the capture worker timed out recently; using the screencapture fallback",
                 ));
             }
             let (mut client, staging) = start_client()?;
