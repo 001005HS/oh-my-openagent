@@ -98,6 +98,9 @@ fn warm_timeout() -> Duration {
     WARM_TIMEOUT
 }
 
+// Tests default to a 30 s warm-up so a fake helper's interpreter start on a
+// loaded host never decides a test; the production 5 s budget is covered by
+// the timeout tests, which set their own short budget.
 #[cfg(test)]
 thread_local! {
     /// Helper starts on this thread, so tests can prove a start was skipped.
@@ -106,18 +109,20 @@ thread_local! {
         const { std::cell::Cell::new(Some(Duration::from_secs(30))) };
 }
 
-/// A warm-up that timed out is not retried for this long; captures use the
-/// legacy path meanwhile instead of each paying `WARM_TIMEOUT` again.
+/// After a warm-up or an in-lock capture times out, the worker stays off this
+/// long; captures use the legacy path meanwhile instead of each paying the
+/// timeout again (and, in-lock, blocking other sessions for it).
 const WARM_STALL_COOLDOWN: Duration = Duration::from_secs(30);
 
 /// In-lock capture budget, sized from warm batches through the real helper on
 /// an M5 Max under load average ~120 (min / median / max, 15 runs each):
 /// 1 target 737 / 1099 / 1763 ms, 3 targets 799 / 1582 / 2861 ms, 8 targets
 /// 1410 / 2001 / 4206 ms. A batch costs ~0.7 s fixed (the content fetch) plus
-/// ~0.1 s per target at best, so the budget is 2 s + 0.4 s per target (above
-/// every observed maximum), capped at 6 s; overlay coordination waits 8 s.
+/// ~0.1 s per target at best, so the budget is 2 s + 0.5 s per target (at
+/// least 20% above every observed maximum), capped at 6 s; overlay
+/// coordination waits 8 s.
 const IN_LOCK_BASE: Duration = Duration::from_millis(2000);
-const IN_LOCK_PER_TARGET: Duration = Duration::from_millis(400);
+const IN_LOCK_PER_TARGET: Duration = Duration::from_millis(500);
 pub(crate) const IN_LOCK_MAX: Duration = Duration::from_secs(6);
 
 pub(crate) fn in_lock_budget(targets: usize) -> Duration {
@@ -126,7 +131,7 @@ pub(crate) fn in_lock_budget(targets: usize) -> Duration {
 }
 
 thread_local! {
-    /// Until when a stalled warm-up keeps the worker off (see `WARM_STALL_COOLDOWN`).
+    /// Until when a timed-out warm-up or capture keeps the worker off (see `WARM_STALL_COOLDOWN`).
     static WARM_STALLED_UNTIL: std::cell::Cell<Option<std::time::Instant>> =
         const { std::cell::Cell::new(None) };
 }
@@ -207,6 +212,7 @@ impl SckWorker {
                     Err(if first_reply {
                         SckCaptureError::Start(error)
                     } else if error.code == ErrorCode::Timeout {
+                        WARM_STALLED_UNTIL.set(Some(std::time::Instant::now() + WARM_STALL_COOLDOWN));
                         SckCaptureError::TimedOut(error)
                     } else {
                         SckCaptureError::Failed(error)
