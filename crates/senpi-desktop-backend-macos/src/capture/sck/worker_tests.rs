@@ -11,10 +11,14 @@ fn capture_after_transport_failure(first_reply: &str, started: bool) {
             "{PY_PREAMBLE}
 import os, pathlib
 
-read_request()
 marker = pathlib.Path(__file__).with_suffix('.started')
-if not marker.exists():
-    marker.touch()
+first_start = not marker.exists()
+marker.touch()
+if first_start and {die_on_ping}:
+    sys.stdin.buffer.readline()
+    os._exit(1)
+read_request()
+if first_start:
 {first_reply}
     os._exit(1)
 header({{
@@ -22,17 +26,23 @@ header({{
     'bounds': {{'x': 0.0, 'y': 0.0, 'width': 1.0, 'height': 1.0}}
 }})
 pixels(1, 1, [56, 34, 12, 255])
-"
+",
+            die_on_ping = if started { "False" } else { "True" },
         ),
     );
     let _program = ProgramGuard::new(helper);
     let requests = [target_window(42)];
-    let first = SckWorker::capture(&requests);
     if started {
+        SckWorker::prepare().unwrap();
+        let first = SckWorker::capture(&requests);
         assert!(matches!(first, Err(SckCaptureError::Failed(_))), "{first:?}");
     } else {
-        assert!(matches!(first, Err(SckCaptureError::Start(_))), "{first:?}");
+        // A helper that dies before any reply byte fails its warm-up: a start failure.
+        assert!(SckWorker::prepare().is_err());
+        let unstarted = SckWorker::capture(&requests);
+        assert!(matches!(unstarted, Err(SckCaptureError::Start(_))), "{unstarted:?}");
     }
+    SckWorker::prepare().unwrap();
     let frames = SckWorker::capture(&requests).unwrap();
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].image.as_raw(), &[12, 34, 56, 255]);
@@ -93,9 +103,11 @@ if first_start:
     );
     let _program = ProgramGuard::new(helper);
     let requests = [target_window(42)];
+    SckWorker::prepare().unwrap();
     assert_eq!(SckWorker::capture(&requests).unwrap().len(), 1);
     let failure = SckWorker::capture(&requests);
     assert!(matches!(failure, Err(SckCaptureError::Failed(_))), "{failure:?}");
+    SckWorker::prepare().unwrap();
     let frames = SckWorker::capture(&requests).unwrap();
     assert_eq!(frames[0].image.as_raw(), &[12, 34, 56, 255]);
 }

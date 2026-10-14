@@ -52,6 +52,10 @@ def pixels(width, height, bgra):
     sys.stdout.buffer.flush()
 
 def read_request():
-    line = sys.stdin.buffer.readline()
-    return json.loads(line.decode())
+    # The engine warms the worker with a ping first; answer it like the helper.
+    while True:
+        request = json.loads(sys.stdin.buffer.readline().decode())
+        if request.get('kind') != 'ping':
+            return request
+        header({'kind': 'ready'})
 "#;

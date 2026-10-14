@@ -89,7 +89,7 @@ impl MacCapture {
     /// the whole dispatch (SCK worker, multi-display batches, CoreGraphics), and
     /// a helper that appeared during the shot fails the frame.
     fn with_overlay_exclusion<T>(&self, capture: impl FnOnce(&[u32]) -> CoreResult<T>) -> CoreResult<T> {
-        let lock_path = crate::overlay::lock_path().map_err(|error| {
+        let lock_path = capture_lock_path().map_err(|error| {
             DesktopError::capture_failed(format!("cannot locate account cursor-exclusion cache: {error}"))
         })?;
         self.overlay.capture(&lock_path, crate::focus::window_info, std::thread::sleep, |excluded| {
@@ -186,6 +186,21 @@ impl MacCapture {
         let geometry = FrameGeometry::for_window(&window, image.width(), image.height());
         Ok((image, geometry))
     }
+}
+
+/// The account's cursor-exclusion lock; tests point it at a private file.
+fn capture_lock_path() -> std::io::Result<std::path::PathBuf> {
+    #[cfg(test)]
+    if let Some(path) = TEST_LOCK_PATH.with_borrow(Clone::clone) {
+        return Ok(path);
+    }
+    crate::overlay::lock_path()
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TEST_LOCK_PATH: std::cell::RefCell<Option<std::path::PathBuf>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 fn parse_window_id(id: &str) -> CoreResult<u32> {

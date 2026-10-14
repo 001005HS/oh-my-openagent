@@ -93,7 +93,21 @@ impl MacCapture {
         exclude_window_titles: &[String],
     ) -> CoreResult<(RgbaImage, FrameGeometry)> {
         self.require_permission()?;
-        self.with_overlay_exclusion(|excluded| self.route_capture(target, exclude_window_titles, excluded))
+        // Warm the helper before the lock: a cold or stalled start must not
+        // hold the cursor-exclusion lock that other captures wait on.
+        let sck_ready = match sck_availability() {
+            Ok(()) => match SckWorker::prepare() {
+                Ok(()) => true,
+                Err(error) => {
+                    note_start_failure(&error);
+                    false
+                },
+            },
+            Err(_) => false,
+        };
+        self.with_overlay_exclusion(|excluded| {
+            self.route_capture(target, exclude_window_titles, excluded, sck_ready)
+        })
     }
 
     fn route_capture(
@@ -101,8 +115,11 @@ impl MacCapture {
         target: &Target,
         exclude_window_titles: &[String],
         excluded: &[u32],
+        sck_ready: bool,
     ) -> CoreResult<(RgbaImage, FrameGeometry)> {
         match sck_availability() {
+            // The warm-up failed and was noted; skip the worker inside the lock.
+            Ok(()) if !sck_ready => self.capture_via_legacy(target, excluded),
             Ok(()) => match self.capture_via_sck(target, exclude_window_titles, excluded)? {
                 Some(captured) => {
                     if !captured.1.is_legacy_capture() {

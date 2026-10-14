@@ -13,7 +13,10 @@ use senpi_desktop_core::frame::MAX_COMPOSITE_PIXELS;
 use super::frame::{decode, frame_bytes, Frame};
 use super::protocol::{Batch, Reply, TargetRequest};
 
+#[cfg(test)]
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(5);
+/// The warm-up ping's own line; the helper answers `{"kind":"ready"}`.
+const PING: &[u8] = b"{\"kind\":\"ping\"}\n";
 const HEADER_LIMIT: usize = 65_536;
 
 /// Whether a failure leaves the request/reply stream synchronized.
@@ -94,11 +97,41 @@ impl HelperClient {
     /// Sends one batch and reads one frame per request. A reply-level error
     /// (PermissionDenied, WindowNotFound, CaptureUnavailable...) does NOT
     /// poison the worker; a transport error leaves it for the owner to reset.
+    #[cfg(test)]
     pub(crate) fn capture(
         &mut self,
         requests: &[TargetRequest],
     ) -> Result<Vec<Frame>, ClientError> {
-        let deadline = Instant::now() + CAPTURE_TIMEOUT;
+        self.capture_within(requests, CAPTURE_TIMEOUT)
+    }
+
+    /// Waits until the helper has started and fetched shareable content once,
+    /// so the first capture does not pay the cold start. A helper that does
+    /// not answer within `budget` is a transport failure (a start failure).
+    pub(crate) fn ping(&mut self, budget: Duration) -> Result<(), ClientError> {
+        let deadline = Instant::now() + budget;
+        self.input.write_all(PING).map_err(io_error)?;
+        self.input.flush().map_err(io_error)?;
+        let reply = read_header(&mut self.output, &mut self.header, deadline)?;
+        self.has_replied = true;
+        match reply {
+            Reply::Ready => Ok(()),
+            Reply::Error { error, .. } => Err(ClientError::Transport(DesktopError::capture_failed(
+                format!("capture worker refused the warm-up ping: {error}"),
+            ))),
+            Reply::Frame { .. } => Err(ClientError::Transport(DesktopError::capture_failed(
+                "capture worker answered the warm-up ping with a frame",
+            ))),
+        }
+    }
+
+    /// `capture` with an explicit deadline for the whole batch.
+    pub(crate) fn capture_within(
+        &mut self,
+        requests: &[TargetRequest],
+        budget: Duration,
+    ) -> Result<Vec<Frame>, ClientError> {
+        let deadline = Instant::now() + budget;
         serde_json::to_writer(
             &mut self.input,
             &Batch {
@@ -124,6 +157,12 @@ impl HelperClient {
             };
             self.has_replied = true;
             match reply {
+                Reply::Ready => {
+                    return Err(DesktopError::capture_failed(
+                        "capture worker sent a warm-up reply to a capture request",
+                    )
+                    .into());
+                },
                 Reply::Error { code, error, reason } => {
                     return Err(ClientError::Reply(match (code.as_str(), reason) {
                         ("PermissionDenied", _) => super::super::permission_denied(),
@@ -190,7 +229,7 @@ impl Drop for HelperClient {
 fn check_deadline(deadline: Instant) -> CoreResult<()> {
     if Instant::now() >= deadline {
         return Err(DesktopError::timeout(
-            "ScreenCaptureKit worker exceeded its five-second deadline",
+            "ScreenCaptureKit worker exceeded its deadline",
         ));
     }
     Ok(())

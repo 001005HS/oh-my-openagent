@@ -2,8 +2,9 @@
 // JSON header plus tightly packed premultiplied BGRA bytes per reply. AppKit
 // owns the main run loop; no window is created and no temporary image file is
 // used. The worker exits when its parent dies (DISPATCH_SOURCE_TYPE_PROC) and
-// carries the engine's signing identity so Screen Recording is not asked of a
-// new binary.
+// carries the engine's signing identity. It is staged at a fresh temp path on
+// every engine start, so Screen Recording is charged to the responsible
+// process (the app that launched OmO), not to this binary.
 #import <AppKit/AppKit.h>
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
 #import <CoreVideo/CoreVideo.h>
@@ -174,7 +175,9 @@ static void Request(NSDictionary *request, dispatch_block_t done) {
 			valid = NO; break;
 		}
 		for (id entry in [excludedIds isKindOfClass:NSArray.class] ? excludedIds : @[]) {
-			if (![entry isKindOfClass:NSNumber.class]) { valid = NO; break; }
+			double value = [entry isKindOfClass:NSNumber.class] ? [entry doubleValue] : 0;
+			if (![entry isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)entry) == CFBooleanGetTypeID() ||
+				value < 1 || value > UINT32_MAX || floor(value) != value) { valid = NO; break; }
 		}
 		if (!valid) break;
 	}
@@ -193,6 +196,20 @@ static void Request(NSDictionary *request, dispatch_block_t done) {
 		}];
 	} else {
 		Failure(@"Unsupported", @"ScreenCaptureKit capture worker requires macOS 14 or later"); done();
+	}
+}
+
+static void Ready(dispatch_block_t done) {
+	if (@available(macOS 14.0, *)) {
+		[SCShareableContent getShareableContentExcludingDesktopWindows:NO onScreenWindowsOnly:NO completionHandler:^(SCShareableContent *content, NSError *error) {
+			// Permission and content errors surface on the capture that follows.
+			(void)content; (void)error;
+			Header(@{ @"kind": @"ready" });
+			done();
+		}];
+	} else {
+		Header(@{ @"kind": @"ready" });
+		done();
 	}
 }
 
@@ -217,6 +234,12 @@ int main(void) {
 					id request = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
 					if (![request isKindOfClass:NSDictionary.class]) { Failure(@"InvalidTarget", @"Invalid capture request JSON"); continue; }
 					dispatch_semaphore_t completed = dispatch_semaphore_create(0);
+					if ([@"ping" isEqual:request[@"kind"]]) {
+						// Warm-up: fetch shareable content once so the first capture is not cold.
+						dispatch_async(dispatch_get_main_queue(), ^{ Ready(^{ dispatch_semaphore_signal(completed); }); });
+						dispatch_semaphore_wait(completed, DISPATCH_TIME_FOREVER);
+						continue;
+					}
 					dispatch_async(dispatch_get_main_queue(), ^{ Request(request, ^{ dispatch_semaphore_signal(completed); }); });
 					dispatch_semaphore_wait(completed, DISPATCH_TIME_FOREVER);
 				}
