@@ -403,4 +403,23 @@ describe("omo setup opencode catalog provider import (#10158)", () => {
       })
     })
   })
+
+  describe("#given a partial opencode config block for a catalog provider", () => {
+    describe("#when setup is accepted", () => {
+      test("#then the block extends the catalog entry as opencode does, instead of replacing it", () => {
+        const item = fixture()
+        opencode(item, { provider: { neuralwatt: { options: { apiKey: "nw-inline" }, models: { "kimi-k2.5": { limit: { context: 131072, output: 16384 } } } } } })
+        write(join(item.home, ".cache", "opencode", "models.json"), JSON.stringify(NEURALWATT_CATALOG))
+
+        const result = run(item, ["setup", "--yes"])
+        const config = ModelConfig.loadSync(join(item.agentDir, "models.json"))
+        const models = composeModelProvider("neuralwatt", undefined, config, undefined).getModels()
+
+        expect(result.status).toBe(0)
+        expect(models.map((model: any) => [model.id, model.baseUrl, model.contextWindow, model.reasoning])).toEqual([
+          ["kimi-k2.5", "https://api.neuralwatt.com/v1", 131072, true],
+        ])
+      })
+    })
+  })
 })

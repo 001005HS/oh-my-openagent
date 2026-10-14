@@ -207,19 +207,32 @@ function catalogEntry(entry) {
   return { name: entry.name, npm: entry.npm, api: entry.api, models }
 }
 
-// OpenCode serves a catalog provider as soon as it has a key: the providers it holds an api key for
-// that omo neither builds in nor finds declared become catalog-backed custom providers (#10158).
-function catalogProviders(declared, opencodeAuth, builtin, home, env, notices) {
-  const wanted = Object.keys(opencodeAuth).filter(
-    (id) => opencodeAuth[id]?.type === "api" && !builtin.has(id) && !Object.hasOwn(declared, id),
-  )
-  if (wanted.length === 0) return {}
+// OpenCode serves a catalog provider as soon as it has a key, and a `provider.<id>` block for it
+// extends the catalog entry rather than replacing it (#10158). Every non-builtin provider that
+// OpenCode holds an API key for, or that a config block names, is looked up in the catalog.
+function withCatalog(config, opencodeAuth, builtin, home, env, notices) {
+  const keyed = Object.keys(opencodeAuth).filter((id) => opencodeAuth[id]?.type === "api")
+  const ids = [...new Set([...keyed, ...Object.keys(config)])].filter((id) => !builtin.has(id))
+  if (ids.length === 0) return config
   const catalog = readOpencodeCatalog(home, env, notices)
   if (catalog === undefined) {
-    notices.push(`NOTICE opencode: no models.dev catalog cache found, so ${wanted.join(", ")} could not be described - run opencode once, then omo setup again`)
-    return {}
+    const missing = ids.filter((id) => !Object.hasOwn(config, id))
+    if (missing.length > 0) notices.push(`NOTICE opencode: no models.dev catalog cache found, so ${missing.join(", ")} could not be described - run opencode once, then omo setup again`)
+    return config
   }
-  return Object.fromEntries(wanted.map((id) => [id, catalogEntry(catalog[id])]).filter(([, entry]) => entry !== undefined))
+  const merged = { ...config }
+  for (const id of ids) {
+    const base = catalogEntry(catalog[id])
+    if (base === undefined) continue
+    const own = isPlainObject(config[id]) ? config[id] : {}
+    const ownModels = isPlainObject(own.models) ? own.models : {}
+    const models = { ...base.models }
+    for (const [modelId, model] of Object.entries(ownModels)) {
+      models[modelId] = isPlainObject(model) && isPlainObject(models[modelId]) ? { ...models[modelId], ...model } : model
+    }
+    merged[id] = { ...base, ...own, models }
+  }
+  return merged
 }
 
 /** Every OpenCode custom or catalog provider the engine can serve, converted; everything else as a notice. */
@@ -231,7 +244,7 @@ export function planOpencodeProviders(options = {}) {
   const builtin = builtinProviderIds()
   // With no provider block, a bad auth.json is the credential stage's to report.
   const opencodeAuth = readOpencodeAuth(home, env, Object.keys(config).length > 0 ? notices : [])
-  const declared = { ...catalogProviders(config, opencodeAuth, builtin, home, env, notices), ...config }
+  const declared = withCatalog(config, opencodeAuth, builtin, home, env, notices)
   // auth.json is only a key source here; with no provider to describe it is the credential stage's alone.
   if (Object.keys(declared).length === 0) return { providers: [], skipped: [], notices }
   const context = { builtin, opencodeAuth, notices }
