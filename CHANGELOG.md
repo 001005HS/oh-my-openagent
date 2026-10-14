@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **A background task child follows its session when another client replaces it.** A raw RPC client that issues `new_session`, `switch_session` or `fork` on a daemon child's routing handle moves that session to a new durable id and transcript; the child now observes the `session_replaced` record, re-stamps its record's session path and durable id, appends a `replaced` task event, and reattaches to the new transcript instead of the abandoned one. ([#10018](https://github.com/code-yeongyu/oh-my-openagent/issues/10018))
 
+**A screenshot never captures a live virtual cursor that capture could not exclude.** When another session's cursor helper is still open but missing from what ScreenCaptureKit lists, the capture now fails instead of taking a frame that could show that cursor; a helper that has really closed is still skipped without an error. ([#10161](https://github.com/code-yeongyu/oh-my-openagent/pull/10161), follow-up to [#9889](https://github.com/code-yeongyu/oh-my-openagent/pull/9889))
+
 **macOS computer use shows a display-only virtual cursor by default.** The overlay follows the agent's pointer actions without moving your real cursor or changing input permissions; set `computer.showCursor: false` to hide it. ([#9887](https://github.com/code-yeongyu/oh-my-openagent/issues/9887), [#9889](https://github.com/code-yeongyu/oh-my-openagent/pull/9889))
 
 **Internal: the model-version migration skip bookkeeping is cleaned up.** The set of already-migrated models is now built once per run, and the comment describes the source-keyed rule; behaviour is unchanged. ([#10145](https://github.com/code-yeongyu/oh-my-openagent/pull/10145))
