@@ -26,7 +26,10 @@ export type ThreadSummary = {
   readonly controls?: readonly ("send" | "read" | "rename" | "set_model" | "set_reasoning" | "interrupt")[]
 }
 
-/** A thread as a tool result names it: `link` is `[title](omo-thread://v1/<thread_id>)` (`thread-link.ts`), pasted when telling the user about the thread. */
+/**
+ * A thread as a tool result names it: `link` is `[title](omo-thread://v1/<thread_id>)` (`thread-link.ts`), pasted when telling the user about the thread.
+ * A `thread_create`, `thread_list` or `thread_read` result stored before links existed and replayed for the same idempotency key (30-day retention) has no `link`.
+ */
 export type ThreadResultSummary = ThreadSummary & { readonly link: string }
 
 export type ThreadDelivery =

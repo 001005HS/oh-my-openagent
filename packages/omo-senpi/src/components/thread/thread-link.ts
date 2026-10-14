@@ -12,17 +12,23 @@ export function threadLinkUrl(threadId: string): string {
   return `${PREFIX}${encodeURIComponent(threadId)}`
 }
 
-/** `[label](omo-thread://v1/<id>)`, ready to paste into a message; brackets and backslashes in the label are escaped. */
+/**
+ * `[label](omo-thread://v1/<id>)`, ready to paste into a message. The label is a session name, which
+ * users and peer agents set, so `\`, `[`, `]` (link syntax) and `<`, `>` (autolinks and raw HTML)
+ * are escaped: no name can end the link early or render a second link inside it.
+ */
 export function threadLink(threadId: string, label: string | null | undefined): string {
   const text = label?.replace(/\s+/g, " ").trim() || FALLBACK_LABEL
-  return `[${text.replace(/[\\[\]]/g, (char) => `\\${char}`)}](${threadLinkUrl(threadId)})`
+  return `[${text.replace(/[\\[\]<>]/g, (char) => `\\${char}`)}](${threadLinkUrl(threadId)})`
 }
 
 /** The thread id a link names, or null for anything that is not a v1 thread link. */
 export function parseThreadLinkUrl(url: string): { readonly threadId: string } | null {
   if (!url.startsWith(PREFIX)) return null
   const encoded = url.slice(PREFIX.length)
-  if (encoded.length === 0 || encoded.includes("/")) return null
+  // threadLinkUrl percent-encodes the id, so a raw `/`, `?` or `#` means a path, query or fragment
+  // was added to the link: that is not a v1 thread link.
+  if (encoded.length === 0 || /[/?#]/.test(encoded)) return null
   try {
     const threadId = decodeURIComponent(encoded)
     return threadId.length === 0 ? null : { threadId }
