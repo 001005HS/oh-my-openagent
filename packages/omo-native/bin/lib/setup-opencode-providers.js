@@ -223,11 +223,12 @@ function catalogEntry(entry) {
 // OpenCode holds an API key for, or that a config block names, is looked up in the catalog.
 function withCatalog(config, opencodeAuth, builtin, home, env, notices) {
   const keyed = Object.keys(opencodeAuth).filter((id) => opencodeAuth[id]?.type === "api")
-  // A declared block with its own endpoint is a plain custom provider and needs no catalog.
-  const extendsCatalog = (id) => isPlainObject(config[id]) && text(config[id].options?.baseURL) === undefined && text(config[id].api) === undefined
-  const ids = [...new Set([...keyed, ...Object.keys(config).filter(extendsCatalog)])].filter((id) => !builtin.has(id))
+  const ids = [...new Set([...keyed, ...Object.keys(config)])].filter((id) => !builtin.has(id))
   if (ids.length === 0) return config
-  const catalog = readOpencodeCatalog(home, env, notices)
+  // Only an id that has no endpoint of its own depends on the catalog; a broken cache is worth a
+  // warning for that one alone, while a block with its own endpoint still extends the catalog when found.
+  const ownEndpoint = (id) => isPlainObject(config[id]) && (text(config[id].options?.baseURL) !== undefined || text(config[id].api) !== undefined)
+  const catalog = readOpencodeCatalog(home, env, ids.some((id) => !ownEndpoint(id)) ? notices : [])
   if (catalog === undefined) {
     const missing = ids.filter((id) => !Object.hasOwn(config, id))
     if (missing.length > 0) notices.push(`NOTICE opencode: no models.dev catalog cache found, so ${missing.join(", ")} could not be described - if opencode serves them, run opencode once, then omo setup again`)

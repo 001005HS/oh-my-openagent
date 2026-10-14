@@ -471,4 +471,23 @@ describe("omo setup opencode catalog provider import (#10158)", () => {
       })
     })
   })
+
+  describe("#given a catalog provider routed through its own proxy endpoint, with no model list and no stored key", () => {
+    describe("#when setup is accepted", () => {
+      test("#then the proxy endpoint is used with the catalog's models, as opencode extends them", () => {
+        const item = fixture()
+        opencode(item, { provider: { neuralwatt: { options: { apiKey: "nw-inline", baseURL: "https://proxy.example/v1" } } } })
+        write(join(item.home, ".cache", "opencode", "models.json"), JSON.stringify(NEURALWATT_CATALOG))
+
+        const result = run(item, ["setup", "--yes"])
+        const config = ModelConfig.loadSync(join(item.agentDir, "models.json"))
+        const models = composeModelProvider("neuralwatt", undefined, config, undefined).getModels()
+
+        expect(result.stdout).toContain("providers-imported: neuralwatt")
+        expect(models.map((model: any) => [model.id, model.baseUrl, model.contextWindow, model.reasoning])).toEqual([
+          ["kimi-k2.5", "https://proxy.example/v1", 262144, true],
+        ])
+      })
+    })
+  })
 })
