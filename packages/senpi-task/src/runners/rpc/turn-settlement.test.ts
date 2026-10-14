@@ -160,6 +160,35 @@ describe("createTurnSettlement terminal provider error (senpi#3262)", () => {
     })
   })
 
+  test("#given a held error whose wake source later disarms #when reconfirmHeld runs #then the idle confirmation settles it failed", async () => {
+    // given - a goal's providerRetry timer held the outcome at the first confirmation
+    const settled = deferred<RunnerOutcome>()
+    const state = deferredProbe()
+    let wakeLive = true
+    const settlement = createTurnSettlement({
+      settle: settled.resolve,
+      abortedByUser: () => false,
+      baseline: () => undefined,
+      finalText: () => undefined,
+      probe: state.probe,
+      settleConfirmMs: 5,
+      wakeSourcesLive: () => wakeLive,
+    })
+    settlement.observe(agentEnd(PROVIDER_TIMEOUT) as never)
+    await Bun.sleep(30)
+
+    // when - the timer disarms and the handle's observation hook re-offers the confirmation
+    wakeLive = false
+    settlement.reconfirmHeld()
+
+    // then - the re-armed confirmation probes, finds the session idle, and settles the failure
+    const outcome = await settled.promise
+    expect(outcome).toEqual({
+      status: "error",
+      failure: { kind: "child-turn-failed", message: PROVIDER_TIMEOUT },
+    })
+  })
+
   test("#given a probe that rejects #when the settle confirmation runs #then the held outcome still settles failed (the error text is already known)", async () => {
     // given
     const settled = deferred<RunnerOutcome>()

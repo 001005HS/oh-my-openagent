@@ -1,3 +1,29 @@
+## 2026-10-14 - Goal/monitor wake events are read from the raw record stream, any armed timer kind counts (#3262)
+
+Follow-up correction to the settle-confirmation above. senpi#3208's `rpc-wait-surface.ts`
+`publishGoalContinuationEvent` calls `pi.rpc?.emit(name, data)` (verified on the pinned engine
+`@code-yeongyu/senpi@2026.10.13`: `dist/core/extensions/builtin/goal/rpc-wait-surface.js`), so
+`goal_continuation_scheduled` / `goal_continuation_timer_state` / `goal_continuation_resumed`
+reach RPC clients as `extension_event` records. But the tracker first subscribed through
+`createChildExtensionEvents` - the zod-gated lane that admits ONLY `computer.permission_required` -
+so goal/monitor records never reached it in production. Both runners already fan raw
+`extension_event` records into their handle-level event streams (the process client diverts only
+permission-shaped frames; the host's `isAgentSessionEvent` is the engine's loose tag check), so
+the tracker now observes that funnel in `runners/rpc/handle.ts` and
+`runners/rpc-host/handle.ts` (`onSessionEvent`), and the permission lane is untouched.
+
+`turn-wake-sources.ts` tracks armed goal timers PER KIND: an armed timer of ANY kind
+(`monitor`, `userGrace`, senpi#3319's `providerRetry`) is a live wake, and an `armed: false`
+clears only its own kind, so a goal waiting out a provider outage keeps the task `running`.
+A wake source that drops while an error outcome is held re-offers the confirmation through the
+settlement's new `reconfirmHeld()`: the disarm event re-arms the probe instead of leaving the
+outcome held past the timer.
+
+`handle-wake-sources.test.ts` (new) proves the seam end-to-end over the raw record stream: an
+armed `providerRetry` timer keeps the turn's outcome pending through the confirmation window,
+and the disarm record settles it `failed` with the provider's text. `turn-wake-sources.test.ts`
+pins per-kind clearing; `turn-settlement.test.ts` pins the disarm-then-refire path.
+
 ## 2026-10-14 - A terminal provider error ends the task even when agent_idle never arrives (#3262)
 
 A turn that ended on a terminal provider error (a stream-start timeout, a permanent 4xx, an

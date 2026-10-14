@@ -31,6 +31,9 @@ export type TurnSettlement = {
   readonly observe: (event: AgentSessionEvent) => void
   readonly pending: () => RunnerOutcome | undefined
   readonly cancelConfirmation: () => void
+  // A wake source the handle tracks just dropped: re-offer the held error a confirmation chance.
+  // No-op when nothing is held, a confirmation is already armed, or no probe was wired.
+  readonly reconfirmHeld: () => void
 }
 
 /**
@@ -146,5 +149,6 @@ export function createTurnSettlement(input: TurnSettlementInput): TurnSettlement
     },
     pending: () => held,
     cancelConfirmation: clearConfirmation,
+    reconfirmHeld: rearm,
   }
 }

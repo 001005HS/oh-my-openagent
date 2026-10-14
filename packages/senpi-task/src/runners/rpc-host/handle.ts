@@ -5,7 +5,6 @@ import { isBusyChildRejection, type RpcStreamingBehavior } from "../rpc/delivery
 import { exitTurnOutcome, promptFailureOutcome } from "../rpc/turn-outcome"
 import { createTurnSettlement, sessionIsIdle } from "../rpc/turn-settlement"
 import { createTurnWakeSources } from "../rpc/turn-wake-sources"
-import type { ChildExtensionEvent } from "../child-extension-events"
 import type { ChildEventListener, ChildExitOutcome, RpcTerminalAssistantMessage } from "../types"
 import {
   classifySessionExit,
@@ -97,6 +96,12 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
       }
     }
     settlement.observe(event)
+    // The host's loose boundary parse fans every tagged record - raw `extension_event` records
+    // included - into this same funnel (see `session-wire.ts` isAgentSessionEvent).
+    if ((event as { readonly type?: string }).type === "extension_event") {
+      wakeSources.observe(event)
+      settlement.reconfirmHeld()
+    }
   }
 
   const stopHeartbeat = startHostHeartbeat({
@@ -198,10 +203,7 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     currentPort: () => client,
     acceptsLifecycleEvent: () => !parked && !detached && outcome === undefined,
     onEvent: (event: Parameters<ChildEventListener>[0]) => { onSessionEvent(event); listeners.emitEvent(event) },
-    onExtensionEvent: (event: ChildExtensionEvent) => {
-      wakeSources.observe(event)
-      listeners.extensionEvents.publish(event)
-    },
+    onExtensionEvent: listeners.extensionEvents.publish,
     onParked: park,
     onClosed: (event: { readonly reason: string | undefined }) => endSession({ kind: "session_closed", reason: event.reason }),
     onTransportGone: recovery.onTransportGone,

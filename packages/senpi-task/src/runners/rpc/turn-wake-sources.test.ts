@@ -58,6 +58,26 @@ describe("createTurnWakeSources (senpi#3262)", () => {
     expect(tracker.hasLiveWakeSources()).toBe(false)
   })
 
+  test("#given a providerRetry goal timer (senpi#3319) #when armed then disarmed by kind #then only its own kind clears", () => {
+    // given - a goal waiting out a provider outage on its retry backoff timer
+    const tracker = createTurnWakeSources()
+    tracker.observe(extensionEvent("goal_continuation_timer_state", { armed: true, kind: "providerRetry", dueAtMs: 9_000 }))
+    tracker.observe(extensionEvent("goal_continuation_timer_state", { armed: true, kind: "monitor" }))
+    expect(tracker.hasLiveWakeSources()).toBe(true)
+
+    // when - the monitor timer disarms: the providerRetry timer is untouched
+    tracker.observe(extensionEvent("goal_continuation_timer_state", { armed: false, kind: "monitor" }))
+
+    // then
+    expect(tracker.hasLiveWakeSources()).toBe(true)
+
+    // when - the providerRetry timer itself disarms (the retry fired or the goal gave up)
+    tracker.observe(extensionEvent("goal_continuation_timer_state", { armed: false, kind: "providerRetry" }))
+
+    // then
+    expect(tracker.hasLiveWakeSources()).toBe(false)
+  })
+
   test("#given a live tracker #when reset for a new turn #then prior wake sources are cleared", () => {
     // given
     const tracker = createTurnWakeSources()

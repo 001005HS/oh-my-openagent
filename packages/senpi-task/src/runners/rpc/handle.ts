@@ -105,8 +105,14 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
       }
     }
     settlement.observe(event)
+    // Goal/monitor wake records ride the SAME stream as agent events here: the protocol client
+    // only diverts permission-shaped extension events, so a raw `extension_event` reaches this
+    // funnel. The tracker reads `name`; a record that names nothing it tracks is ignored.
+    if ((event as { readonly type?: string }).type === "extension_event") {
+      wakeSources.observe(event)
+      settlement.reconfirmHeld()
+    }
   })
-  client.extensionEvents.subscribe((event) => wakeSources.observe(event))
   // Subscribers run after the handle has recorded the event (as on dev, and as the host handle does), so a
   // live observer reads current state and one that throws cannot keep the handle from settling a turn.
   client.onEvent((event) => listeners.emitEvent(event))
