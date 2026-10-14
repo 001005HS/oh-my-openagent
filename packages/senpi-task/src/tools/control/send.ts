@@ -52,8 +52,9 @@ export async function runTaskSend(
 
   if (params.redispatch === true) {
     if (manager.redispatchTask === undefined) return invalidArguments("this manager does not support redispatch")
-    const outcome = await manager.redispatchTask(params.to, callerSessionId)
-    return mapRedispatchOutcome(outcome)
+    const scopedCaller = params.all_scope === true ? undefined : callerSessionId
+    const outcome = await manager.redispatchTask(params.to, scopedCaller)
+    return mapRedispatchOutcome(manager, outcome, callerSessionId)
   }
 
   if (typeof params.message === "string") {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 
 import type { AwaitingInputReason } from "../state"
+import { buildTaskSnapshot } from "../tools/output/snapshot"
 import { cleanupProjects, baseSpec, makeManager, tempProject } from "./__fixtures__/manager-fakes"
 
 // senpi#3266: the one-step actions from "resumed, waiting for input" - cancel (task_cancel) or
@@ -100,6 +101,34 @@ describe("TaskManager.redispatchTask (senpi#3266)", () => {
 
     // then
     expect(outcome.kind).toBe("not_found")
+  })
+
+  test("#given a flagged task #when its child starts a run, a turn or a tool #then the flag is withdrawn and task_output stops saying it cannot continue", async () => {
+    for (const type of ["agent_start", "turn_start", "tool_execution_start"]) {
+      // given
+      const { store, inProcess, taskId } = await flaggedTask()
+
+      // when
+      inProcess.handles.get(taskId)?.emit({ type })
+
+      // then
+      const record = store.load(taskId)
+      if (record === null) throw new Error("expected the record")
+      expect({ type, flag: record.awaiting_input }).toEqual({ type, flag: undefined })
+      expect(buildTaskSnapshot(record, "/tmp/state", Date.now()).awaiting_input).toBeUndefined()
+    }
+  })
+
+  test("#given a flagged task #when a plain task_send is delivered to it #then the flag is withdrawn", async () => {
+    // given
+    const { manager, store, taskId } = await flaggedTask()
+
+    // when
+    const outcome = await manager.sendToTask({ idOrName: taskId, message: "carry on", deliverAs: "steer", callerSessionId: "parent-1" })
+
+    // then
+    expect(outcome.kind).toBe("steered")
+    expect(store.load(taskId)?.awaiting_input).toBeUndefined()
   })
 
   test("#given a flagged task #when it is cancelled instead #then cancel works in one step (task_cancel)", async () => {

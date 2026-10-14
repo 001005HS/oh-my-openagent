@@ -6,7 +6,7 @@ import type { TaskRecordStore } from "../store"
 
 // `reconcile_lost`: a child whose handle cleanup rejected is recorded on its terminal record and ended
 // through the lifecycle's orphan path (pid signal or daemon session close).
-export type DestructionCause = "cancel" | "cancel_without_abort" | "fallback_handoff" | "revive_failure" | "reconcile_lost" | "recovery_detach"
+export type DestructionCause = "cancel" | "cancel_without_abort" | "fallback_handoff" | "revive_failure" | "reconcile_lost" | "recovery_detach" | "redispatch"
 
 // Structural port implemented by lifecycle (todo 12). Steering delegates ALL child destruction here
 // and NEVER calls dispose()/terminate()/SIGTERM itself (the dispose single-writer rule). Idempotent.
@@ -121,6 +121,7 @@ export type RedispatchOutcome =
   | { readonly kind: "redispatched"; readonly task_id: string; readonly run_epoch: number }
   | { readonly kind: "invalid_state"; readonly task_id: string; readonly reason: string }
   | { readonly kind: "respawn_failed"; readonly task_id: string; readonly reason: string }
+  | { readonly kind: "capacity_deferred"; readonly task_id: string; readonly reason: string }
   | { readonly kind: "scope_denied"; readonly task_id: string; readonly owning_session_id: string; readonly reason: string }
   | { readonly kind: "not_found"; readonly reason: string }
 

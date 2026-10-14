@@ -537,6 +537,7 @@ export type {
 export {
   TRANSCRIPT_MAX_CHARS,
   TaskOutputParams,
+  awaitingInputDetails,
   buildTaskSnapshot,
   childSessionDir,
   createTaskOutputTool,

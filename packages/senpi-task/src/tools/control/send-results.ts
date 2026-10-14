@@ -2,7 +2,7 @@ import type { SendManager, SendToolResult } from "./types"
 import { toolErrorResult, toolResult } from "./tool-result"
 import type { RedispatchOutcome } from "../../steering"
 
-export function mapRedispatchOutcome(outcome: RedispatchOutcome): SendToolResult {
+export function mapRedispatchOutcome(manager: SendManager, outcome: RedispatchOutcome, callerSessionId: string | undefined): SendToolResult {
   switch (outcome.kind) {
     case "redispatched":
       return toolResult(`Re-dispatched ${outcome.task_id} onto a fresh live session (run epoch ${outcome.run_epoch}); its persisted prompt is replaying.`, {
@@ -11,18 +11,20 @@ export function mapRedispatchOutcome(outcome: RedispatchOutcome): SendToolResult
         run_epoch: outcome.run_epoch,
       })
     case "invalid_state":
-      return toolResult(outcome.reason, { kind: "invalid_state", task_id: outcome.task_id, reason: outcome.reason })
+      return toolErrorResult(outcome.reason, { kind: "invalid_state", task_id: outcome.task_id, reason: outcome.reason })
     case "respawn_failed":
       return toolErrorResult(outcome.reason, { kind: "respawn_failed", task_id: outcome.task_id, reason: outcome.reason })
+    case "capacity_deferred":
+      return toolResult(outcome.reason, { kind: "capacity_deferred", task_id: outcome.task_id, reason: outcome.reason })
     case "scope_denied":
-      return toolResult(outcome.reason, {
+      return toolErrorResult(outcome.reason, {
         kind: "scope_denied",
         task_id: outcome.task_id,
         owning_session_id: outcome.owning_session_id,
         reason: outcome.reason,
       })
     case "not_found":
-      return toolResult(outcome.reason, { kind: "not_found", reason: outcome.reason, known_tasks: [] })
+      return notFound(manager, outcome.reason, callerSessionId)
   }
 }
 
