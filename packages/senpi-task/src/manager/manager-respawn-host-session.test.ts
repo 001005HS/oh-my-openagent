@@ -807,7 +807,7 @@ describe("respawn of a daemon-hosted child", () => {
     const runner = recordingRunner(host)
     const first = await runner.start(childSpec({ state_dir: project }))
     const sessionPath = host.sessions()[0]?.sessionPath ?? ""
-    const routingId = isHostSessionHandle(first) ? first.hostSession.routing_id : ""
+    const routingId = host.sessions()[0]?.routingId ?? ""
     await first.dispose()
     host.abortTurn(routingId)
 

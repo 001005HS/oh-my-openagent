@@ -62,6 +62,9 @@ export interface FakeHost {
   stall(driftMs: number): void
   /** Finish the turn in flight with an assistant answer, exactly as a real session would. */
   completeTurn(routingId: string, text: string): void
+  // The host-side abort of a turn in flight (a user escape, a forced stop): the transcript gains
+  // the aborted assistant row and the session goes idle, exactly as the real host leaves it.
+  abortTurn(routingId: string): void
   evict(sessionPath: string): void
   closeSession(routingId: string, reason: string): void
   holdPath(sessionPath: string, ownerInstanceId: string): void

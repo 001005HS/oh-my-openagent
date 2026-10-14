@@ -357,6 +357,8 @@ export function createDagRuntime(deps: DagRuntimeDeps): DagRuntime {
           model: record.model,
         },
         Date.parse(record.created_at),
+        Date.now,
+        { awaitingInput: record.awaiting_input !== undefined && (record.status === "pending" || record.status === "running") },
       )
       activityTaskSubscriptions.set(taskId, deps.engine.manager.subscribeChild(taskId, (event: ManagedChildEvent) => {
         if (!progress.accept(event)) return

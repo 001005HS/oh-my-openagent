@@ -156,6 +156,8 @@ export function wireTaskRpcBridge(
           model: record.model,
         },
         Date.parse(record.created_at),
+        Date.now,
+        { awaitingInput: record.awaiting_input !== undefined && (record.status === "pending" || record.status === "running") },
       )
       const unsubscribe = engine.manager.subscribeChild(record.task_id, (event: ManagedChildEvent) => {
         if (!progress.accept(event)) return

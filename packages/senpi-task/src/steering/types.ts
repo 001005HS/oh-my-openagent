@@ -115,6 +115,15 @@ export type CancelOutcome =
   | { readonly kind: "stale"; readonly task_id: string; readonly status: TaskStatus; readonly run_epoch: number; readonly reason: string }
   | { readonly kind: "not_found"; readonly reason: string }
 
+// senpi#3266: the result of re-dispatching a flagged "resumed, waiting for input" task onto a
+// fresh live session. `redispatched` carries the NEW run epoch the task now runs under.
+export type RedispatchOutcome =
+  | { readonly kind: "redispatched"; readonly task_id: string; readonly run_epoch: number }
+  | { readonly kind: "invalid_state"; readonly task_id: string; readonly reason: string }
+  | { readonly kind: "respawn_failed"; readonly task_id: string; readonly reason: string }
+  | { readonly kind: "scope_denied"; readonly task_id: string; readonly owning_session_id: string; readonly reason: string }
+  | { readonly kind: "not_found"; readonly reason: string }
+
 export type SteeringEngine = {
   hasPendingSends(taskId: string): boolean
   hasInFlightSends(taskId: string): boolean

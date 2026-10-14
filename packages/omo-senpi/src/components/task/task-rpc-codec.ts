@@ -38,6 +38,8 @@ export function taskSnapshot(
     ...(record.child_session_id === undefined
       ? {}
       : { child_session_id: boundedRequired(record.child_session_id, MAX_TASK_ID_LENGTH) }),
+    // The resumed-onto-aborted-session flag (senpi#3266): a closed reason enum + its timestamp.
+    ...(record.awaiting_input === undefined ? {} : { awaiting_input: record.awaiting_input }),
     ...(runStats === undefined ? {} : { run_stats: runStats }),
     ...(finalResponse.value === undefined ? {} : { final_response: finalResponse.value }),
     ...(finalResponse.truncated ? { final_response_truncated: true } : {}),

@@ -14,12 +14,12 @@ afterEach(cleanupProjects)
 const HOST = 11_001
 const NOW = Date.parse("2026-10-14T00:00:00.000Z")
 
-function fixture(options: { readonly status?: "interrupted" | "completed" } = {}) {
+function fixture(options: { readonly status?: "running" | "completed" } = {}) {
   const store = createTaskRecordStore({ project_dir: tempProject() })
   const taskId = "st_0a326601"
   seedRecord(store, {
     task_id: taskId,
-    status: options.status ?? "interrupted",
+    status: options.status ?? "running",
     residency_state: "resident",
     execution_mode: "process",
     host_pid: HOST,
@@ -40,7 +40,7 @@ function fixture(options: { readonly status?: "interrupted" | "completed" } = {}
       detachLive: () => undefined,
       destroyAttached: async () => undefined,
       armOutcome: () => undefined,
-      ...(awaitingInput === undefined ? {} : { awaitingInput }),
+      ...(awaitingInput === undefined ? {} : { awaitingInput: { reason: awaitingInput } }),
     })
   return { store, taskId, reattach }
 }
