@@ -25,22 +25,20 @@ const CURRENT_USER_SELECTABLE_MODELS = new Set([
 ])
 
 function migrationKey(oldModel: string, newModel: string): string {
-  return `model-version:${oldModel}->${newModel}`
+  return `${MIGRATION_KEY_PREFIX}${oldModel}->${newModel}`
 }
 
-function migrationSourceKey(oldModel: string): string {
-  return `model-version:${oldModel}->`
-}
+const MIGRATION_KEY_PREFIX = "model-version:"
 
-function hasAppliedMigration(appliedMigrations: Set<string> | undefined, oldModel: string): boolean {
-  if (!appliedMigrations) return false
-  const sourceKey = migrationSourceKey(oldModel)
-  for (const key of appliedMigrations) {
-    // A migration away from this source counts as applied whatever its target was,
-    // so a user's deliberate revert is never overridden by a later target bump.
-    if (key.startsWith(sourceKey)) return true
+/** Sources that already have a recorded migration away from them, whatever the target was. */
+function appliedMigrationSources(appliedMigrations: Set<string> | undefined): Set<string> {
+  const sources = new Set<string>()
+  for (const key of appliedMigrations ?? []) {
+    if (!key.startsWith(MIGRATION_KEY_PREFIX)) continue
+    const arrow = key.indexOf("->", MIGRATION_KEY_PREFIX.length)
+    if (arrow >= 0) sources.add(key.slice(MIGRATION_KEY_PREFIX.length, arrow))
   }
-  return false
+  return sources
 }
 
 export function migrateModelVersions(
@@ -50,6 +48,7 @@ export function migrateModelVersions(
   const migrated: Record<string, unknown> = {}
   let changed = false
   const newMigrations: string[] = []
+  const migratedSources = appliedMigrationSources(appliedMigrations)
 
   for (const [key, value] of Object.entries(configs)) {
     if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -61,17 +60,17 @@ export function migrateModelVersions(
       ) {
         const oldModel = config.model
         const newModel = MODEL_VERSION_MAP[oldModel]
-        const mKey = migrationKey(oldModel, newModel)
 
-        // Skip if this migration was already applied (user may have reverted)
-        if (hasAppliedMigration(appliedMigrations, oldModel)) {
+        // Any recorded migration away from this source means the user's current choice
+        // stands, even when the map now points somewhere else (they may have reverted).
+        if (migratedSources.has(oldModel)) {
           migrated[key] = value
           continue
         }
 
         migrated[key] = { ...config, model: newModel }
         changed = true
-        newMigrations.push(mKey)
+        newMigrations.push(migrationKey(oldModel, newModel))
         continue
       }
     }
