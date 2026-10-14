@@ -10,6 +10,8 @@ An app-server daemon started by an older version keeps running after an upgrade.
 
 `bin/lib/launcher.js` calls `refuseRetiredCommand` once instead of checking the command name first, and the compile-entry test title now says the refusal happens before the engine is imported rather than before any import, since legacy state migration may run first.
 
+Review follow-up: the retired-daemon line keeps the `WARN stale engine pid <n>` prefix every other stale engine prints, so scripts that grep for it still see these daemons. `BINARY_ENGINE` and `RETIRED_APP_SERVER` now build on one `BINARY_RUNTIME_EXECUTABLE` pattern, so a change to the binary-runtime path layout is made once.
+
 ## 2026-10-12 - OmO Native retires the Codex-compatible app-server command (#10033)
 
 `omo app-server` is no longer a launch path. The npm launcher and the compiled entry answer the retired command with a diagnostic and exit 2 instead of forwarding it to the engine with the OmO extension appended, so the old invocation cannot become a prompt. OmO Native keeps its RPC host, daemon, thread, doctor and every one-shot engine command dispatch unchanged (#9572/#9573 remain the dispatch contract).

@@ -111,7 +111,8 @@ function listProcesses() {
 // A standalone binary runs its engine as the provisioned runtime executable itself. The same
 // executable also serves omo's own commands, internal hosts and bundled scripts, so only a bare launch
 // or engine flags count; those other roles are never engines.
-const BINARY_ENGINE = /[\\/]binary-runtime[\\/][^\\/\s]+[\\/]omo(?:\.exe)?(?=\s|$)\s*(\S*)/
+const BINARY_RUNTIME_EXECUTABLE = String.raw`[\\/]binary-runtime[\\/][^\\/\s]+[\\/]omo(?:\.exe)?`
+const BINARY_ENGINE = new RegExp(String.raw`${BINARY_RUNTIME_EXECUTABLE}(?=\s|$)\s*(\S*)`)
 const BINARY_NON_ENGINE_COMMANDS = new Set(["doctor", "setup", "daemon", "update", "upgrade", "host", "install", "remove", "list", "config", "auth", "ulw-loop", "--version", "-v"])
 
 function isBinaryEngine(command) {
@@ -128,7 +129,9 @@ function isEngine(entry) {
 
 // A daemon started by an older engine as `... app-server` keeps running after an upgrade. It has no
 // `--mode` and is reparented to init, so it would otherwise read as an orphaned session.
-const RETIRED_APP_SERVER = /(?:senpi[\\/]dist[\\/](?:bundle[\\/])?cli\.js|[\\/]binary-runtime[\\/][^\\/\s]+[\\/]omo(?:\.exe)?)\s+app-server(?=\s|$)/
+const RETIRED_APP_SERVER = new RegExp(
+  String.raw`(?:senpi[\\/]dist[\\/](?:bundle[\\/])?cli\.js|${BINARY_RUNTIME_EXECUTABLE})\s+app-server(?=\s|$)`,
+)
 
 function isRetiredAppServer(entry) {
   return RETIRED_APP_SERVER.test(entry.command)
@@ -162,7 +165,7 @@ export function formatStaleEngineLines(stale) {
   if (stale.length === 0) return []
   const lines = stale.map((entry) =>
     entry.retiredAppServer
-      ? `WARN pid ${entry.pid} (age ${entry.elapsed}, tty ${entry.tty}) is an app-server daemon started by an older version; that command was removed, so stop it`
+      ? `WARN stale engine pid ${entry.pid} (age ${entry.elapsed}, tty ${entry.tty}) is an app-server daemon started by an older version; that command was removed, so stop it`
       : `WARN stale engine pid ${entry.pid} (age ${entry.elapsed}, tty ${entry.tty}) has no launcher; it was orphaned by a signaled launcher`
   )
   lines.push(`INFO reap them explicitly by pid: omo doctor --reap ${stale.map((entry) => entry.pid).join(" ")}`)
