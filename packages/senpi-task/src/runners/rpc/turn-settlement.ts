@@ -13,6 +13,21 @@ export type TurnSettlementProbe = {
   readonly pendingMessageCount?: number
 }
 
+/** One armed settle confirmation: `cancel` disarms it. */
+export type SettlementTimerHandle = { readonly cancel: () => void }
+
+/**
+ * Arms the settle confirmation. Production uses the default real (unref'd) timeout; a test drives
+ * the confirmation by hand instead of waiting on a wall clock.
+ */
+export type TurnSettlementScheduler = (run: () => void, delayMs: number) => SettlementTimerHandle
+
+const defaultConfirmationScheduler: TurnSettlementScheduler = (run, delayMs) => {
+  const timer = setTimeout(run, delayMs)
+  timer.unref?.()
+  return { cancel: () => clearTimeout(timer) }
+}
+
 export type TurnSettlementInput = {
   readonly settle: (outcome: RunnerOutcome) => void
   readonly abortedByUser: () => boolean
@@ -25,6 +40,7 @@ export type TurnSettlementInput = {
   readonly probe?: () => Promise<TurnSettlementProbe>
   readonly settleConfirmMs?: number
   readonly wakeSourcesLive?: () => boolean
+  readonly scheduleConfirmation?: TurnSettlementScheduler
 }
 
 export type TurnSettlement = {
@@ -67,7 +83,8 @@ export function sessionIsIdle(state: {
 
 export function createTurnSettlement(input: TurnSettlementInput): TurnSettlement {
   let held: RunnerOutcome | undefined
-  let confirmation: ReturnType<typeof setTimeout> | undefined
+  let confirmation: SettlementTimerHandle | undefined
+  const scheduleConfirmation = input.scheduleConfirmation ?? defaultConfirmationScheduler
   const endOutcome = (event: AgentEndEvent): RunnerOutcome =>
     input.abortedByUser() ? { status: "cancelled" } : agentEndOutcome(event, input.baseline(), input.finalText())
 
@@ -105,14 +122,12 @@ export function createTurnSettlement(input: TurnSettlementInput): TurnSettlement
     if (held === undefined || held.status !== "error") return
     if (input.probe === undefined || input.settleConfirmMs === undefined) return
     if (confirmation !== undefined) return
-    const timer = setTimeout(confirmHeld, input.settleConfirmMs)
-    timer.unref?.()
-    confirmation = timer
+    confirmation = scheduleConfirmation(confirmHeld, input.settleConfirmMs)
   }
 
   const clearConfirmation = (): void => {
     if (confirmation === undefined) return
-    clearTimeout(confirmation)
+    confirmation.cancel()
     confirmation = undefined
   }
 

@@ -8,6 +8,8 @@ import type { RpcChildHandle } from "../types"
 import { createRpcChildHandle } from "./handle"
 import type { RpcProtocolClient } from "./protocol-client"
 import { createChildExtensionEvents } from "../child-extension-events"
+import { createManualSettlementScheduler, flushSettlement } from "./turn-settlement.test-support"
+import type { TurnSettlementScheduler } from "./turn-settlement"
 
 const PROVIDER_TIMEOUT = "Provider stream start timed out after 300000ms"
 
@@ -30,7 +32,7 @@ const IDLE_STATE = {
  * through `pi.rpc.emit`), never through the permission-shaped extension channel. This suite
  * proves that ingestion at the real seam (senpi#3262).
  */
-function createHarness(settleConfirmMs: number): {
+function createHarness(settleConfirmMs: number, settlementScheduler?: TurnSettlementScheduler): {
   readonly handle: OutcomeTrackedHandle
   readonly emit: (record: unknown) => void
 } {
@@ -57,6 +59,7 @@ function createHarness(settleConfirmMs: number): {
     taskId: "st_00000002",
     heartbeatIntervalMs: settleConfirmMs,
     now: () => 1,
+    settlementScheduler,
   }) as OutcomeTrackedHandle
   return {
     handle,
@@ -81,6 +84,23 @@ function terminalProviderErrorTurn(): readonly unknown[] {
 
 function goalTimer(armed: boolean, kind: string): unknown {
   return { type: "extension_event", name: "goal_continuation_timer_state", data: { armed, kind } }
+}
+
+function terminalMonitorState(activeCount: number, monitors: readonly unknown[]): unknown {
+  return { type: "extension_event", name: "terminal_monitor_state", data: { activeCount, monitors } }
+}
+
+function successfulTurn(): readonly unknown[] {
+  const assistant = {
+    role: "assistant",
+    content: [{ type: "text", text: "done" }],
+    stopReason: "stop",
+  }
+  return [
+    { type: "message_end", message: assistant },
+    { type: "agent_end", willRetry: false, messages: [assistant] },
+    { type: "agent_idle" },
+  ]
 }
 
 describe("createRpcChildHandle goal wake-source tracking (senpi#3262)", () => {
@@ -113,6 +133,43 @@ describe("createRpcChildHandle goal wake-source tracking (senpi#3262)", () => {
     harness.emit(goalTimer(false, "providerRetry"))
 
     // then
+    const outcome = await harness.handle.waitForOutcome()
+    expect(outcome).toEqual({
+      status: "error",
+      failure: { kind: "child-turn-failed", message: PROVIDER_TIMEOUT },
+    })
+    await harness.handle.dispose()
+  })
+
+  test("#given a terminal monitor armed in an earlier turn #when a later turn ends on a terminal provider error #then the earlier monitor still holds the outcome", async () => {
+    // given - turn 1 starts a session-lifetime terminal monitor, then ends clean on agent_idle
+    const scheduler = createManualSettlementScheduler()
+    const harness = createHarness(60_000, scheduler.scheduler)
+    harness.emit(terminalMonitorState(1, [{ id: "w1", description: "watch the build", startedAtMs: 1 }]))
+    for (const record of successfulTurn()) harness.emit(record)
+    const first = await harness.handle.waitForOutcome()
+    expect(first.status).toBe("completed")
+
+    // when - a later self-resumed turn ends on a terminal provider error and never emits agent_idle
+    harness.emit({ type: "agent_start" })
+    let settled: RunnerOutcome | undefined
+    void harness.handle.waitForOutcome().then((outcome) => {
+      settled = outcome
+    })
+    for (const record of terminalProviderErrorTurn()) harness.emit(record)
+
+    // then - firing the armed confirmation must not settle: turn 1's monitor still owns the session
+    expect(scheduler.pending()).toBe(1)
+    scheduler.runNext()
+    await flushSettlement()
+    expect(settled).toBeUndefined()
+
+    // when - the earlier monitor finally ends, its disarm re-offers the confirmation
+    harness.emit(terminalMonitorState(0, []))
+    expect(scheduler.pending()).toBe(1)
+    scheduler.runNext()
+
+    // then - only then does the held error settle failed, with the provider's own text
     const outcome = await harness.handle.waitForOutcome()
     expect(outcome).toEqual({
       status: "error",

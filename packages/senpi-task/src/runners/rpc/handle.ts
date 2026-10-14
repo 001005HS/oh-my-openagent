@@ -19,7 +19,7 @@ import { createHandleListeners } from "../rpc-host/handle-listeners"
 import { isHarmlessRpcShutdownError, type RpcProtocolClient } from "./protocol-client"
 import { terminateRpcChild } from "./terminate"
 import { exitTurnOutcome, extractAssistantText, promptFailureOutcome } from "./turn-outcome"
-import { createTurnSettlement, sessionIsIdle } from "./turn-settlement"
+import { createTurnSettlement, sessionIsIdle, type TurnSettlementScheduler } from "./turn-settlement"
 import { createTurnWakeSources } from "./turn-wake-sources"
 
 export type CreateRpcChildHandleOptions = {
@@ -32,6 +32,8 @@ export type CreateRpcChildHandleOptions = {
   readonly childEnv?: NodeJS.ProcessEnv
   /** Stops the child process; defaults to terminateRpcChild. A test passes a fake so it never signals a host process. */
   readonly terminateChild?: (child: ChildProcess, options?: TerminateOptions) => Promise<void>
+  /** Test seam: drives the settle confirmation by hand instead of a real timer. */
+  readonly settlementScheduler?: TurnSettlementScheduler
 }
 
 export type TrackedRpcChildHandle = RpcChildHandle & {
@@ -82,6 +84,7 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
     },
     settleConfirmMs: heartbeatIntervalMs,
     wakeSourcesLive: () => wakeSources.hasLiveWakeSources(),
+    scheduleConfirmation: options.settlementScheduler,
   })
 
   const resumedListeners = new Set<() => void>()
