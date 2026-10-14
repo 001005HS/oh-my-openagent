@@ -185,15 +185,56 @@ function convertProvider(id, entry, context) {
   return { id, npm, config, key: convertKey(id, entry, context.opencodeAuth, notices) }
 }
 
-/** Every OpenCode custom provider the engine can serve, converted; everything else as a notice. */
+// OpenCode's own copy of the models.dev catalog (core/src/models-dev.ts: Global.Path.cache, or
+// OPENCODE_MODELS_PATH): every provider OpenCode serves without a config block is defined there.
+function readOpencodeCatalog(home, env, notices) {
+  const path = env.OPENCODE_MODELS_PATH || join(env.XDG_CACHE_HOME || join(home, ".cache"), "opencode", "models.json")
+  if (!existsSync(path)) return undefined
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8"))
+    return isPlainObject(parsed) ? parsed : undefined
+  } catch {
+    notices.push("WARN opencode: could not parse its models.dev catalog cache; catalog providers were not imported")
+    return undefined
+  }
+}
+
+// A catalog provider in the shape of a `provider.<id>` block, so one converter serves both. Models
+// models.dev marks deprecated stay behind, as OpenCode hides them.
+function catalogEntry(entry) {
+  if (!isPlainObject(entry) || !isPlainObject(entry.models)) return undefined
+  const models = Object.fromEntries(Object.entries(entry.models).filter(([, model]) => isPlainObject(model) && model.status !== "deprecated"))
+  return { name: entry.name, npm: entry.npm, api: entry.api, models }
+}
+
+// OpenCode serves a catalog provider as soon as it has a key: the providers it holds an api key for
+// that omo neither builds in nor finds declared become catalog-backed custom providers (#10158).
+function catalogProviders(declared, opencodeAuth, builtin, home, env, notices) {
+  const wanted = Object.keys(opencodeAuth).filter(
+    (id) => opencodeAuth[id]?.type === "api" && !builtin.has(id) && !Object.hasOwn(declared, id),
+  )
+  if (wanted.length === 0) return {}
+  const catalog = readOpencodeCatalog(home, env, notices)
+  if (catalog === undefined) {
+    notices.push(`NOTICE opencode: no models.dev catalog cache found, so ${wanted.join(", ")} could not be described - run opencode once, then omo setup again`)
+    return {}
+  }
+  return Object.fromEntries(wanted.map((id) => [id, catalogEntry(catalog[id])]).filter(([, entry]) => entry !== undefined))
+}
+
+/** Every OpenCode custom or catalog provider the engine can serve, converted; everything else as a notice. */
 export function planOpencodeProviders(options = {}) {
   const home = options.home ?? homedir()
   const env = options.env ?? process.env
   const notices = []
-  const declared = readOpencodeSection(opencodeConfigSources(home, env).files, "provider", "custom providers", notices)
-  // auth.json is only a key source here; with no provider block it is the credential stage's alone.
+  const config = readOpencodeSection(opencodeConfigSources(home, env).files, "provider", "custom providers", notices)
+  const builtin = builtinProviderIds()
+  // With no provider block, a bad auth.json is the credential stage's to report.
+  const opencodeAuth = readOpencodeAuth(home, env, Object.keys(config).length > 0 ? notices : [])
+  const declared = { ...catalogProviders(config, opencodeAuth, builtin, home, env, notices), ...config }
+  // auth.json is only a key source here; with no provider to describe it is the credential stage's alone.
   if (Object.keys(declared).length === 0) return { providers: [], skipped: [], notices }
-  const context = { builtin: builtinProviderIds(), opencodeAuth: readOpencodeAuth(home, env, notices), notices }
+  const context = { builtin, opencodeAuth, notices }
   const providers = []
   // The ids declared but not carried; each one's reason is in `notices`.
   const skipped = []

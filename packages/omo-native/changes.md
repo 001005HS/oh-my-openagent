@@ -1,3 +1,9 @@
+## 2026-10-14 - omo setup carries OpenCode's catalog providers, not only custom blocks (#10158)
+
+Thanks to @taxilian for the report on #8485. OpenCode serves every provider in its models.dev catalog as soon as it has a key. `omo setup` only carried omo's builtins and `provider.<id>` blocks, so a key for a catalog provider like `neuralwatt` was dropped as "a provider omo does not serve", and an OpenCode default model on it was not carried either.
+
+`planOpencodeProviders` now reads OpenCode's own catalog cache (`$XDG_CACHE_HOME/opencode/models.json`, or `OPENCODE_MODELS_PATH`). Each provider OpenCode holds an API key for, that omo has no builtin for and no config block declares, becomes a catalog entry (name, `npm`, `api` URL, non-deprecated models with their limits, reasoning and modalities). That entry goes through the same converter as a `provider.<id>` block. Its key is then imported by the provider stage, and the default model is carried like any custom provider's. A config block for the same id still wins outright. When the cache is missing, setup names the providers and says to run OpenCode once.
+
 ## 2026-10-12 - OmO Native retires the Codex-compatible app-server command (#10033)
 
 `omo app-server` is no longer a launch path. The npm launcher and the compiled entry answer the retired command with a diagnostic and exit 2 instead of forwarding it to the engine with the OmO extension appended, so the old invocation cannot become a prompt. OmO Native keeps its RPC host, daemon, thread, doctor and every one-shot engine command dispatch unchanged (#9572/#9573 remain the dispatch contract).

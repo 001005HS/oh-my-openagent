@@ -58,6 +58,8 @@ function run(item: Fixture, args: string[]) {
   delete env.PI_CODING_AGENT_DIR
   delete env.OPENCODE_CONFIG_DIR
   delete env.OPENCODE_CONFIG
+  delete env.XDG_CACHE_HOME
+  delete env.OPENCODE_MODELS_PATH
   const result = spawnSync(process.execPath, [item.launcher, ...args], { encoding: "utf8", env })
   if (result.error) throw result.error
   return result
@@ -343,6 +345,61 @@ describe("omo setup opencode custom provider import", () => {
         expect(result.status).toBe(0)
         expect(result.stdout).toContain("docs/guide/agent-model-matching.md")
         expect(result.stdout).not.toContain("<custom-baseUrl-provider>")
+      })
+    })
+  })
+})
+
+const NEURALWATT_CATALOG = {
+  neuralwatt: {
+    id: "neuralwatt",
+    env: ["NEURALWATT_API_KEY"],
+    npm: "@ai-sdk/openai-compatible",
+    api: "https://api.neuralwatt.com/v1",
+    name: "Neuralwatt",
+    models: {
+      "kimi-k2.5": { id: "kimi-k2.5", name: "Kimi K2.5", reasoning: true, limit: { context: 262144, output: 32768 } },
+      "old-model": { id: "old-model", status: "deprecated", limit: { context: 8192, output: 1024 } },
+    },
+  },
+}
+
+describe("omo setup opencode catalog provider import (#10158)", () => {
+  describe("#given an opencode api key for a models.dev provider omo has no builtin for", () => {
+    describe("#when setup is accepted", () => {
+      test("#then the provider is described from opencode's catalog cache, its key stored and the default model carried", () => {
+        const item = fixture()
+        opencode(item, { model: "neuralwatt/kimi-k2.5" }, { neuralwatt: { type: "api", key: "nw-key" } })
+        write(join(item.home, ".cache", "opencode", "models.json"), JSON.stringify(NEURALWATT_CATALOG))
+
+        const result = run(item, ["setup", "--yes"])
+        const config = ModelConfig.loadSync(join(item.agentDir, "models.json"))
+        const models = composeModelProvider("neuralwatt", undefined, config, undefined).getModels()
+
+        expect(result.status).toBe(0)
+        expect(config.getError()).toBeUndefined()
+        expect(models.map((model: any) => [model.id, model.api, model.baseUrl, model.contextWindow, model.maxTokens, model.reasoning])).toEqual([
+          ["kimi-k2.5", "openai-completions", "https://api.neuralwatt.com/v1", 262144, 32768, true],
+        ])
+        expect(readAuthStore(join(item.agentDir, "auth.json")).entries.neuralwatt).toMatchObject({ type: "api_key" })
+        expect(result.stdout).toContain("providers-imported: neuralwatt")
+        expect(result.stdout).not.toContain("providers omo does not serve (neuralwatt)")
+        expect(result.stdout).not.toContain("provider neuralwatt is not one omo serves")
+      })
+    })
+  })
+
+  describe("#given that key but no catalog cache", () => {
+    describe("#when setup runs", () => {
+      test("#then it says how to get the catalog instead of importing a guess", () => {
+        const item = fixture()
+        opencode(item, {}, { neuralwatt: { type: "api", key: "nw-key" } })
+
+        const result = run(item, ["setup", "--yes"])
+
+        expect(result.status).toBe(0)
+        expect(result.stdout).toContain("no models.dev catalog cache found, so neuralwatt could not be described")
+        expect(existsSync(join(item.agentDir, "models.json"))).toBe(false)
       })
     })
   })
