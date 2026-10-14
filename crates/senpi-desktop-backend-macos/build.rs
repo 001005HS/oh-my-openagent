@@ -8,8 +8,9 @@
 //! wins over a locally clang-built one, so a release never ships an ad-hoc
 //! helper (B9/#9651). The engine stages the helper at a fresh temp path on
 //! every start, so the helper holds no Screen Recording grant of its own: TCC
-//! charges the responsible process (the app that launched OmO). The signed
-//! release proof checks that a second launch does not prompt.
+//! charges the responsible process (the app that launched OmO). A manual
+//! signed-release QA step (not a CI gate) checks that a second launch does
+//! not prompt.
 
 use std::env;
 use std::path::{Path, PathBuf};

@@ -111,3 +111,30 @@ if first_start:
     let frames = SckWorker::capture(&requests).unwrap();
     assert_eq!(frames[0].image.as_raw(), &[12, 34, 56, 255]);
 }
+
+#[test]
+fn the_in_lock_budget_grows_per_target_and_is_capped() {
+    use std::time::Duration;
+    assert_eq!(super::in_lock_budget(1), Duration::from_millis(2400));
+    assert_eq!(super::in_lock_budget(3), Duration::from_millis(3200));
+    assert_eq!(super::in_lock_budget(64), super::IN_LOCK_MAX);
+}
+
+#[test]
+fn a_stalled_warm_up_keeps_the_worker_off_instead_of_retrying_each_capture() {
+    // Given: a helper that never answers its ping
+    let dir = tempfile::tempdir().unwrap();
+    let helper = fake_helper(&dir, &format!("{PY_PREAMBLE}\nimport time\ntime.sleep(30)\n"));
+    let _program = ProgramGuard::new(helper);
+    super::TEST_WARM_TIMEOUT.set(Some(std::time::Duration::from_millis(500)));
+    // When: the first warm-up times out and a second capture warms up again
+    let before = super::TEST_STARTS.get();
+    assert!(SckWorker::prepare().is_err());
+    let again = std::time::Instant::now();
+    assert!(SckWorker::prepare().is_err());
+    // Then: the second attempt returns at once without starting another helper
+    assert!(again.elapsed() < std::time::Duration::from_secs(1));
+    assert_eq!(super::TEST_STARTS.get() - before, 1);
+    super::WARM_STALLED_UNTIL.set(None);
+    super::TEST_WARM_TIMEOUT.set(Some(std::time::Duration::from_secs(30)));
+}

@@ -18,7 +18,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use senpi_desktop_core::error::{CoreResult, DesktopError};
+use senpi_desktop_core::error::{CoreResult, DesktopError, ErrorCode};
 
 use self::client::{ClientError, HelperClient};
 use self::protocol::TargetRequest;
@@ -79,17 +79,57 @@ pub(crate) enum SckCaptureError {
     Start(DesktopError),
     /// The capture failed; surface this error to the caller.
     Failed(DesktopError),
+    /// A started worker exceeded its in-lock budget. The worker was reset;
+    /// the caller falls back to `screencapture` for this capture.
+    TimedOut(DesktopError),
 }
 
 /// How long a warm-up may take: the helper's cold start plus its first
 /// shareable-content fetch. It runs before the capture lock is taken.
 const WARM_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// How long one capture may hold the cursor-exclusion lock. Other captures
-/// wait at most two seconds for that lock (overlay coordination), so a warm
-/// helper must answer well inside it or the capture fails instead of
-/// starving every other session.
-pub(crate) const IN_LOCK_CAPTURE_TIMEOUT: Duration = Duration::from_millis(1500);
+/// The warm-up budget; tests replace it so a fake helper's interpreter start
+/// on a loaded host cannot decide a test, and timeout tests stay short.
+fn warm_timeout() -> Duration {
+    #[cfg(test)]
+    if let Some(budget) = TEST_WARM_TIMEOUT.get() {
+        return budget;
+    }
+    WARM_TIMEOUT
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Helper starts on this thread, so tests can prove a start was skipped.
+    pub(crate) static TEST_STARTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    pub(crate) static TEST_WARM_TIMEOUT: std::cell::Cell<Option<Duration>> =
+        const { std::cell::Cell::new(Some(Duration::from_secs(30))) };
+}
+
+/// A warm-up that timed out is not retried for this long; captures use the
+/// legacy path meanwhile instead of each paying `WARM_TIMEOUT` again.
+const WARM_STALL_COOLDOWN: Duration = Duration::from_secs(30);
+
+/// In-lock capture budget, sized from warm batches through the real helper on
+/// an M5 Max under load average ~120 (min / median / max, 15 runs each):
+/// 1 target 737 / 1099 / 1763 ms, 3 targets 799 / 1582 / 2861 ms, 8 targets
+/// 1410 / 2001 / 4206 ms. A batch costs ~0.7 s fixed (the content fetch) plus
+/// ~0.1 s per target at best, so the budget is 2 s + 0.4 s per target (above
+/// every observed maximum), capped at 6 s; overlay coordination waits 8 s.
+const IN_LOCK_BASE: Duration = Duration::from_millis(2000);
+const IN_LOCK_PER_TARGET: Duration = Duration::from_millis(400);
+pub(crate) const IN_LOCK_MAX: Duration = Duration::from_secs(6);
+
+pub(crate) fn in_lock_budget(targets: usize) -> Duration {
+    let per_target = IN_LOCK_PER_TARGET.saturating_mul(u32::try_from(targets).unwrap_or(u32::MAX));
+    IN_LOCK_BASE.saturating_add(per_target).min(IN_LOCK_MAX)
+}
+
+thread_local! {
+    /// Until when a stalled warm-up keeps the worker off (see `WARM_STALL_COOLDOWN`).
+    static WARM_STALLED_UNTIL: std::cell::Cell<Option<std::time::Instant>> =
+        const { std::cell::Cell::new(None) };
+}
 
 /// The worker handle `MacCapture` holds. Cheap and stateless: the worker
 /// itself is the session-thread singleton above.
@@ -119,19 +159,31 @@ impl SckWorker {
             if slot.is_some() {
                 return Ok(());
             }
+            let now = std::time::Instant::now();
+            if WARM_STALLED_UNTIL.get().is_some_and(|until| now < until) {
+                return Err(DesktopError::capture_failed(
+                    "the capture worker stalled during warm-up recently; using the screencapture fallback",
+                ));
+            }
             let (mut client, staging) = start_client()?;
-            match client.ping(WARM_TIMEOUT) {
+            match client.ping(warm_timeout()) {
                 Ok(()) => {
+                    WARM_STALLED_UNTIL.set(None);
                     *slot = Some((client, staging));
                     Ok(())
                 },
-                Err(ClientError::Transport(error) | ClientError::Reply(error)) => Err(error),
+                Err(ClientError::Transport(error) | ClientError::Reply(error)) => {
+                    if error.code == ErrorCode::Timeout {
+                        WARM_STALLED_UNTIL.set(Some(now + WARM_STALL_COOLDOWN));
+                    }
+                    Err(error)
+                },
             }
         })
     }
 
     /// One batch capture through the persistent helper, bounded by
-    /// `IN_LOCK_CAPTURE_TIMEOUT`.
+    /// `in_lock_budget` for the batch size.
     pub(crate) fn capture(
         requests: &[TargetRequest],
     ) -> Result<Vec<frame::Frame>, SckCaptureError> {
@@ -147,13 +199,15 @@ impl SckWorker {
                     "the capture worker is not running; it restarts before the next capture",
                 )));
             };
-            match client.capture_within(requests, IN_LOCK_CAPTURE_TIMEOUT) {
+            match client.capture_within(requests, in_lock_budget(requests.len())) {
                 Ok(frames) => Ok(frames),
                 Err(ClientError::Transport(error)) => {
                     let first_reply = !client.has_replied;
                     *slot = None;
                     Err(if first_reply {
                         SckCaptureError::Start(error)
+                    } else if error.code == ErrorCode::Timeout {
+                        SckCaptureError::TimedOut(error)
                     } else {
                         SckCaptureError::Failed(error)
                     })
@@ -168,6 +222,8 @@ impl SckWorker {
 /// into a fresh private temp dir (returned so the caller can keep it alive
 /// beside the client).
 fn start_client() -> CoreResult<(HelperClient, Option<tempfile::TempDir>)> {
+    #[cfg(test)]
+    TEST_STARTS.set(TEST_STARTS.get() + 1);
     #[cfg(test)]
     if let Some(program) = test_support::program() {
         return HelperClient::start(&program).map(|client| (client, None));
