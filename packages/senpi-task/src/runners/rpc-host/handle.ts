@@ -20,6 +20,7 @@ import type {
   HostSessionPort,
 } from "./handle-port"
 import { startHostHeartbeat } from "./handle-heartbeat"
+import { unresponsiveMessage } from "../rpc/heartbeat"
 import { createHandleListeners } from "./handle-listeners"
 import { createHandleRecovery } from "./handle-recovery"
 import { createHandleStop } from "./handle-stop"
@@ -44,7 +45,9 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
   let client: HostSessionPort = options.client
   let session: HostSessionIdentity = options.session
   let openDisposition: HostSessionOpenDisposition = options.openDisposition
-  const listeners = createHandleListeners()
+  const listeners = createHandleListeners({
+    onListenerError: (error) => log("senpi-task early event replay listener failed", { taskId, error: String(error) }),
+  })
   const waiters = createHandleWaiters()
   let reachedIdle = false
   let sessionId: string | undefined
@@ -98,6 +101,13 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     onState: (state) => {
       lastSeenAt = now()
       sessionId = state.sessionId
+    },
+    onUnresponsive: () => {
+      settleTurn({ status: "error", failure: { kind: "child-unresponsive", message: unresponsiveMessage(taskId) } })
+      settleExit({ kind: "crashed", facts: { pid: undefined, code: null, signal: null, stderrTail: "child-unresponsive" } })
+      void teardown.detach().catch((error: unknown) => {
+        log("senpi-task unresponsive host child detach failed", { taskId, error: String(error) })
+      })
     },
   })
 

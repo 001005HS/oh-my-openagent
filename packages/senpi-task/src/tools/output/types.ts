@@ -48,6 +48,7 @@ export type TaskSnapshot = {
   readonly execution_mode: string
   readonly model: string
   readonly resolved_model?: ResolvedModelRecord
+  readonly effective_model?: ResolvedModelRecord
   readonly agent_type?: string
   readonly category?: string
   readonly parent_session_id: string
@@ -55,6 +56,7 @@ export type TaskSnapshot = {
   readonly age_ms: number
   readonly pid?: number
   readonly child_session_id?: string
+  readonly last_seen_at?: string
   readonly final_response?: string
   readonly error_message?: string
   readonly run_stats?: TaskRunStats

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process"
 import { existsSync, realpathSync } from "node:fs"
 import { delimiter, isAbsolute, join, relative, sep } from "node:path"
+import { isEngineCommand } from "./engine-commands.js"
 import { spawnNode } from "./child-process.js"
 import { doctorCoverageLines } from "./category-coverage.js"
 import { doctorComputerUseLines } from "./computer-use-doctor.js"
@@ -18,8 +19,8 @@ import { isSelfUpdate } from "./update-args.js"
 import { detectHarnesses } from "./setup-detect.js"
 import { readSetupSuggestionCache, spawnSetupSuggestionRefresh } from "./setup-detect-cache.js"
 import { printSetupReport } from "./setup-report.js"
+import { refuseRetiredCommand } from "./retired-command.js"
 
-const earlyCommands = new Set(["install", "remove", "list", "config", "auth", "app-server", "host"])
 // Identity the engine adopts for this install: what the user sees, where state lives, which
 // environment prefix is read first, what goes on the wire, and which channel to check for
 // updates. The engine consumes this once and scrubs it, so nested engine processes are
@@ -309,10 +310,8 @@ export async function runLauncher(args = process.argv.slice(2)) {
     process.exitCode = await runSelfUpdate(args)
     return
   }
-  // app-server takes the plugin after its subcommand: a leading --extension never reaches the
-  // engine's app-server dispatch. It loads into every thread, including the daemon's.
   if (command === "app-server") {
-    await spawnSenpi(args.includes("--no-extensions") ? args : [...args, "--extension", join(packageRoot, "plugin")], false)
+    refuseRetiredCommand(args)
     return
   }
   // `host status --all` stays the engine's answer; omo only adds each terminal row's last activity.
@@ -326,7 +325,8 @@ export async function runLauncher(args = process.argv.slice(2)) {
     })
     return
   }
-  if (earlyCommands.has(command) || command === "update") {
+  // One-shot engine commands go over unchanged: the engine dispatches them on argv[0] (#9572).
+  if (isEngineCommand(args)) {
     await spawnSenpi(args, false)
     return
   }
