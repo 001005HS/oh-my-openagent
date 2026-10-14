@@ -170,6 +170,12 @@ function taskSendResultRow(details: SendResultDetails): ResultRow {
       return { color: "error", text: notFoundText(details) }
     case "invalid_arguments":
       return { color: "error", text: `task_send invalid: ${details.reason}` }
+    case "delivering":
+      return { color: "muted", text: `task_send delivering ${details.to} in background (${details.reason})` }
+    case "aborted":
+      return { color: "warning", text: `task_send not sent ${details.to}: turn aborted` }
+    case "send_failed":
+      return { color: "error", text: `task_send failed ${details.to}: ${details.reason}` }
     case "team_message":
       return teamMessageRow(details.team)
     case "shutdown_requested":
