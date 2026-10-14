@@ -17,6 +17,7 @@ export type RpcSpawnSpec = {
 }
 
 export type RpcRunnerSpec = {
+  readonly taskStoreDir?: string
   readonly task_id: string
   readonly cwd: string
   readonly state_dir: string
@@ -54,6 +55,7 @@ export type RpcRunnerSpec = {
 export type ChildEventListener = (event: AgentSessionEvent) => void
 
 export type ChildHandle = {
+  reconcileInputs?(): Promise<void>
   readonly task_id: string
   readonly sessionId: string | undefined
   readonly pid: number | undefined

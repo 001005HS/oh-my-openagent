@@ -8,8 +8,10 @@ import {
 } from "./reattach"
 import type { HostParkReason, HostSessionCommand } from "./session-client"
 import { armRecoveryBound, withinBound, type RecoveryBound, type TransportRecoveryOptions } from "./transport-recovery"
+import { InputUncertainError } from "../input-effects"
 
 export interface HandleRecoveryHost {
+  continueInput?(command: import("../input-effects").InputCommand): Promise<void>
   readonly taskId: string
   readonly reattach: HostSessionReattach | undefined
   readonly events: HostShardEvents | undefined
@@ -128,7 +130,12 @@ export function createHandleRecovery(host: HandleRecoveryHost): HandleRecovery {
         // the turn is not re-driven, and the recovery's end stops the adopted session (omo#9403).
         continueTurn: async (prompt) => {
           if (host.stopRequested()) return
-          await withinBound(bound, host.port().send({ type: "prompt", message: prompt, streamingBehavior: "steer" }))
+          const command = { type: "prompt", message: prompt, streamingBehavior: "steer" } as const
+          try {
+            await withinBound(bound, host.continueInput === undefined ? host.port().send(command) : host.continueInput(command))
+          } catch (error) {
+            throw error instanceof InputUncertainError ? error.cause : error
+          }
         },
         // A refused reattach parks (the endpoint answered, but may not host this session); exhaustion ends.
         giveUp: (reason) => (reason === undefined ? host.endLost() : host.park(reason)),

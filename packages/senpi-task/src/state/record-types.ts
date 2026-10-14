@@ -104,6 +104,8 @@ export type TaskRecordInput = {
 }
 
 export type TaskRecord = TaskRecordInput & TaskStartFailureRecordFields & {
+  readonly effect_seq?: number
+  readonly uncertain_inputs?: readonly import("../runners/input-effects").IdentifiedInput[]
   readonly isolation?: IsolationRecord
   readonly task_id: string
   readonly status: TaskStatus

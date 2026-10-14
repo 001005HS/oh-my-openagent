@@ -51,6 +51,7 @@ export async function reconcileOnSessionStart(
       continue
     }
     if (hasLiveResidentHandle(context, record.task_id)) {
+      if (record.uncertain_inputs !== undefined) await context.registry.get(record.task_id)?.reconcileInputs?.()
       outcomes.push({ task_id: record.task_id, kind: "resumed", reason: "owned by this process" })
       continue
     }

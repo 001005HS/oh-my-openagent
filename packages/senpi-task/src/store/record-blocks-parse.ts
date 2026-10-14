@@ -130,6 +130,7 @@ export function parseOptionalHostSession(
     routing_id: routingId,
     session_path: sessionPath,
     instance_id: instanceId,
+    ...(value.effect_seq === undefined ? {} : { effect_seq: readNumber(value, "effect_seq") }),
     ...(daemonPid === undefined ? {} : { daemon_pid: daemonPid }),
   }
 }

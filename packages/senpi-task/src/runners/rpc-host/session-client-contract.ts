@@ -16,9 +16,9 @@ export interface OpenedHostSession {
 
 /** The turn-delivery seam: the commands a child handle issues on its session. */
 export type HostSessionCommand =
-  | { readonly type: "prompt"; readonly message: string; readonly streamingBehavior?: "steer" | "followUp" }
-  | { readonly type: "steer"; readonly message: string }
-  | { readonly type: "followUp"; readonly message: string }
+  | { readonly type: "prompt"; readonly message: string; readonly streamingBehavior?: "steer" | "followUp"; readonly clientMessageId?: string }
+  | { readonly type: "steer"; readonly message: string; readonly clientMessageId?: string }
+  | { readonly type: "followUp"; readonly message: string; readonly clientMessageId?: string }
   | { readonly type: "abort" }
 
 /** Why a child parked itself instead of reattaching. */

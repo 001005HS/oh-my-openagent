@@ -143,6 +143,7 @@ async function respawnProcess(input: {
       task_id: input.record.task_id,
       cwd: spawnSpec.cwd,
       state_dir: join(input.stateDir, "children", input.record.task_id),
+      taskStoreDir: input.stateDir,
       prompt: "",
       resumeSessionPath: sessionPath,
       // The recorded endpoint, never a re-derived one: a pre-migration child keeps living where it was.

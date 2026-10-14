@@ -85,6 +85,7 @@ export const SUSPENSION_REASONS = [
 export type SuspensionReason = (typeof SUSPENSION_REASONS)[number]
 
 export type HostSessionIdentity = {
+  readonly effect_seq?: number
   readonly socket: string
   readonly routing_id: string
   readonly session_path: string
