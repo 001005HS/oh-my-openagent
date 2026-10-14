@@ -84,14 +84,26 @@ impl MacCapture {
     /// stalls before writing any reply byte). Each logs once per reason and
     /// reports `legacyCapture: true` on the result. A helper that dies after
     /// writing a reply byte surfaces the error and resets for the next capture.
+    ///
+    /// Every route runs inside the cursor-overlay guard, and the visible
+    /// cursor-helper windows it reports are excluded by window ID.
     pub(crate) fn capture_with_exclusions(
         &self,
         target: &Target,
         exclude_window_titles: &[String],
     ) -> CoreResult<(RgbaImage, FrameGeometry)> {
         self.require_permission()?;
+        self.with_overlay_exclusion(|excluded| self.route_capture(target, exclude_window_titles, excluded))
+    }
+
+    fn route_capture(
+        &self,
+        target: &Target,
+        exclude_window_titles: &[String],
+        excluded: &[u32],
+    ) -> CoreResult<(RgbaImage, FrameGeometry)> {
         match sck_availability() {
-            Ok(()) => match self.capture_via_sck(target, exclude_window_titles)? {
+            Ok(()) => match self.capture_via_sck(target, exclude_window_titles, excluded)? {
                 Some(captured) => {
                     if !captured.1.is_legacy_capture() {
                         // Recovery lets a later start failure log its reason again.
@@ -101,14 +113,14 @@ impl MacCapture {
                     }
                     Ok(captured)
                 },
-                None => self.capture_via_legacy(target),
+                None => self.capture_via_legacy(target, excluded),
             },
             Err(SckUnavailable::Unsupported) => {
                 note_legacy(
                     REASON_UNSUPPORTED,
                     "ScreenCaptureKit requires macOS 14; using the screencapture fallback",
                 );
-                self.capture_via_legacy(target)
+                self.capture_via_legacy(target, excluded)
             },
             Err(SckUnavailable::HelperUnavailable) => {
                 note_legacy(
@@ -116,7 +128,7 @@ impl MacCapture {
                     "no ScreenCaptureKit capture helper is staged; \
                      using the screencapture fallback",
                 );
-                self.capture_via_legacy(target)
+                self.capture_via_legacy(target, excluded)
             },
         }
     }
@@ -128,10 +140,14 @@ impl MacCapture {
         &self,
         target: &Target,
         exclude_window_titles: &[String],
+        excluded: &[u32],
     ) -> CoreResult<Option<(RgbaImage, FrameGeometry)>> {
         match target {
             Target::Window(id) => {
                 let window_id = parse_window_id(id)?;
+                if excluded.contains(&window_id) {
+                    return Err(DesktopError::capture_failed("cursor-helper windows are not capture targets"));
+                }
                 let request = super::sck::target_window(window_id);
                 let frames = match SckWorker::capture(std::slice::from_ref(&request)) {
                     Ok(frames) => frames,
@@ -188,12 +204,12 @@ impl MacCapture {
                             .id
                             .parse::<u32>()
                             .ok()
-                            .map(|id| super::sck::target_display(id, exclude_window_titles))
+                            .map(|id| super::sck::target_display(id, exclude_window_titles, excluded))
                     })
                     .collect();
                 if requests.len() != displays.len() {
                     return self
-                        .capture_desktop(&selector)
+                        .capture_desktop(&selector, excluded)
                         .map(|(image, geometry)| Some((image, geometry.into_legacy_capture())));
                 }
                 match SckWorker::capture(&requests) {
@@ -209,13 +225,13 @@ impl MacCapture {
     }
 
     /// The pre-B9 route: `screencapture` per shot, marked `legacyCapture`.
-    /// The cursor overlay stays hidden and locked, exactly as before B9.
-    fn capture_via_legacy(&self, target: &Target) -> CoreResult<(RgbaImage, FrameGeometry)> {
+    /// Visible cursor helpers are excluded through the filtered capture path.
+    fn capture_via_legacy(&self, target: &Target, excluded: &[u32]) -> CoreResult<(RgbaImage, FrameGeometry)> {
         let (image, geometry) = match target {
-            Target::Window(id) => self.capture_window(id)?,
+            Target::Window(id) => self.capture_window(id, excluded)?,
             Target::Desktop | Target::Display(_) => {
                 let selector = target.display_selector().unwrap_or_else(|| self.selector.clone());
-                self.capture_desktop(&selector)?
+                self.capture_desktop(&selector, excluded)?
             },
         };
         Ok((image, geometry.into_legacy_capture()))

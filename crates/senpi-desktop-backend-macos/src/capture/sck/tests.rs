@@ -56,6 +56,7 @@ pixels(1, 1, [0, 0, 0, 255])
     let targets = request_batch(&[TargetRequest::display(
         7,
         &["OmO HUD".to_owned(), "Pi".to_owned()],
+        &[4242],
     )]);
     client.capture(&targets).unwrap();
     let sent: serde_json::Value =
@@ -64,6 +65,7 @@ pixels(1, 1, [0, 0, 0, 255])
         sent["requests"][0]["excludeWindowTitles"],
         serde_json::json!(["OmO HUD", "Pi"])
     );
+    assert_eq!(sent["requests"][0]["excludeWindowIds"], serde_json::json!([4242]));
     assert_eq!(sent["requests"][0]["kind"], serde_json::json!("display"));
 }
 
@@ -126,7 +128,7 @@ header({{'kind':'error','code':'PermissionDenied',
 "
     ));
     let mut client = HelperClient::start(&helper).unwrap();
-    let error = client.capture(&request_batch(&[TargetRequest::display(1, &[])])).unwrap_err();
+    let error = client.capture(&request_batch(&[TargetRequest::display(1, &[], &[])])).unwrap_err();
     let ClientError::Reply(error) = error else {
         panic!("expected a synchronized permission reply");
     };

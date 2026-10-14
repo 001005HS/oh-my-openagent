@@ -41,11 +41,18 @@ static void Unavailable(NSString *reason, NSString *message) {
 		@"error": message ?: @"The capture target is unavailable" });
 }
 
-// Every SCWindow whose title matches one entry of `titles`.
-static NSArray<SCWindow *> *ExcludedWindows(SCShareableContent *content, NSArray *titles) {
-	if (![titles isKindOfClass:NSArray.class] || titles.count == 0) return @[];
+// Every SCWindow whose ID is in `ids` or whose title matches one entry of `titles`.
+static NSArray<SCWindow *> *ExcludedWindows(SCShareableContent *content, NSArray *titles, NSArray *ids) {
+	BOOL hasTitles = [titles isKindOfClass:NSArray.class] && titles.count > 0;
+	BOOL hasIds = [ids isKindOfClass:NSArray.class] && ids.count > 0;
+	if (!hasTitles && !hasIds) return @[];
 	NSMutableArray<SCWindow *> *excluded = [NSMutableArray new];
 	for (SCWindow *window in content.windows) {
+		if (hasIds && [ids containsObject:@(window.windowID)]) {
+			[excluded addObject:window];
+			continue;
+		}
+		if (!hasTitles) continue;
 		NSString *title = window.title;
 		if (title == nil || (id)title == NSNull.null || title.length == 0) continue;
 		for (id entry in titles) {
@@ -86,7 +93,7 @@ static void CaptureNext(SCShareableContent *content, NSArray *requests, NSUInteg
 		for (SCDisplay *display in content.displays) {
 			if (display.displayID != identifier) continue;
 			filter = [[SCContentFilter alloc] initWithDisplay:display
-				excludingWindows:ExcludedWindows(content, request[@"excludeWindowTitles"])];
+				excludingWindows:ExcludedWindows(content, request[@"excludeWindowTitles"], request[@"excludeWindowIds"])];
 			bounds = display.frame;
 			break;
 		}
@@ -162,6 +169,14 @@ static void Request(NSDictionary *request, dispatch_block_t done) {
 		if (excluded != nil && excluded != (id)NSNull.null && ![excluded isKindOfClass:NSArray.class]) {
 			valid = NO; break;
 		}
+		id excludedIds = target[@"excludeWindowIds"];
+		if (excludedIds != nil && excludedIds != (id)NSNull.null && ![excludedIds isKindOfClass:NSArray.class]) {
+			valid = NO; break;
+		}
+		for (id entry in [excludedIds isKindOfClass:NSArray.class] ? excludedIds : @[]) {
+			if (![entry isKindOfClass:NSNumber.class]) { valid = NO; break; }
+		}
+		if (!valid) break;
 	}
 	if (!valid) { Failure(@"InvalidTarget", @"Malformed native capture request"); done(); return; }
 	if (!CGPreflightScreenCaptureAccess()) {

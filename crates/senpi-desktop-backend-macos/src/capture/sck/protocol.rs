@@ -12,6 +12,9 @@ pub(crate) struct TargetRequest {
     /// Display-only: titles of windows the helper must exclude.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub exclude_window_titles: Vec<String>,
+    /// Display-only: window IDs the helper must exclude (cursor helpers).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub exclude_window_ids: Vec<u32>,
 }
 
 impl TargetRequest {
@@ -20,14 +23,16 @@ impl TargetRequest {
             kind: "window",
             id,
             exclude_window_titles: Vec::new(),
+            exclude_window_ids: Vec::new(),
         }
     }
 
-    pub(crate) fn display(id: u32, exclude_window_titles: &[String]) -> Self {
+    pub(crate) fn display(id: u32, exclude_window_titles: &[String], exclude_window_ids: &[u32]) -> Self {
         Self {
             kind: "display",
             id,
             exclude_window_titles: exclude_window_titles.to_vec(),
+            exclude_window_ids: exclude_window_ids.to_vec(),
         }
     }
 }
@@ -91,7 +96,7 @@ mod tests {
     fn request_serializes_the_helper_wire_shape() {
         let targets = [
             TargetRequest::window(42),
-            TargetRequest::display(1, &["OmO HUD".to_owned()]),
+            TargetRequest::display(1, &["OmO HUD".to_owned()], &[]),
         ];
         let batch = Batch {
             requests: &targets,

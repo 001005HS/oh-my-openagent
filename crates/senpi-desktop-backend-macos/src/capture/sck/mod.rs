@@ -32,9 +32,10 @@ pub(crate) fn target_window(id: u32) -> TargetRequest {
     TargetRequest::window(id)
 }
 
-/// A display capture request; titled windows are excluded from the shot.
-pub(crate) fn target_display(id: u32, exclude_window_titles: &[String]) -> TargetRequest {
-    TargetRequest::display(id, exclude_window_titles)
+/// A display capture request; titled windows and the given window IDs are
+/// excluded from the shot.
+pub(crate) fn target_display(id: u32, exclude_window_titles: &[String], exclude_window_ids: &[u32]) -> TargetRequest {
+    TargetRequest::display(id, exclude_window_titles, exclude_window_ids)
 }
 
 /// Empty when build.rs could not compile the helper (no Xcode CLT); the

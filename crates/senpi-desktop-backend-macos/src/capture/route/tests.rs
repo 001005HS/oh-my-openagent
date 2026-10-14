@@ -93,11 +93,31 @@ fn a_helper_start_failure_falls_back_without_error() {
     let _reasons = ReasonsGuard::new();
     override_availability(Some(Ok(())));
     override_capture(Some(fake_start));
-    let result = capture().capture_via_sck(&Target::Window("42".to_owned()), &[]);
+    let result = capture().capture_via_sck(&Target::Window("42".to_owned()), &[], &[]);
     override_capture(None);
     override_availability(None);
     // Ok(None) is the silent-fallback signal: no error reaches the caller.
     assert!(matches!(result, Ok(None)), "{result:?}");
+}
+
+fn worker_must_not_run(_requests: &[SckTargetRequest]) -> Result<Vec<SckFrame>, SckCaptureError> {
+    panic!("a cursor-helper window must be refused before the worker runs");
+}
+
+#[test]
+fn a_cursor_helper_window_is_refused_before_the_worker_runs() {
+    // Given: window 42 is a visible cursor helper the overlay guard excludes.
+    let _reasons = ReasonsGuard::new();
+    override_availability(Some(Ok(())));
+    override_capture(Some(worker_must_not_run));
+    // When: a capture targets that window through the SCK route.
+    let result = capture().capture_via_sck(&Target::Window("42".to_owned()), &[], &[42]);
+    override_capture(None);
+    override_availability(None);
+    // Then: it fails as a capture error without asking the worker for its pixels.
+    let error = result.unwrap_err();
+    assert_eq!(error.code, ErrorCode::CaptureFailed);
+    assert!(error.message.contains("cursor-helper"), "{}", error.message);
 }
 
 #[test]
@@ -105,7 +125,7 @@ fn a_reply_level_capture_error_surfaces_without_fallback() {
     let _reasons = ReasonsGuard::new();
     override_availability(Some(Ok(())));
     override_capture(Some(fake_unavailable));
-    let result = capture().capture_via_sck(&Target::Window("42".to_owned()), &[]);
+    let result = capture().capture_via_sck(&Target::Window("42".to_owned()), &[], &[]);
     override_capture(None);
     override_availability(None);
     let error = result.unwrap_err();
@@ -121,7 +141,7 @@ fn an_sck_window_capture_is_not_legacy_and_carries_is_on_screen() {
     let _reasons = ReasonsGuard::new();
     override_availability(Some(Ok(())));
     override_capture(Some(fake_frames));
-    let result = capture().capture_via_sck(&Target::Window("42".to_owned()), &[]);
+    let result = capture().capture_via_sck(&Target::Window("42".to_owned()), &[], &[]);
     override_capture(None);
     override_availability(None);
     let Some((_image, geometry)) = result.unwrap() else {
@@ -143,7 +163,7 @@ fn capture_off_screen_window(
     override_availability(Some(Ok(())));
     override_capture(Some(fake_owned_off_screen));
     override_probe(Some(probe));
-    let result = capture().capture_via_sck(&Target::Window("42".to_owned()), &[]);
+    let result = capture().capture_via_sck(&Target::Window("42".to_owned()), &[], &[]);
     override_probe(None);
     override_capture(None);
     override_availability(None);
