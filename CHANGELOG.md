@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **A child task keeps reporting the model it is actually running.** A `set_model` or model cycle applied to a child by any client, and a fallback that later reverts, now update the child's record as they happen: `task_output`, `/tasks`, the desktop task snapshot and the completion notice show the live model, and a switch omo did not make is marked `(switched by operator)`. The persisted record keeps `effective_model.source` within the values earlier builds parse (the live switch detail moves into a nested block those builds ignore), so a downgrade or an older omo sharing the task store still loads these records. ([#10020](https://github.com/code-yeongyu/oh-my-openagent/issues/10020))
 
+**Internal: the model-version migration skip bookkeeping is cleaned up.** The set of already-migrated models is now built once per run, and the comment describes the source-keyed rule; behaviour is unchanged. ([#10145](https://github.com/code-yeongyu/oh-my-openagent/pull/10145))
+
+**The [CC] `opus` alias and the retired-model migration no longer land on Opus 4.8.** `mapClaudeModelToOpenCode("opus")` now resolves to the current Opus 5.5 id instead of 4.8, and the config migration that upgrades a retired `anthropic/` entry now targets Opus 5.5, so a default or an automatic migration never puts a user on Opus 4.8 without an explicit pick.
+
 **`omo app-server` is retired.** The Codex app-server protocol is gone from the engine, so omo no longer forwards `omo app-server`: it exits with status 2 and points to `omo --mode rpc` or `omo host`, which are the supported ways to drive a session from another program. `omo doctor`, the ulw-loop skill and the task status view no longer mention it. ([#10033](https://github.com/code-yeongyu/oh-my-openagent/issues/10033), [#10098](https://github.com/code-yeongyu/oh-my-openagent/pull/10098))
 
 ## [5.1.33] - 2026-10-13
