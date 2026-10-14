@@ -27,6 +27,9 @@ export type SteeringPort = {
   tryBeginSend?(taskId: string): boolean
   endSend?(taskId: string): void
   isEvicting?(taskId: string): boolean
+  // True while the task's launch is still being admitted by its host (#10042): no live handle yet, and
+  // the launch drains whatever is queued once the child starts.
+  isLaunching?(taskId: string): boolean
   liveHandle(taskId: string): ManagedChildHandle | undefined
   dequeuePending(taskId: string): boolean
   reserveForRevive(taskId: string): ReviveReservation
