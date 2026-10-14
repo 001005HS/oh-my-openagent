@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**A background task resumed onto a session that can no longer move says so, and one call restarts it.** After a host restart, a task whose child had stopped on an aborted or unanswered turn used to sit on `starting` forever. It now shows `resumed, waiting for input` with the reason in `task_output`, the task list and the RPC status, and `task_send` with `redispatch: true` relaunches it on a fresh child under the same task, while a cancel still works as before. A task resumed onto a live, working session is never flagged, and the flag clears as soon as the child moves again. ([senpi#3266](https://github.com/code-yeongyu/senpi/issues/3266), [#10151](https://github.com/code-yeongyu/oh-my-openagent/pull/10151))
+
 **The [CC] `opus` alias and the retired-model migration no longer land on Opus 4.8.** `mapClaudeModelToOpenCode("opus")` now resolves to the current Opus 5.5 id instead of 4.8, and the config migration that upgrades a retired `anthropic/` entry now targets Opus 5.5, so a default or an automatic migration never puts a user on Opus 4.8 without an explicit pick.
 
 **`omo app-server` is retired.** The Codex app-server protocol is gone from the engine, so omo no longer forwards `omo app-server`: it exits with status 2 and points to `omo --mode rpc` or `omo host`, which are the supported ways to drive a session from another program. `omo doctor`, the ulw-loop skill and the task status view no longer mention it. ([#10033](https://github.com/code-yeongyu/oh-my-openagent/issues/10033), [#10098](https://github.com/code-yeongyu/oh-my-openagent/pull/10098))
