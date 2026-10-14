@@ -42,12 +42,12 @@ const PRELUDE_ASSET_FIELDS: readonly (readonly [field: string, marker: string, s
   [
     "COMPUTER_DECLARATIONS",
     "interface ComputerClickOptions extends ComputerDeliveryOptions",
-    "2ffb9c3b1c36eb7a7a9b2d97e6935330146640e444a06f984eebd21eb2552139",
+    "52eb002106a2e60e6e225fa14bfd52252ae0d76ddb9f3c9364d234d2bf8c690e",
   ],
   [
     "COMPUTER_DOCUMENTATION",
     "host desktop facade, experimental (present while the `computer` tool is active)",
-    "1b9f7998e8ad18d6b48bb5fcac4b8c9279f09cd7e5aceb44c5fd984b75ad3276",
+    "b0b3ca3d69ba1848145f9fa281960b96d75773eb607c6b9b4ca07cfdba305715",
   ],
   ["COMPUTER_SAFETY", "<critical>", "0c9f2d6223d92fdff268f1ee1eebc6f33870f5737bc09ab0dadafb96a4f36124"],
 ]
