@@ -422,4 +422,53 @@ describe("omo setup opencode catalog provider import (#10158)", () => {
       })
     })
   })
+
+  describe("#given a config block that overrides only part of a catalog model's limit", () => {
+    describe("#when setup is accepted", () => {
+      test("#then the other limit and the model's own fields come from the catalog, as opencode merges them", () => {
+        const item = fixture()
+        opencode(item, { provider: { neuralwatt: { options: { apiKey: "nw-inline" }, models: { "kimi-k2.5": { limit: { context: 131072 } } } } } })
+        write(join(item.home, ".cache", "opencode", "models.json"), JSON.stringify(NEURALWATT_CATALOG))
+
+        run(item, ["setup", "--yes"])
+        const config = ModelConfig.loadSync(join(item.agentDir, "models.json"))
+        const models = composeModelProvider("neuralwatt", undefined, config, undefined).getModels()
+
+        expect(models.map((model: any) => [model.id, model.contextWindow, model.maxTokens, model.reasoning])).toEqual([
+          ["kimi-k2.5", 131072, 32768, true],
+        ])
+      })
+    })
+  })
+
+  describe("#given a catalog provider declared with no key of its own", () => {
+    describe("#when setup is accepted", () => {
+      test("#then its key resolves from the catalog's environment variable, as opencode reads it", () => {
+        const item = fixture()
+        opencode(item, { provider: { neuralwatt: {} } })
+        write(join(item.home, ".cache", "opencode", "models.json"), JSON.stringify(NEURALWATT_CATALOG))
+
+        run(item, ["setup", "--yes"])
+
+        expect(readAuthStore(join(item.agentDir, "auth.json")).entries.neuralwatt).toMatchObject({ key: "${NEURALWATT_API_KEY}" })
+      })
+    })
+  })
+
+  describe("#given a keyed catalog provider omo has no adapter for", () => {
+    describe("#when setup runs", () => {
+      test("#then it is reported once, with the adapter reason, not also as a provider omo does not serve", () => {
+        const item = fixture()
+        opencode(item, {}, { exotic: { type: "api", key: "ex-key" } })
+        write(join(item.home, ".cache", "opencode", "models.json"), JSON.stringify({
+          exotic: { id: "exotic", npm: "@ai-sdk/exotic", api: "https://exotic.example/v1", name: "Exotic", models: { m: { id: "m" } } },
+        }))
+
+        const result = run(item, ["setup", "--yes"])
+
+        expect(result.stdout).toContain("catalog provider exotic uses npm package @ai-sdk/exotic")
+        expect(result.stdout).not.toContain("providers omo does not serve (exotic)")
+      })
+    })
+  })
 })
