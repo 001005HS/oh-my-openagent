@@ -78,14 +78,26 @@ describe("createTurnWakeSources (senpi#3262)", () => {
     expect(tracker.hasLiveWakeSources()).toBe(false)
   })
 
-  test("#given a live tracker #when reset for a new turn #then prior wake sources are cleared", () => {
+  test("#given a live tracker #when a new turn begins #then turn-scoped goal timers clear but session monitors survive", () => {
     // given
     const tracker = createTurnWakeSources()
     tracker.observe(extensionEvent("goal_continuation_timer_state", { armed: true, kind: "providerRecovery" }))
+    tracker.observe(
+      extensionEvent("terminal_monitor_state", {
+        activeCount: 1,
+        monitors: [{ id: "w1", description: "watch the build", startedAtMs: 1 }],
+      }),
+    )
     expect(tracker.hasLiveWakeSources()).toBe(true)
 
-    // when
-    tracker.reset()
+    // when - a new turn begins
+    tracker.resetTurn()
+
+    // then - the goal timer belonged to the finished turn; the monitor lives for the session
+    expect(tracker.hasLiveWakeSources()).toBe(true)
+
+    // when - the engine itself reports the monitor set empty
+    tracker.observe(extensionEvent("terminal_monitor_state", { activeCount: 0, monitors: [] }))
 
     // then
     expect(tracker.hasLiveWakeSources()).toBe(false)

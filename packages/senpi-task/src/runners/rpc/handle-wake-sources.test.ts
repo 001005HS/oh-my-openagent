@@ -32,7 +32,11 @@ const IDLE_STATE = {
  * through `pi.rpc.emit`), never through the permission-shaped extension channel. This suite
  * proves that ingestion at the real seam (senpi#3262).
  */
-function createHarness(settleConfirmMs: number, settlementScheduler?: TurnSettlementScheduler): {
+function createHarness(
+  settleConfirmMs: number,
+  settlementScheduler?: TurnSettlementScheduler,
+  getState?: () => Promise<RpcResponse>,
+): {
   readonly handle: OutcomeTrackedHandle
   readonly emit: (record: unknown) => void
 } {
@@ -42,11 +46,13 @@ function createHarness(settleConfirmMs: number, settlementScheduler?: TurnSettle
     extensionEvents: createChildExtensionEvents(),
     stderrTail: "",
     send: (command: { readonly type?: string }) =>
-      Promise.resolve(
-        command.type === "get_state"
-          ? ({ success: true, command: "get_state", data: IDLE_STATE } as unknown as RpcResponse)
-          : ({ success: true } as unknown as RpcResponse),
-      ),
+      command.type === "get_state" && getState !== undefined
+        ? getState()
+        : Promise.resolve(
+            command.type === "get_state"
+              ? ({ success: true, command: "get_state", data: IDLE_STATE } as unknown as RpcResponse)
+              : ({ success: true } as unknown as RpcResponse),
+          ),
     onEvent: (listener: (event: AgentSessionEvent) => void) => {
       listeners.add(listener)
       return () => listeners.delete(listener)
@@ -82,14 +88,6 @@ function terminalProviderErrorTurn(): readonly unknown[] {
   ]
 }
 
-function goalTimer(armed: boolean, kind: string): unknown {
-  return { type: "extension_event", name: "goal_continuation_timer_state", data: { armed, kind } }
-}
-
-function terminalMonitorState(activeCount: number, monitors: readonly unknown[]): unknown {
-  return { type: "extension_event", name: "terminal_monitor_state", data: { activeCount, monitors } }
-}
-
 function successfulTurn(): readonly unknown[] {
   const assistant = {
     role: "assistant",
@@ -103,10 +101,19 @@ function successfulTurn(): readonly unknown[] {
   ]
 }
 
+function goalTimer(armed: boolean, kind: string): unknown {
+  return { type: "extension_event", name: "goal_continuation_timer_state", data: { armed, kind } }
+}
+
+function terminalMonitorState(activeCount: number, monitors: readonly unknown[]): unknown {
+  return { type: "extension_event", name: "terminal_monitor_state", data: { activeCount, monitors } }
+}
+
 describe("createRpcChildHandle goal wake-source tracking (senpi#3262)", () => {
   test("#given an armed providerRetry timer over the raw event stream #when the turn ends on a terminal provider error #then the outcome stays pending while the timer holds", async () => {
     // given
-    const harness = createHarness(5)
+    const scheduler = createManualSettlementScheduler()
+    const harness = createHarness(60_000, scheduler.scheduler)
     let settled: RunnerOutcome | undefined
     void harness.handle.waitForOutcome().then((outcome) => {
       settled = outcome
@@ -115,24 +122,30 @@ describe("createRpcChildHandle goal wake-source tracking (senpi#3262)", () => {
 
     // when - the turn ends on the stream-start timeout and never emits agent_idle
     for (const record of terminalProviderErrorTurn()) harness.emit(record)
-    await Bun.sleep(40)
 
-    // then - the goal's provider-outage wait keeps the task running: nothing settles
+    // then - firing the armed confirmation changes nothing: the goal's provider-outage wait owns the turn
+    expect(scheduler.pending()).toBe(1)
+    scheduler.runNext()
+    await flushSettlement()
     expect(settled).toBeUndefined()
     await harness.handle.dispose()
   })
 
   test("#given the providerRetry timer disarms after the turn ended #when the confirmation re-fires #then the outcome settles failed with the provider text", async () => {
     // given - the same held error as above, then the goal's retry timer goes off
-    const harness = createHarness(5)
+    const scheduler = createManualSettlementScheduler()
+    const harness = createHarness(60_000, scheduler.scheduler)
     harness.emit(goalTimer(true, "providerRetry"))
     for (const record of terminalProviderErrorTurn()) harness.emit(record)
-    await Bun.sleep(40)
+    scheduler.runNext()
+    await flushSettlement()
 
-    // when
+    // when - the timer disarms: its disarm re-arms the confirmation, which then settles the failure
     harness.emit(goalTimer(false, "providerRetry"))
 
     // then
+    expect(scheduler.pending()).toBe(1)
+    scheduler.runNext()
     const outcome = await harness.handle.waitForOutcome()
     expect(outcome).toEqual({
       status: "error",
@@ -176,5 +189,29 @@ describe("createRpcChildHandle goal wake-source tracking (senpi#3262)", () => {
       failure: { kind: "child-turn-failed", message: PROVIDER_TIMEOUT },
     })
     await harness.handle.dispose()
+  })
+
+  test("#given the handle is disposed while the confirmation probe is in flight #when the probe rejects #then the turn is not reported failed", async () => {
+    // given - get_state is held by the test so the dispose lands mid-flight
+    const scheduler = createManualSettlementScheduler()
+    const flight = Promise.withResolvers<RpcResponse>()
+    const harness = createHarness(60_000, scheduler.scheduler, () => flight.promise)
+    let settled: RunnerOutcome | undefined
+    void harness.handle.waitForOutcome().then((outcome) => {
+      settled = outcome
+    })
+    for (const record of terminalProviderErrorTurn()) harness.emit(record)
+    expect(scheduler.pending()).toBe(1)
+    scheduler.runNext()
+    await flushSettlement()
+
+    // when - the handle is disposed mid-flight, then the detach rejects the probe
+    const disposed = harness.handle.dispose()
+    flight.reject(new Error("detach refused get_state"))
+    await flushSettlement()
+    await disposed
+
+    // then - the orphaned flight reported nothing: a cancel racing a held error is never failed
+    expect(settled).toBeUndefined()
   })
 })

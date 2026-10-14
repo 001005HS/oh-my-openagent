@@ -1,29 +1,3 @@
-## 2026-10-14 - Goal/monitor wake events are read from the raw record stream, any armed timer kind counts (#3262)
-
-Follow-up correction to the settle-confirmation above. senpi#3208's `rpc-wait-surface.ts`
-`publishGoalContinuationEvent` calls `pi.rpc?.emit(name, data)` (verified on the pinned engine
-`@code-yeongyu/senpi@2026.10.13`: `dist/core/extensions/builtin/goal/rpc-wait-surface.js`), so
-`goal_continuation_scheduled` / `goal_continuation_timer_state` / `goal_continuation_resumed`
-reach RPC clients as `extension_event` records. But the tracker first subscribed through
-`createChildExtensionEvents` - the zod-gated lane that admits ONLY `computer.permission_required` -
-so goal/monitor records never reached it in production. Both runners already fan raw
-`extension_event` records into their handle-level event streams (the process client diverts only
-permission-shaped frames; the host's `isAgentSessionEvent` is the engine's loose tag check), so
-the tracker now observes that funnel in `runners/rpc/handle.ts` and
-`runners/rpc-host/handle.ts` (`onSessionEvent`), and the permission lane is untouched.
-
-`turn-wake-sources.ts` tracks armed goal timers PER KIND: an armed timer of ANY kind
-(`monitor`, `userGrace`, senpi#3319's `providerRetry`) is a live wake, and an `armed: false`
-clears only its own kind, so a goal waiting out a provider outage keeps the task `running`.
-A wake source that drops while an error outcome is held re-offers the confirmation through the
-settlement's new `reconfirmHeld()`: the disarm event re-arms the probe instead of leaving the
-outcome held past the timer.
-
-`handle-wake-sources.test.ts` (new) proves the seam end-to-end over the raw record stream: an
-armed `providerRetry` timer keeps the turn's outcome pending through the confirmation window,
-and the disarm record settles it `failed` with the provider's text. `turn-wake-sources.test.ts`
-pins per-kind clearing; `turn-settlement.test.ts` pins the disarm-then-refire path.
-
 ## 2026-10-14 - A terminal provider error ends the task even when agent_idle never arrives (#3262)
 
 A turn that ended on a terminal provider error (a stream-start timeout, a permanent 4xx, an
@@ -37,29 +11,51 @@ task went stale. The parent never learned the child failed.
 `runners/rpc/turn-settlement.ts` now confirms a held ERROR outcome instead of waiting blind: a
 bounded settle-confirmation (unref'd, `settleConfirmMs`) probes the session's own state
 (`sessionIsIdle`) and settles the held error - with the provider's own text - only once the
-session is truly idle with no session-scoped wake. A busy probe answer re-arms the check; a probe
-that rejects settles the held error anyway (the failure text is already known). `agent_idle`
-remains the preferred edge and cancels the confirmation; `agent_start` drops the held outcome for
-the new turn; a user abort still settles at once. Callers that pass no probe keep the historical
-agent_idle-only behavior.
+session is truly idle with no session-scoped wake. A busy probe answer re-arms the check. A probe
+that cannot read the state (a non-success `get_state` reply) re-arms too, but only up to
+`maxUnreadableProbes` (default 3) CONSECUTIVE unreadable answers, then settles the known error
+instead of re-arming forever; any readable answer resets the count. A probe that rejects settles
+the held error anyway (the failure text is already known) - unless the handle was disposed while
+the probe was in flight, or a wake source came live before the answer landed, so a `task_cancel`
+racing a held error is never misreported as failed. `agent_idle` remains the preferred edge and
+cancels the confirmation; `agent_start` drops the held outcome for the new turn; a user abort
+still settles at once. Callers that pass no probe keep the historical agent_idle-only behavior.
 
 Session-scoped lifecycles are not force-failed: `runners/rpc/turn-wake-sources.ts` (new) tracks
-the wake sources a child's own lifecycle publishes on the RPC extension-event lane - a goal
-continuation timer (`goal_continuation_timer_state`), terminal monitor watches
-(`terminal_monitor_state`/`terminal_monitor_ended`), and wake-source channels
-(`wake_source_state`). While any is live the confirmation holds the outcome, so a goal's
-providerRecovery or a monitor's drain still owns the turn; the tracker resets each new turn.
+the wake sources a child's own lifecycle publishes. senpi#3208's `rpc-wait-surface.ts`
+`publishGoalContinuationEvent` calls `pi.rpc?.emit(name, data)` (verified on the pinned engine
+`@code-yeongyu/senpi@2026.10.13`: `dist/core/extensions/builtin/goal/rpc-wait-surface.js`), so
+`goal_continuation_timer_state` reaches RPC clients as raw `extension_event` records - never
+through the permission-shaped extension channel (`createChildExtensionEvents` admits ONLY
+`computer.permission_required`). Both runners already fan raw `extension_event` records into
+their handle-level event streams (the process client diverts only permission-shaped frames; the
+host's `isAgentSessionEvent` is the engine's loose tag check), so the tracker observes that
+funnel in `runners/rpc/handle.ts` and `runners/rpc-host/handle.ts` (`onSessionEvent`); the
+permission lane is untouched. Armed goal continuation timers are tracked PER KIND and are
+TURN-SCOPED (`resetTurn` clears them when a new turn begins): an armed timer of ANY kind
+(`monitor`, `userGrace`, senpi#3319's `providerRetry`) is a live wake, and an `armed: false`
+clears only its own kind. Terminal monitor watches (`terminal_monitor_state` /
+`terminal_monitor_ended`) are SESSION-LIFETIME: only the engine's own state records clear them,
+so a monitor armed in an earlier turn still protects a later turn that ends on a terminal error.
+A wake source that drops while an error outcome is held re-offers the confirmation through the
+settlement's `reconfirmHeld()`: the disarm event re-arms the probe instead of leaving the outcome
+held past the timer. (`wake_source_state` records never reach RPC clients on the pinned engine -
+they go out on `pi.events` only - so that tracking branch was dropped.)
 
 Both runners wire it with the heartbeat interval as the confirm budget: the RPC-process child
-(`runners/rpc/handle.ts`, probing `get_state`, feeding the tracker from the protocol client's
-extension-event lane) and the daemon-session child (`runners/rpc-host/handle.ts`, probing
-`client.getState()`, feeding the tracker from `clientBinding.onExtensionEvent`). The confirmation
-timer is disposed with the handle (`runners/rpc-host/handle-teardown.ts` `onTornDown`).
+(`runners/rpc/handle.ts`, probing `get_state`) and the daemon-session child
+(`runners/rpc-host/handle.ts`, probing `client.getState()`). The confirmation is cancelled with
+handle teardown (`runners/rpc-host/handle-teardown.ts` `onTornDown`, which also marks the
+settlement disposed).
 
-`turn-settlement.test.ts` / `turn-wake-sources.test.ts` (new) pin it: a terminal stream-start
-timeout settles failed with the provider text when idle never arrives; a goal timer or monitor
-keeps it running; a busy-then-idle probe settles only on the idle answer; agent_idle settles at
-once without probing; a rejecting probe still settles the known error.
+`turn-settlement.test.ts` / `turn-wake-sources.test.ts` / `handle-wake-sources.test.ts` pin it: a
+terminal stream-start timeout settles failed with the provider text when idle never arrives; a
+goal timer or a terminal monitor - including one armed in an EARLIER turn - keeps it running; a
+busy-then-idle probe settles only on the idle answer; unreadable probes settle after the bound
+and a readable answer resets the count; a probe orphaned by dispose or outrun by a fresh wake
+source never reports failed; agent_idle settles at once without probing; a rejecting probe still
+settles the known error. Every new test drives the confirmation through an injected scheduler
+(`turn-settlement.test-support.ts`) - no fixed sleeps.
 
 The three `manager-claim.test.ts` "seeds from disk" cases start a fresh Bun process on `__fixtures__/seed-floor-child.ts`. They ran under bun's implicit 5 s per-test default, so under full-suite load a cold start alone could fail them. The fixture now prints `READY` after its imports load and `DONE` when its work finishes. The new `__fixtures__/signalled-child.ts` helper waits on those signals and the child's exit, with an explicit hang ceiling (20 s, 60 s on Windows) that is only a guard. On the deadline it kills exactly the child it spawned, by its own pid, and fails with the phase it reached plus the child's stdout and stderr. `signalled-child.test.ts` proves that path with a child that never signals. Under a parallel load of 40 runs at concurrency 8 beside a full senpi-task suite, each run took 13-17 s and all passed.
 

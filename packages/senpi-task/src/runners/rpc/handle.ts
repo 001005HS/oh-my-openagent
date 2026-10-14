@@ -61,6 +61,7 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
   let lastSeenAt: number | undefined
   let outcome: ChildExitOutcome | undefined
   let terminationRequested = false
+  let tornDown = false
   // Wall clock on purpose: the injected `now` is the heartbeat's clock, and tests observe its calls.
   const startedAt = Date.now()
 
@@ -80,10 +81,12 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
     finalText: () => finalText,
     probe: async () => {
       const response = await client.send({ type: "get_state" })
-      return response.success === true && response.command === "get_state" ? (response.data as object) : {}
+      // A non-success reply is unreadable state, not a busy session: the settlement bounds its re-arms.
+      return response.success === true && response.command === "get_state" ? (response.data as object) : undefined
     },
     settleConfirmMs: heartbeatIntervalMs,
     wakeSourcesLive: () => wakeSources.hasLiveWakeSources(),
+    disposed: () => tornDown,
     scheduleConfirmation: options.settlementScheduler,
   })
 
@@ -181,7 +184,7 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
     terminalAssistantMessage = undefined
     abortedByUser = false
     turnBaseline = finalText
-    wakeSources.reset()
+    wakeSources.resetTurn()
   }
 
   // Deliver with explicit queueing semantics, retrying as followUp when the child answers
@@ -262,6 +265,7 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
     exitOutcome: () => outcome,
     waitForExit: () => (outcome ? Promise.resolve(outcome) : new Promise<ChildExitOutcome>((resolve) => exitWaiters.push(resolve))),
     dispose: async () => {
+      tornDown = true
       stopHeartbeat()
       settlement.cancelConfirmation()
       listeners.clearActive()

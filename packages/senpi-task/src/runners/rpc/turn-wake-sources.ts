@@ -1,14 +1,18 @@
-// Wake sources a child's own session lifecycle publishes on the RPC extension-event lane
-// (`extension_event` records). A turn that ended on a terminal provider error is only "terminal
-// with no live continuation" when none of these owns the session: a goal's recovery timer
-// (`goal_continuation_timer_state`), a terminal monitor's live watches (`terminal_monitor_state`),
-// or a wake-source channel (`wake_source_state`). The runner subscribes through
-// `subscribeExtensionEvents`, so these records are parsed at the handle, never by the wire client.
+// Wake sources a child's own session lifecycle publishes as raw `extension_event` records on the
+// handle-level event stream of both runners (senpi#3208 emits them through `pi.rpc.emit`, so they
+// never touch the permission-shaped extension channel). A turn that ended on a terminal provider
+// error is only "terminal with no live continuation" when none of these owns the session: a goal's
+// recovery timer (`goal_continuation_timer_state`) or a terminal monitor's live watches
+// (`terminal_monitor_state` / `terminal_monitor_ended`). Lifetimes differ: goal timers belong to
+// the turn that armed them and are cleared when a new turn begins (`resetTurn`); terminal monitors
+// live for the whole session, so only the engine's own state records (a zero-count snapshot, a
+// monitor-ended notice) clear them - a monitor armed in an earlier turn still protects a later one.
 
 export type TurnWakeSources = {
   readonly observe: (record: unknown) => void
   readonly hasLiveWakeSources: () => boolean
-  readonly reset: () => void
+  /** A new turn began: goal timers belonged to the turn that armed them. Session-lifetime sources (terminal monitors) survive. */
+  readonly resetTurn: () => void
 }
 
 type WakeSourceRecord = { readonly name?: unknown; readonly data?: unknown }
@@ -36,16 +40,11 @@ function monitorActiveCount(data: unknown): number | undefined {
   return typeof count === "number" && Number.isInteger(count) && count >= 0 ? count : undefined
 }
 
-function wakeSourceActiveCount(data: unknown): number | undefined {
-  return monitorActiveCount(data)
-}
-
 export function createTurnWakeSources(): TurnWakeSources {
   // One entry per ARMED goal continuation timer kind (`monitor`, `userGrace`, senpi#3319's
   // `providerRetry`, ...). An armed timer of ANY kind is a live wake; an `armed: false` clears
   // only its own kind so a stale disarm never cancels a timer another kind still holds.
   const armedGoalTimers = new Set<string>()
-  const wakeChannels = new Map<string, number>()
   const monitorWatches = new Map<string, true>()
 
   const trackMonitorSnapshot = (data: unknown): void => {
@@ -93,29 +92,14 @@ export function createTurnWakeSources(): TurnWakeSources {
             ? (event.data as { readonly id?: unknown }).id
             : undefined
         if (typeof id === "string") monitorWatches.delete(id)
-        return
-      }
-      if (isExtensionEventNamed(event, "wake_source_state")) {
-        const count = wakeSourceActiveCount(event.data)
-        const source =
-          typeof event.data === "object" && event.data !== null
-            ? (event.data as { readonly source?: unknown }).source
-            : undefined
-        if (count !== undefined && typeof source === "string" && source.length > 0) {
-          if (count > 0) wakeChannels.set(source, count)
-          else wakeChannels.delete(source)
-        }
       }
     },
     hasLiveWakeSources() {
       if (armedGoalTimers.size > 0) return true
-      if (wakeChannels.size > 0) return true
       return monitorWatches.size > 0
     },
-    reset() {
+    resetTurn() {
       armedGoalTimers.clear()
-      wakeChannels.clear()
-      monitorWatches.clear()
     },
   }
 }

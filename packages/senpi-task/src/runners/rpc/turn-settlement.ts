@@ -34,12 +34,20 @@ export type TurnSettlementInput = {
   readonly baseline: () => string | undefined
   readonly finalText: () => string | undefined
   // senpi#3262: how the held error is confirmed terminal when agent_idle never arrives. The probe
-  // answers the session's own state; the wake gate names a session-scoped lifecycle that still
-  // owns the turn (a goal recovery timer, a terminal monitor). Absent: the historical behavior -
-  // the outcome waits for agent_idle forever.
-  readonly probe?: () => Promise<TurnSettlementProbe>
+  // answers the session's own state; `undefined` means the state could not be read (a non-success
+  // reply). The wake gate names a session-scoped lifecycle that still owns the turn (a goal
+  // recovery timer, a terminal monitor). Absent: the historical behavior - the outcome waits for
+  // agent_idle forever.
+  readonly probe?: () => Promise<TurnSettlementProbe | undefined>
   readonly settleConfirmMs?: number
+  // Unreadable probe answers re-arm the confirmation, but only this many in a row (default 3):
+  // a session whose get_state never succeeds again settles the known error instead of re-arming
+  // forever.
+  readonly maxUnreadableProbes?: number
   readonly wakeSourcesLive?: () => boolean
+  // Teardown detached/tore down the handle while a probe was in flight: that flight must never
+  // report the held error as failed - the exit path owns the outcome from here (senpi#3262 review).
+  readonly disposed?: () => boolean
   readonly scheduleConfirmation?: TurnSettlementScheduler
 }
 
@@ -84,7 +92,9 @@ export function sessionIsIdle(state: {
 export function createTurnSettlement(input: TurnSettlementInput): TurnSettlement {
   let held: RunnerOutcome | undefined
   let confirmation: SettlementTimerHandle | undefined
+  let unreadableProbes = 0
   const scheduleConfirmation = input.scheduleConfirmation ?? defaultConfirmationScheduler
+  const maxUnreadableProbes = input.maxUnreadableProbes ?? 3
   const endOutcome = (event: AgentEndEvent): RunnerOutcome =>
     input.abortedByUser() ? { status: "cancelled" } : agentEndOutcome(event, input.baseline(), input.finalText())
 
@@ -103,7 +113,18 @@ export function createTurnSettlement(input: TurnSettlementInput): TurnSettlement
     void Promise.resolve()
       .then(probe)
       .then((state) => {
-        if (held !== outcome || input.wakeSourcesLive?.() === true) return
+        if (held !== outcome || input.disposed?.() === true || input.wakeSourcesLive?.() === true) return
+        if (state === undefined) {
+          unreadableProbes += 1
+          if (unreadableProbes >= maxUnreadableProbes) {
+            held = undefined
+            input.settle(outcome)
+            return
+          }
+          rearm()
+          return
+        }
+        unreadableProbes = 0
         if (!sessionIsIdle(state)) {
           rearm()
           return
@@ -112,7 +133,10 @@ export function createTurnSettlement(input: TurnSettlementInput): TurnSettlement
         input.settle(outcome)
       })
       .catch(() => {
-        if (held !== outcome) return
+        // A rejected probe proves nothing about idleness; the error text is already known. But a
+        // rejection caused by teardown (detach raced the flight), or one landing after a wake
+        // source came live, must not turn a cancelled or still-owned turn into a failure.
+        if (held !== outcome || input.disposed?.() === true || input.wakeSourcesLive?.() === true) return
         held = undefined
         input.settle(outcome)
       })
@@ -148,6 +172,7 @@ export function createTurnSettlement(input: TurnSettlementInput): TurnSettlement
             return
           }
           held = outcome
+          unreadableProbes = 0
           if (outcome.status === "error") rearm()
           return
         }

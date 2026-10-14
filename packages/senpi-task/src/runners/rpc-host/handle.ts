@@ -62,6 +62,7 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
   let intent: SessionCloseIntent = "running"
   let parked = false
   let detached = false
+  let tornDown = false
 
   const settleTurn = (settled: RunnerOutcome): void => {
     if (turnOutcome !== undefined) return
@@ -79,6 +80,7 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     probe: () => client.getState(),
     settleConfirmMs: heartbeatIntervalMs,
     wakeSourcesLive: () => wakeSources.hasLiveWakeSources(),
+    disposed: () => tornDown,
   })
 
   const onSessionEvent = (event: Parameters<ChildEventListener>[0]): void => {
@@ -220,7 +222,7 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     terminalAssistantMessage = undefined
     abortedByUser = false
     turnBaseline = finalText
-    wakeSources.reset()
+    wakeSources.resetTurn()
   }
 
   // Same queueing contract as the child-process runner: a delivery that lands mid-run is retried
@@ -255,7 +257,10 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     clearActive: listeners.clearActive,
     stopHeartbeat,
     settle: settleClassified,
-    onTornDown: () => settlement.cancelConfirmation(),
+    onTornDown: () => {
+      tornDown = true
+      settlement.cancelConfirmation()
+    },
   })
 
   return {
