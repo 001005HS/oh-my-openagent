@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 
-import { taskRecord, taskSnapshot } from "./event-bridge.test-fixtures"
+import { taskRecord, taskSnapshot , fakeTaskRpcTimers } from "./event-bridge.test-fixtures"
 import { wireHarness } from "./event-bridge.test-harness"
 
 describe("event-bridge native task RPC snapshots", () => {
@@ -82,19 +82,27 @@ describe("event-bridge native task RPC snapshots", () => {
     expect(harness.pi.rpcEvents).toEqual([])
   })
 
-  it("#given an emitted snapshot and no store change #when the first client reattaches and session_resumed fires #then exactly one identical snapshot is re-emitted", async () => {
+  it("#given a running child with live progress and no store change #when the first client reattaches and session_resumed fires #then exactly one identical snapshot is re-emitted and progress keeps counting", async () => {
     const running = taskRecord({ task_id: "st_resumed", status: "running" })
-    const { pi } = wireHarness("parent-session", {
+    const clock = fakeTaskRpcTimers()
+    const { pi, emitChildEvent } = wireHarness("parent-session", {
       records: { [running.task_id]: running },
       withRpc: true,
+      taskRpcTimers: clock.timers,
     })
     await pi.dispatch("session_start", {}, {})
-    const initial = pi.rpcEvents[0]
+    emitChildEvent(running.task_id, { type: "tool_execution_start", toolName: "read", args: { path: "a.ts" } })
+    clock.advance()
+    const beforeResume = pi.rpcEvents.at(-1)
+    expect(beforeResume).toMatchObject({ data: { tasks: [{ live_progress: { tool_calls: 1 } }] } })
     pi.rpcEvents.length = 0
 
     await pi.dispatch("session_resumed", { type: "session_resumed" }, {})
+    expect(pi.rpcEvents).toEqual([beforeResume])
 
-    expect(pi.rpcEvents).toEqual([initial])
+    emitChildEvent(running.task_id, { type: "tool_execution_start", toolName: "read", args: { path: "b.ts" } })
+    clock.advance()
+    expect(pi.rpcEvents.at(-1)).toMatchObject({ data: { tasks: [{ live_progress: { tool_calls: 2 } }] } })
   })
 
   it("#given a session without children #when session_resumed fires #then exactly one empty snapshot is emitted", async () => {

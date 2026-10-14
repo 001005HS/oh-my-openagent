@@ -57,6 +57,7 @@ const globalTimers: TaskRpcTimers = {
 export interface TaskRpcBridge {
   attach(): void
   sync(): void
+  resend(): void
   detach(): void
   dispose(): void
 }
@@ -197,6 +198,12 @@ export function wireTaskRpcBridge(
       sync()
     },
     sync,
+    /** Push the full current snapshot again without touching child subscriptions or their live progress. */
+    resend() {
+      if (disposed || activeSessionId === undefined) return
+      lastSnapshot = undefined
+      sync()
+    },
     detach,
     dispose() {
       if (disposed) return
@@ -223,7 +230,7 @@ function registerTaskHandlers(
     if (sessionId === undefined) return unavailable()
     const input = parseTaskList(data)
     if ("error" in input) return invalidArguments(input.error)
-    if (input.value.parent_session_id !== sessionId) return notFound()
+    if (input.value.parent_session_id !== sessionId) return { kind: "not_found", reason: "No such parent session on this connection." } as const
     return snapshot(sessionId)
   })
   handle("omo.task.send", async (data) => {
