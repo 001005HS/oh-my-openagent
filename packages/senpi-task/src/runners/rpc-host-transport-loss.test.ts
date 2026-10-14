@@ -80,7 +80,8 @@ async function joinRecovery(parent: ParentSession, record: TaskRecord): Promise<
 }
 
 function routingOf(world: HostWorld, record: TaskRecord): string {
-  const live = world.host.sessions().findLast((session) => session.sessionPath.includes(`/children/${record.task_id}/`))
+  const segment = `/children/${record.task_id}/`
+  const live = world.host.sessions().findLast((session) => session.sessionPath.replaceAll("\\", "/").includes(segment))
   if (live === undefined) throw new Error(`the host holds no session for ${record.task_id}`)
   return live.routingId
 }
