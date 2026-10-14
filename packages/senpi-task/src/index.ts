@@ -529,6 +529,8 @@ export type {
   TaskCancelDeps,
   TaskCancelInput,
   TaskSendDeps,
+  LateSendDelivery,
+  LateSendOutcome,
   TaskSendInput,
   TaskSendTeamRouting,
   WaitBounds,

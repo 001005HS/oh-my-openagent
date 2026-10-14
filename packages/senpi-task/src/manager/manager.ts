@@ -77,6 +77,7 @@ import type {
   TaskManagerOptions,
 } from "./types"
 import { describeStartFailure } from "./start-failure"
+import { settledWithin } from "./settled-within"
 import { failStrandedHandoff, type StrandedHandoffFailure } from "./fail-stranded-handoff"
 
 type PreparedIsolation = Extract<IsolationPreparation, { readonly ok: true }>
@@ -127,6 +128,12 @@ type ReattachingTaskManager = TaskManager & {
   releasedKeyCount(): number
 }
 
+// A start the task host answers this fast (a dead host's refusal, an in-process child) is reported
+// in the tool result; a slower one returns `starting` and its outcome arrives on the record (#10042).
+// A caller that needs the child admitted (a team member must be live to be addressable) awaits
+// whenLaunched(taskId).
+export const START_REPORT_WINDOW_MS = 250
+
 const NOOP_DESTRUCTION: DestructionPort = { destroyResidentTask: () => Promise.resolve() }
 function ownerLockPath(stateDir: string, owner: DagTaskOwnerKey): string {
   const ownerKey = `${owner.kind}\0${owner.runId}\0${owner.nodeId}`
@@ -167,6 +174,10 @@ class TaskManagerImpl implements TaskManager {
   // next epoch, so the lease the live handle holds is looked up here, not on the record.
   readonly #closingRungs = new Map<string, { readonly epoch: number; readonly handle: ManagedChildHandle }>()
   readonly #waiters = new Map<string, TaskWaiter[]>()
+  readonly #launching = new Map<string, Promise<unknown>>()
+  // Set once session shutdown starts settling launches: a queued launch whose lane frees during
+  // suspension must not start a child for a session that is going away (shutdown parks it instead).
+  #shutdownStarted = false
   readonly #background = new Set<string>()
   readonly #evicting = new Set<string>()
   readonly #sendCounts = new Map<string, number>()
@@ -205,6 +216,7 @@ class TaskManagerImpl implements TaskManager {
       tryBeginSend: (taskId) => this.tryBeginSend(taskId),
       endSend: (taskId) => this.endSend(taskId),
       isEvicting: (taskId) => this.isEvicting(taskId),
+      isLaunching: (taskId) => this.#launching.has(taskId),
       // A rung that runtime fallback is closing is never steered, interrupted through, or revived: its
       // handle is being torn down, and the fallback path retires it once the close ends.
       liveHandle: (taskId) => {
@@ -472,7 +484,22 @@ class TaskManagerImpl implements TaskManager {
     }
 
     if (lease !== undefined) {
-      const launched = await this.#launch(context)
+      const launching = this.#trackLaunch(finalRecord.task_id, context)
+      const reported = await settledWithin(launching, START_REPORT_WINDOW_MS)
+      if (!reported.settled) {
+        launching.catch((error: unknown) => {
+          log("senpi-task start still admitting failed", { taskId: finalRecord.task_id, error: String(error) })
+        })
+        return {
+          kind: "started",
+          task_id: finalRecord.task_id,
+          status: "running",
+          starting: true,
+          name: registration.name,
+          ...startParts,
+        }
+      }
+      const launched = reported.value
       if (!launched.ok) {
         return {
           kind: "start_failed",
@@ -505,7 +532,11 @@ class TaskManagerImpl implements TaskManager {
     }
 
     const position = this.#concurrency.enqueue(plan.model, finalRecord.task_id, finalRecord.notification.run_epoch, () => {
-      void this.#launch(context)
+      // A lane-queued first launch is still a first launch while its host admits it (#10042): a send in
+      // that window queues behind the launch instead of reviving a session that does not exist yet.
+      void this.#trackLaunch(finalRecord.task_id, context).catch((error: unknown) => {
+        log("senpi-task queued launch failed", { taskId: finalRecord.task_id, error: String(error) })
+      })
     })
     return {
       kind: "started",
@@ -744,6 +775,48 @@ class TaskManagerImpl implements TaskManager {
     })
   }
 
+  /**
+   * Session shutdown first gives in-flight first launches up to boundMs to be admitted, so the
+   * normal suspension parks them like any resident child. A launch still unadmitted after that is
+   * parked here like a pending record (persisted_only, host ownership cleared): its late admission
+   * then fails the launch-ownership check and is torn down, and a resumed session relaunches it.
+   */
+  async settleLaunchesForShutdown(boundMs: number): Promise<void> {
+    this.#shutdownStarted = true
+    const inFlight = [...this.#launching.values()].map((launch) => launch.then(() => undefined, () => undefined))
+    if (inFlight.length > 0 && boundMs > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const bound = new Promise<void>((resolveBound) => {
+        timer = setTimeout(resolveBound, boundMs)
+      })
+      await Promise.race([Promise.all(inFlight), bound])
+      clearTimeout(timer)
+    }
+    for (const taskId of this.#launching.keys()) this.#parkUnadmittedLaunch(taskId)
+  }
+
+  // Parks only a launch that is still this host's and has never reached a child: no session, no pid.
+  // started_at goes too, so revival reads it as never started and relaunches it fresh instead of
+  // deferring it for a transcript that never existed. A launch cancelled or admitted meanwhile is left alone.
+  #parkUnadmittedLaunch(taskId: string): void {
+    let parked = false
+    this.#options.store.mutate(taskId, (fresh) => {
+      if (fresh.status !== "running" || fresh.host_pid !== this.#hostPid) return fresh
+      if (fresh.child_session_id !== undefined || fresh.host_session !== undefined || fresh.pid !== undefined) return fresh
+      parked = true
+      const { host_pid: _hostPid, started_at: _startedAt, ...rest } = fresh
+      return { ...rest, residency_state: "persisted_only", updated_at: nowIso(this.#now) }
+    })
+    if (parked) {
+      this.#options.store.appendEvent(taskId, { type: "suspended", payload: { reason: "session_shutdown_before_admission" } })
+    }
+  }
+
+  /** Settles once the task's in-flight launch has settled, admitted or refused; at once when none is in flight. */
+  whenLaunched(taskId: string): Promise<void> {
+    return (this.#launching.get(taskId) ?? Promise.resolve()).then(() => undefined, () => undefined)
+  }
+
   waitFor(taskId: string, options?: { readonly signal?: AbortSignal }): Promise<TaskRecord> {
     const signal = options?.signal
     if (signal?.aborted) return Promise.reject(signal.reason ?? new Error("waitFor aborted"))
@@ -784,7 +857,21 @@ class TaskManagerImpl implements TaskManager {
   // Test-only observability for proving the release guard never grows unboundedly across revives.
   releasedKeyCount(): number { return this.#released.size }
 
+  #trackLaunch(taskId: string, context: LaunchContext): Promise<LaunchOutcome> {
+    const launching = this.#launch(context)
+    this.#launching.set(taskId, launching)
+    void launching.finally(() => {
+      if (this.#launching.get(taskId) === launching) this.#launching.delete(taskId)
+    }).catch(() => undefined)
+    return launching
+  }
+
   async #launch(initial: LaunchContext): Promise<LaunchOutcome> {
+    if (this.#shutdownStarted) {
+      // Still pending: the shutdown suspension parks it with the other pending records.
+      this.#releaseSlot(initial.record.task_id, initial.model, initial.record.notification.run_epoch)
+      return { ok: false, error: "the session is shutting down" }
+    }
     const startResult = this.#options.store.transition(initial.record.task_id, { type: "start", timestamp: nowIso(this.#now) })
     if (!startResult.applied) {
       this.#releaseSlot(initial.record.task_id, initial.model, initial.record.notification.run_epoch)
