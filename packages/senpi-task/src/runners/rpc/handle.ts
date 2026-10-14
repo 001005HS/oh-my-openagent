@@ -20,6 +20,7 @@ import { isHarmlessRpcShutdownError, type RpcProtocolClient } from "./protocol-c
 import { terminateRpcChild } from "./terminate"
 import { exitTurnOutcome, extractAssistantText, promptFailureOutcome } from "./turn-outcome"
 import { createTurnSettlement, sessionIsIdle } from "./turn-settlement"
+import { createTurnWakeSources } from "./turn-wake-sources"
 
 export type CreateRpcChildHandleOptions = {
   readonly client: RpcProtocolClient
@@ -69,11 +70,18 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
     for (const waiter of outcomeWaiters.splice(0)) waiter(settled)
   }
 
+  const wakeSources = createTurnWakeSources()
   const settlement = createTurnSettlement({
     settle: settleTurn,
     abortedByUser: () => abortedByUser,
     baseline: () => turnBaseline,
     finalText: () => finalText,
+    probe: async () => {
+      const response = await client.send({ type: "get_state" })
+      return response.success === true && response.command === "get_state" ? (response.data as object) : {}
+    },
+    settleConfirmMs: heartbeatIntervalMs,
+    wakeSourcesLive: () => wakeSources.hasLiveWakeSources(),
   })
 
   const resumedListeners = new Set<() => void>()
@@ -98,6 +106,7 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
     }
     settlement.observe(event)
   })
+  client.extensionEvents.subscribe((event) => wakeSources.observe(event))
   // Subscribers run after the handle has recorded the event (as on dev, and as the host handle does), so a
   // live observer reads current state and one that throws cannot keep the handle from settling a turn.
   client.onEvent((event) => listeners.emitEvent(event))
@@ -163,6 +172,7 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
     terminalAssistantMessage = undefined
     abortedByUser = false
     turnBaseline = finalText
+    wakeSources.reset()
   }
 
   // Deliver with explicit queueing semantics, retrying as followUp when the child answers
@@ -244,6 +254,7 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
     waitForExit: () => (outcome ? Promise.resolve(outcome) : new Promise<ChildExitOutcome>((resolve) => exitWaiters.push(resolve))),
     dispose: async () => {
       stopHeartbeat()
+      settlement.cancelConfirmation()
       listeners.clearActive()
       try {
         await client.detach()

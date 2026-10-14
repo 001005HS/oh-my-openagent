@@ -5,16 +5,32 @@ import { agentEndOutcome } from "./turn-outcome"
 
 type AgentEndEvent = Extract<AgentSessionEvent, { readonly type: "agent_end" }>
 
+export type TurnSettlementProbe = {
+  readonly isStreaming?: boolean
+  readonly isCompacting?: boolean
+  readonly steering?: readonly unknown[]
+  readonly followUp?: readonly unknown[]
+  readonly pendingMessageCount?: number
+}
+
 export type TurnSettlementInput = {
   readonly settle: (outcome: RunnerOutcome) => void
   readonly abortedByUser: () => boolean
   readonly baseline: () => string | undefined
   readonly finalText: () => string | undefined
+  // senpi#3262: how the held error is confirmed terminal when agent_idle never arrives. The probe
+  // answers the session's own state; the wake gate names a session-scoped lifecycle that still
+  // owns the turn (a goal recovery timer, a terminal monitor). Absent: the historical behavior -
+  // the outcome waits for agent_idle forever.
+  readonly probe?: () => Promise<TurnSettlementProbe>
+  readonly settleConfirmMs?: number
+  readonly wakeSourcesLive?: () => boolean
 }
 
 export type TurnSettlement = {
   readonly observe: (event: AgentSessionEvent) => void
   readonly pending: () => RunnerOutcome | undefined
+  readonly cancelConfirmation: () => void
 }
 
 /**
@@ -48,26 +64,77 @@ export function sessionIsIdle(state: {
 
 export function createTurnSettlement(input: TurnSettlementInput): TurnSettlement {
   let held: RunnerOutcome | undefined
+  let confirmation: ReturnType<typeof setTimeout> | undefined
   const endOutcome = (event: AgentEndEvent): RunnerOutcome =>
     input.abortedByUser() ? { status: "cancelled" } : agentEndOutcome(event, input.baseline(), input.finalText())
+
+  // A terminal error outcome with no live continuation must still end the turn: agent_idle is the
+  // preferred edge, but a session that never emits it (and never starts a continuation) would
+  // otherwise leave waitForOutcome pending forever. The confirmation re-checks the session's own
+  // state instead of trusting the wait: only a truly idle session with no session-scoped wake
+  // settles the held error.
+  const confirmHeld = (): void => {
+    confirmation = undefined
+    const outcome = held
+    if (outcome === undefined || outcome.status !== "error") return
+    if (input.wakeSourcesLive?.() === true) return
+    const probe = input.probe
+    if (probe === undefined) return
+    void Promise.resolve()
+      .then(probe)
+      .then((state) => {
+        if (held !== outcome || input.wakeSourcesLive?.() === true) return
+        if (!sessionIsIdle(state)) {
+          rearm()
+          return
+        }
+        held = undefined
+        input.settle(outcome)
+      })
+      .catch(() => {
+        if (held !== outcome) return
+        held = undefined
+        input.settle(outcome)
+      })
+  }
+
+  const rearm = (): void => {
+    if (held === undefined || held.status !== "error") return
+    if (input.probe === undefined || input.settleConfirmMs === undefined) return
+    if (confirmation !== undefined) return
+    const timer = setTimeout(confirmHeld, input.settleConfirmMs)
+    timer.unref?.()
+    confirmation = timer
+  }
+
+  const clearConfirmation = (): void => {
+    if (confirmation === undefined) return
+    clearTimeout(confirmation)
+    confirmation = undefined
+  }
+
   return {
     observe: (event) => {
       switch (event.type) {
         case "agent_start":
+          clearConfirmation()
           held = undefined
           return
         case "agent_end": {
           if (event.willRetry !== false) return
           const outcome = endOutcome(event)
           if (outcome.status === "cancelled") {
+            clearConfirmation()
             held = undefined
             input.settle(outcome)
             return
           }
           held = outcome
+          if (outcome.status === "error") rearm()
           return
         }
         case "agent_idle": {
+          clearConfirmation()
           const outcome = held
           held = undefined
           if (outcome !== undefined) input.settle(outcome)
@@ -78,5 +145,6 @@ export function createTurnSettlement(input: TurnSettlementInput): TurnSettlement
       }
     },
     pending: () => held,
+    cancelConfirmation: clearConfirmation,
   }
 }

@@ -125,10 +125,10 @@ describe("createTurnSettlement terminal provider error (senpi#3262)", () => {
 
     // when
     settlement.observe(agentEnd(PROVIDER_TIMEOUT) as never)
-    await Bun.sleep(30)
+    await Bun.sleep(20)
     idle = true
 
-    // then - the first (busy) probe settled nothing; the idle one did
+    // then - the first (busy) probe settled nothing and re-armed; the idle answer settles
     const outcome = await settled.promise
     expect(outcome.status).toBe("error")
   })

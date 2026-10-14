@@ -4,6 +4,8 @@ import type { RunnerOutcome } from "../in-process/child-handle"
 import { isBusyChildRejection, type RpcStreamingBehavior } from "../rpc/delivery-semantics"
 import { exitTurnOutcome, promptFailureOutcome } from "../rpc/turn-outcome"
 import { createTurnSettlement, sessionIsIdle } from "../rpc/turn-settlement"
+import { createTurnWakeSources } from "../rpc/turn-wake-sources"
+import type { ChildExtensionEvent } from "../child-extension-events"
 import type { ChildEventListener, ChildExitOutcome, RpcTerminalAssistantMessage } from "../types"
 import {
   classifySessionExit,
@@ -69,11 +71,15 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     waiters.settleTurn(settled)
   }
 
+  const wakeSources = createTurnWakeSources()
   const settlement = createTurnSettlement({
     settle: settleTurn,
     abortedByUser: () => abortedByUser,
     baseline: () => turnBaseline,
     finalText: () => finalText,
+    probe: () => client.getState(),
+    settleConfirmMs: heartbeatIntervalMs,
+    wakeSourcesLive: () => wakeSources.hasLiveWakeSources(),
   })
 
   const onSessionEvent = (event: Parameters<ChildEventListener>[0]): void => {
@@ -192,7 +198,10 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     currentPort: () => client,
     acceptsLifecycleEvent: () => !parked && !detached && outcome === undefined,
     onEvent: (event: Parameters<ChildEventListener>[0]) => { onSessionEvent(event); listeners.emitEvent(event) },
-    onExtensionEvent: listeners.extensionEvents.publish,
+    onExtensionEvent: (event: ChildExtensionEvent) => {
+      wakeSources.observe(event)
+      listeners.extensionEvents.publish(event)
+    },
     onParked: park,
     onClosed: (event: { readonly reason: string | undefined }) => endSession({ kind: "session_closed", reason: event.reason }),
     onTransportGone: recovery.onTransportGone,
@@ -209,6 +218,7 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     terminalAssistantMessage = undefined
     abortedByUser = false
     turnBaseline = finalText
+    wakeSources.reset()
   }
 
   // Same queueing contract as the child-process runner: a delivery that lands mid-run is retried
@@ -243,6 +253,7 @@ export function createHostSessionHandle(options: HostSessionHandleOptions): Host
     clearActive: listeners.clearActive,
     stopHeartbeat,
     settle: settleClassified,
+    onTornDown: () => settlement.cancelConfirmation(),
   })
 
   return {

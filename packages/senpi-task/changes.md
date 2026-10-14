@@ -1,4 +1,39 @@
-## 2026-10-10 - Seed-from-disk subprocess tests wait on signals, not a 5 s budget (#9890)
+## 2026-10-14 - A terminal provider error ends the task even when agent_idle never arrives (#3262)
+
+A turn that ended on a terminal provider error (a stream-start timeout, a permanent 4xx, an
+exhausted retry budget) had its `agent_end` (willRetry:false) outcome HELD for `agent_idle` by
+`createTurnSettlement`. senpi's own settlement machinery skips `agent_idle` whenever a deferred
+continuation claim may still start a turn (`agent-session.ts` `_emitAgentIdleAfterDeferredTurns`):
+a claim that neither starts nor reports leaves no `agent_idle` AND no continuation, so the held
+outcome never settled, `waitForOutcome()` pended forever, the record stayed `running`, and the
+task went stale. The parent never learned the child failed.
+
+`runners/rpc/turn-settlement.ts` now confirms a held ERROR outcome instead of waiting blind: a
+bounded settle-confirmation (unref'd, `settleConfirmMs`) probes the session's own state
+(`sessionIsIdle`) and settles the held error - with the provider's own text - only once the
+session is truly idle with no session-scoped wake. A busy probe answer re-arms the check; a probe
+that rejects settles the held error anyway (the failure text is already known). `agent_idle`
+remains the preferred edge and cancels the confirmation; `agent_start` drops the held outcome for
+the new turn; a user abort still settles at once. Callers that pass no probe keep the historical
+agent_idle-only behavior.
+
+Session-scoped lifecycles are not force-failed: `runners/rpc/turn-wake-sources.ts` (new) tracks
+the wake sources a child's own lifecycle publishes on the RPC extension-event lane - a goal
+continuation timer (`goal_continuation_timer_state`), terminal monitor watches
+(`terminal_monitor_state`/`terminal_monitor_ended`), and wake-source channels
+(`wake_source_state`). While any is live the confirmation holds the outcome, so a goal's
+providerRecovery or a monitor's drain still owns the turn; the tracker resets each new turn.
+
+Both runners wire it with the heartbeat interval as the confirm budget: the RPC-process child
+(`runners/rpc/handle.ts`, probing `get_state`, feeding the tracker from the protocol client's
+extension-event lane) and the daemon-session child (`runners/rpc-host/handle.ts`, probing
+`client.getState()`, feeding the tracker from `clientBinding.onExtensionEvent`). The confirmation
+timer is disposed with the handle (`runners/rpc-host/handle-teardown.ts` `onTornDown`).
+
+`turn-settlement.test.ts` / `turn-wake-sources.test.ts` (new) pin it: a terminal stream-start
+timeout settles failed with the provider text when idle never arrives; a goal timer or monitor
+keeps it running; a busy-then-idle probe settles only on the idle answer; agent_idle settles at
+once without probing; a rejecting probe still settles the known error.
 
 The three `manager-claim.test.ts` "seeds from disk" cases start a fresh Bun process on `__fixtures__/seed-floor-child.ts`. They ran under bun's implicit 5 s per-test default, so under full-suite load a cold start alone could fail them. The fixture now prints `READY` after its imports load and `DONE` when its work finishes. The new `__fixtures__/signalled-child.ts` helper waits on those signals and the child's exit, with an explicit hang ceiling (20 s, 60 s on Windows) that is only a guard. On the deadline it kills exactly the child it spawned, by its own pid, and fails with the phase it reached plus the child's stdout and stderr. `signalled-child.test.ts` proves that path with a child that never signals. Under a parallel load of 40 runs at concurrency 8 beside a full senpi-task suite, each run took 13-17 s and all passed.
 
