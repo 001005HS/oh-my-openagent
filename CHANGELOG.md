@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 **macOS captures through a persistent ScreenCaptureKit worker on macOS 14 and later.** A window on another Space is captured without switching to it, and the result says whether the window is on screen. A minimized window is refused with `CaptureUnavailable` (reason `minimized`). Display captures can leave out windows by title (`excludeWindowTitles`). On older macOS, or when the capture helper is missing or fails to start, capture falls back to the previous path without an error and reports `legacyCapture: true`. ([#9651](https://github.com/code-yeongyu/oh-my-openagent/issues/9651))
+
+**The [CC] `opus` alias and the retired-model migration no longer land on Opus 4.8.** `mapClaudeModelToOpenCode("opus")` now resolves to the current Opus 5.5 id instead of 4.8, and the config migration that upgrades a retired `anthropic/` entry now targets Opus 5.5, so a default or an automatic migration never puts a user on Opus 4.8 without an explicit pick.
+
 **`omo app-server` is retired.** The Codex app-server protocol is gone from the engine, so omo no longer forwards `omo app-server`: it exits with status 2 and points to `omo --mode rpc` or `omo host`, which are the supported ways to drive a session from another program. `omo doctor`, the ulw-loop skill and the task status view no longer mention it. ([#10033](https://github.com/code-yeongyu/oh-my-openagent/issues/10033), [#10098](https://github.com/code-yeongyu/oh-my-openagent/pull/10098))
 
 ## [5.1.33] - 2026-10-13

@@ -15,7 +15,7 @@
  * (#3777, #4527).
  */
 export const MODEL_VERSION_MAP: Record<string, string> = {
-  "anthropic/claude-opus-4-4": "anthropic/claude-opus-4-8",
+  "anthropic/claude-opus-4-4": "anthropic/claude-opus-5-5",
 }
 
 const CURRENT_USER_SELECTABLE_MODELS = new Set([
@@ -26,6 +26,21 @@ const CURRENT_USER_SELECTABLE_MODELS = new Set([
 
 function migrationKey(oldModel: string, newModel: string): string {
   return `model-version:${oldModel}->${newModel}`
+}
+
+function migrationSourceKey(oldModel: string): string {
+  return `model-version:${oldModel}->`
+}
+
+function hasAppliedMigration(appliedMigrations: Set<string> | undefined, oldModel: string): boolean {
+  if (!appliedMigrations) return false
+  const sourceKey = migrationSourceKey(oldModel)
+  for (const key of appliedMigrations) {
+    // A migration away from this source counts as applied whatever its target was,
+    // so a user's deliberate revert is never overridden by a later target bump.
+    if (key.startsWith(sourceKey)) return true
+  }
+  return false
 }
 
 export function migrateModelVersions(
@@ -49,7 +64,7 @@ export function migrateModelVersions(
         const mKey = migrationKey(oldModel, newModel)
 
         // Skip if this migration was already applied (user may have reverted)
-        if (appliedMigrations?.has(mKey)) {
+        if (hasAppliedMigration(appliedMigrations, oldModel)) {
           migrated[key] = value
           continue
         }
