@@ -81,11 +81,9 @@ describe("a child whose session the host replaces", () => {
     expect(record?.host_session?.session_path).toBe(sessionFile)
     expect(record?.host_session?.routing_id).toBe(child.routingId)
     expect(record?.child_session_id).toBe("durable-replaced-1")
-    expect(
-      taskEvents(child.parent, child.record.task_id).some(
-        (entry) => entry.type === "replaced" && JSON.stringify(entry.payload).includes(sessionFile),
-      ),
-    ).toBe(true)
+    expect(taskEvents(child.parent, child.record.task_id).filter((entry) => entry.type === "replaced")).toEqual([
+      { type: "replaced", payload: { session_path: sessionFile, durable_session_id: "durable-replaced-1" } },
+    ])
   })
 
   test("#given a replaced child #when its transport drops and recovers #then the reattach reopens the NEW session path and the child finishes there", async () => {
