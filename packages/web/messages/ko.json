@@ -469,7 +469,9 @@
     },
     "all": {
       "title": "전체 다운로드",
-      "sha": "SHA-256"
+      "sha": "SHA-256",
+      "missing": "이번 릴리스에는 아직 없음",
+      "linuxPick": "Linux에서는 Ubuntu와 Debian이면 .deb를 고르세요. 패키지 관리자로 설치되고, 새 버전이 나오면 앱이 알려 줍니다. 다른 배포판이면 AppImage를 고르세요. 설치 없이 실행되고(FUSE 필요) 스스로 업데이트됩니다."
     },
     "verify": {
       "title": "다운로드 확인",

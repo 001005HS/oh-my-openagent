@@ -124,6 +124,12 @@ test.describe("Download page", () => {
     // then
     await expect(page.getByTestId("download-primary")).toHaveAttribute("href", /amd64\.deb$/)
     await expect(page.getByTestId("installer-row").filter({ hasText: "AppImage" })).toBeVisible()
+    await expect(page.getByTestId("installer-row").filter({ hasText: "Linux" })).toHaveText([
+      /amd64\.deb/,
+      /AppImage/,
+    ])
+    await expect(page.getByTestId("linux-pick-note")).toContainText(".deb")
+    await expect(page.getByTestId("linux-pick-note")).toContainText("AppImage")
   })
 
   test("every installer is listed with its size and a full SHA-256 to check against", async ({
@@ -206,6 +212,57 @@ test.describe("Download page", () => {
     await expect(page.getByTestId("download-primary")).toHaveCount(0)
     await expect(page.getByText("No installer for your system yet")).toBeVisible()
     await expect(page.getByTestId("installer-row")).toHaveCount(3)
+    await expect(page.getByTestId("missing-os-row")).toHaveText([/Linux/])
+  })
+
+  test("with only the macOS disk images published, Windows and Linux are listed as not in this release yet", async ({
+    page,
+  }) => {
+    // given: what the desktop release command publishes today
+    await useScenario("mac-only")
+    await pretendBrowser(page, { platform: "Windows", architecture: "x86" })
+
+    // when
+    await page.goto("/download")
+
+    // then
+    await expect(page.getByTestId("download-primary")).toHaveCount(0)
+    await expect(page.getByTestId("installer-row")).toHaveCount(2)
+    await expect(page.getByTestId("missing-os-row")).toHaveText([/Windows/, /Linux/])
+    await expect(page.getByTestId("verify-command")).toHaveText([
+      /shasum -a 256 OmO-0\.1\.0-arm64\.dmg/,
+    ])
+  })
+
+  test("an installer whose SHA-256 does not match the release's SHA256SUMS is not offered", async ({
+    page,
+  }) => {
+    // given: SHA256SUMS publishes another hash for the Intel disk image
+    await useScenario("tampered")
+    await pretendBrowser(page, { platform: "macOS", architecture: "x86" })
+
+    // when
+    await page.goto("/download")
+
+    // then
+    await expect(page.getByTestId("installer-row")).toHaveCount(4)
+    await expect(page.getByRole("link", { name: /x64\.dmg/ })).toHaveCount(0)
+    await expect(page.getByTestId("download-primary")).toHaveCount(0)
+  })
+
+  test("while the download host turns the public away (401), the page shows the launch date", async ({
+    page,
+  }) => {
+    // given
+    await useScenario("gated")
+    await pretendBrowser(page, { platform: "macOS", architecture: "arm" })
+
+    // when
+    await page.goto("/download")
+
+    // then
+    await expect(page.getByRole("heading", { name: /Coming November 10/ })).toBeVisible()
+    await expect(page.getByTestId("download-primary")).toHaveCount(0)
   })
 
   test("before launch the page says when the app arrives and offers no installer", async ({

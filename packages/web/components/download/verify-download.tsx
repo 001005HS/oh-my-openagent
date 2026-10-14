@@ -14,7 +14,8 @@ export function VerifyDownload({
   fileNames,
   checksumsUrl,
 }: {
-  readonly fileNames: Readonly<Record<VerifyOs, string>>
+  /** The installer to show per system; a system with no installer in this release is skipped. */
+  readonly fileNames: Readonly<Record<VerifyOs, string | null>>
   readonly checksumsUrl: string
 }): JSX.Element {
   const t = useTranslations("download.verify")
@@ -24,14 +25,22 @@ export function VerifyDownload({
       <h2 className="type-heading text-text-hi">{t("title")}</h2>
       <p className="text-text-mid mt-3 max-w-2xl leading-[1.6]">{t("body")}</p>
       <div className="mt-6 grid max-w-3xl gap-4">
-        {ORDER.map((os) => (
-          <div key={os} className="border-line bg-ink-1 min-w-0 border p-4">
-            <p className="eyebrow text-text-lo">{t(os)}</p>
-            <pre className="mt-3 overflow-x-auto font-mono text-sm leading-[1.55]">
-              <code className="text-text-hi">{COMMANDS[os](fileNames[os])}</code>
-            </pre>
-          </div>
-        ))}
+        {ORDER.map((os) => {
+          const fileName = fileNames[os]
+          if (fileName === null) return null
+          return (
+            <div
+              key={os}
+              data-testid="verify-command"
+              className="border-line bg-ink-1 min-w-0 border p-4"
+            >
+              <p className="eyebrow text-text-lo">{t(os)}</p>
+              <pre className="mt-3 overflow-x-auto font-mono text-sm leading-[1.55]">
+                <code className="text-text-hi">{COMMANDS[os](fileName)}</code>
+              </pre>
+            </div>
+          )
+        })}
       </div>
       <p className="text-text-mid mt-4 max-w-2xl text-sm leading-[1.6]">{t("mismatch")}</p>
       <a

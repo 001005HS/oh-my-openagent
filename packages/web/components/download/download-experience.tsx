@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { Link } from "@/i18n/routing"
 import {
   chooseInstallers,
+  listedInstallers,
   type ChannelState,
   type DesktopChannel,
   type DesktopOs,
@@ -68,19 +69,19 @@ function fileNameFor(
   os: DesktopOs,
   release: DesktopRelease,
   choice: InstallerChoice | null,
-): string {
+): string | null {
   const installer =
     choice?.primary?.os === os
       ? choice.primary
       : chooseInstallers(release, { os, arch: null, device: "computer" }).primary
-  return installer?.fileName ?? "<installer>"
+  return installer?.fileName ?? null
 }
 
 function ReleaseBody({ release }: { readonly release: DesktopRelease }): JSX.Element {
   const t = useTranslations("download")
   const visitor = useDesktopVisitor()
   const choice = visitor === null ? null : chooseInstallers(release, visitor)
-  const listed = release.installers
+  const listed = listedInstallers(release)
   const fileNames = {
     macos: fileNameFor("macos", release, choice),
     windows: fileNameFor("windows", release, choice),

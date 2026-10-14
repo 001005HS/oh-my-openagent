@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import createMiddleware from "next-intl/middleware"
 import { locales, type Locale } from "./i18n/config"
 import { routing } from "./i18n/routing"
+import { desktopDownloadEnabled } from "./lib/desktop-download"
 
 const handleI18nRouting = createMiddleware(routing)
 const oldHosts = new Set(["www.omo.dev"])
@@ -84,7 +85,7 @@ export default function proxy(request: NextRequest): NextResponse {
     shouldRedirect = true
   }
 
-  const downloadPath = getDownloadPath(request.nextUrl.pathname)
+  const downloadPath = desktopDownloadEnabled() ? getDownloadPath(request.nextUrl.pathname) : null
   if (downloadPath) {
     redirectUrl.pathname = downloadPath
     shouldRedirect = true

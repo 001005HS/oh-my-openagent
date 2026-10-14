@@ -56,7 +56,7 @@ export default defineConfig({
       url: "http://127.0.0.1:3000",
       reuseExistingServer: !process.env.CI,
       timeout: 180000,
-      env: { DESKTOP_DOWNLOAD_BASE_URL: "http://127.0.0.1:4310" },
+      env: { DESKTOP_DOWNLOAD_BASE_URL: "http://127.0.0.1:4310", OMO_WEB_DESKTOP_DOWNLOAD: "1" },
     },
   ],
 })

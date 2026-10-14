@@ -469,7 +469,9 @@
     },
     "all": {
       "title": "All downloads",
-      "sha": "SHA-256"
+      "sha": "SHA-256",
+      "missing": "Not in this release yet",
+      "linuxPick": "On Linux, pick the .deb for Ubuntu and Debian: it installs with your package manager, and the app tells you when a new version is out. Pick the AppImage for other distributions: it runs without installing (it needs FUSE) and updates itself."
     },
     "verify": {
       "title": "Verify your download",

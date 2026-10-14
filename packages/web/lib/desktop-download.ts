@@ -6,6 +6,15 @@ const DOCS_HOSTS: ReadonlySet<string> = new Set([DOWNLOAD_HOST, "omo.dev"])
 const DEFAULT_LAUNCH_AT = "2026-11-10T00:00:00.000Z"
 const FETCH_TIMEOUT_MS = 5000
 
+/**
+ * The download page, its hero button, its sitemap entry and the /desktop redirect exist only when
+ * OMO_WEB_DESKTOP_DOWNLOAD=1. Production deploys do not set it, so merging the page changes nothing
+ * on omo.dev until the desktop app launches.
+ */
+export function desktopDownloadEnabled(): boolean {
+  return process.env.OMO_WEB_DESKTOP_DOWNLOAD === "1"
+}
+
 export type DesktopChannel = "stable" | "beta"
 export type DesktopOs = "macos" | "windows" | "linux"
 export type DesktopArch = "arm64" | "x64"
@@ -118,19 +127,61 @@ export interface FetchChannelOptions {
   readonly fetchImpl?: FetchLike
 }
 
+/** Statuses the host answers for a channel it does not serve to the public yet (missing or gated). */
+const NOT_PUBLIC_YET: ReadonlySet<number> = new Set([401, 403, 404])
+
+/** `<sha256>  <file name>` lines of a release's SHA256SUMS, keyed by file name. */
+function parseSha256Sums(text: string): ReadonlyMap<string, string> {
+  const sums = new Map<string, string>()
+  for (const line of text.split("\n")) {
+    const match = /^([0-9a-fA-F]{64}) [ *](.+)$/.exec(line.trim())
+    if (match?.[1] && match[2]) sums.set(match[2], match[1].toLowerCase())
+  }
+  return sums
+}
+
+async function fetchFromHost(fetchImpl: FetchLike, url: string, accept: string): Promise<Response> {
+  return fetchImpl(url, {
+    headers: { Accept: accept },
+    cache: "no-store",
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  })
+}
+
+/**
+ * Reads a channel's manifest, then that release's SHA256SUMS, and offers only the installers whose
+ * manifest SHA-256 equals their SHA256SUMS line: the checksum a visitor verifies against is the one
+ * the release published, never a value only the manifest claims.
+ */
 export async function fetchChannelState(
   channel: DesktopChannel,
   { baseUrl, fetchImpl = fetch }: FetchChannelOptions,
 ): Promise<ChannelState> {
   try {
-    const response = await fetchImpl(`${baseUrl}/${channel}/manifest.json`, {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    })
-    if (response.status === 404) return { status: "coming", launchAt: DEFAULT_LAUNCH_AT }
+    const response = await fetchFromHost(
+      fetchImpl,
+      `${baseUrl}/${channel}/manifest.json`,
+      "application/json",
+    )
+    if (NOT_PUBLIC_YET.has(response.status)) {
+      return { status: "coming", launchAt: DEFAULT_LAUNCH_AT }
+    }
     if (!response.ok) return { status: "unavailable" }
-    return parseChannelManifest(channel, await response.json())
+    const state = parseChannelManifest(channel, await response.json())
+    if (state.status !== "ready") return state
+
+    const sumsResponse = await fetchFromHost(
+      fetchImpl,
+      `${baseUrl}/${channel}/${state.release.version}/SHA256SUMS`,
+      "text/plain",
+    )
+    if (!sumsResponse.ok) return { status: "unavailable" }
+    const sums = parseSha256Sums(await sumsResponse.text())
+    const installers = state.release.installers.filter(
+      (installer) => sums.get(installer.fileName) === installer.sha256,
+    )
+    if (installers.length === 0) return { status: "unavailable" }
+    return { status: "ready", release: { ...state.release, installers } }
   } catch {
     return { status: "unavailable" }
   }
@@ -177,6 +228,11 @@ export interface InstallerChoice {
 
 function byPreference(a: DesktopInstaller, b: DesktopInstaller): number {
   return OS_ORDER.indexOf(a.os) - OS_ORDER.indexOf(b.os) || KIND_RANK[a.kind] - KIND_RANK[b.kind]
+}
+
+/** The release's installers in the order the page lists them: by system, then preferred kind. */
+export function listedInstallers(release: DesktopRelease): readonly DesktopInstaller[] {
+  return [...release.installers].sort(byPreference)
 }
 
 export function chooseInstallers(

@@ -469,7 +469,9 @@
     },
     "all": {
       "title": "全部下载",
-      "sha": "SHA-256"
+      "sha": "SHA-256",
+      "missing": "此版本暂未提供",
+      "linuxPick": "在 Linux 上，Ubuntu 和 Debian 请选择 .deb：它通过包管理器安装，有新版本时应用会提醒你。其他发行版请选择 AppImage：无需安装即可运行（需要 FUSE），并会自动更新。"
     },
     "verify": {
       "title": "验证你的下载",

@@ -393,48 +393,129 @@ function jsonResponse(body: unknown, status = 200): Response {
 describe("loading a channel's manifest from the download host", () => {
   const baseUrl = "https://get.omo.dev"
 
-  test("reads the manifest for the chosen channel from that channel's folder", async () => {
-    // given
+  /** SHA256SUMS as the release publisher writes it: `<sha256>  <file name>` per installer. */
+  function sumsFor(manifest: Record<string, unknown>): string {
+    const platforms = manifest.platforms as Record<string, unknown>
+    return Object.values(platforms)
+      .flatMap((value) => (Array.isArray(value) ? value : [value]))
+      .map((entry) => {
+        const { url, sha256 } = entry as { url: string; sha256: string }
+        return `${sha256}  ${url.split("/").pop() ?? ""}\n`
+      })
+      .join("")
+  }
+
+  /** A download host that answers each path from `routes`, and 404 for anything else. */
+  function host(routes: Record<string, () => Response>) {
     const requested: string[] = []
     const fetchImpl = async (input: string | URL | Request): Promise<Response> => {
-      requested.push(String(input))
-      return jsonResponse(stableManifest())
+      const url = String(input)
+      requested.push(url)
+      const path = url.slice(baseUrl.length)
+      return routes[path]?.() ?? new Response("not found", { status: 404 })
     }
+    return { requested, fetchImpl }
+  }
+
+  function publishedStable(manifest = stableManifest(), sums = sumsFor(manifest)) {
+    return host({
+      "/stable/manifest.json": () => jsonResponse(manifest),
+      "/stable/0.1.0/SHA256SUMS": () => new Response(sums, { status: 200 }),
+    })
+  }
+
+  test("reads the channel's manifest, then that release's SHA256SUMS", async () => {
+    // given
+    const { requested, fetchImpl } = publishedStable()
 
     // when
     const state = await fetchChannelState("stable", { baseUrl, fetchImpl })
 
     // then
-    expect(requested).toEqual(["https://get.omo.dev/stable/manifest.json"])
-    expect(state.status).toBe("ready")
+    expect(requested).toEqual([
+      "https://get.omo.dev/stable/manifest.json",
+      "https://get.omo.dev/stable/0.1.0/SHA256SUMS",
+    ])
+    expect(state.status === "ready" && state.release.installers.length).toBe(5)
   })
 
-  test("the beta channel reads beta/manifest.json", async () => {
+  test("the beta channel reads beta/manifest.json and the beta release's SHA256SUMS", async () => {
     // given
-    const requested: string[] = []
-    const fetchImpl = async (input: string | URL | Request): Promise<Response> => {
-      requested.push(String(input))
-      return jsonResponse(stableManifest({ channel: "beta", version: "0.1.1-beta.2" }))
-    }
+    const manifest = stableManifest({ channel: "beta", version: "0.1.1-beta.2" })
+    const { requested, fetchImpl } = host({
+      "/beta/manifest.json": () => jsonResponse(manifest),
+      "/beta/0.1.1-beta.2/SHA256SUMS": () => new Response(sumsFor(manifest)),
+    })
 
     // when
     const state = await fetchChannelState("beta", { baseUrl, fetchImpl })
 
     // then
-    expect(requested).toEqual(["https://get.omo.dev/beta/manifest.json"])
+    expect(requested).toEqual([
+      "https://get.omo.dev/beta/manifest.json",
+      "https://get.omo.dev/beta/0.1.1-beta.2/SHA256SUMS",
+    ])
     expect(state.status === "ready" && state.release.channel).toBe("beta")
   })
 
-  test("before launch there is no stable manifest, and the page shows the launch date instead of an error", async () => {
-    // given
-    const fetchImpl = async (): Promise<Response> => new Response("not found", { status: 404 })
+  test("an installer whose SHA-256 differs from SHA256SUMS, or is missing from it, is not offered", async () => {
+    // given: the Intel disk image's line carries another hash and the exe's line is gone
+    const manifest = stableManifest()
+    const sums = sumsFor(manifest)
+      .replace(`${HASH_B}  OmO-0.1.0-x64.dmg`, `${"f".repeat(64)}  OmO-0.1.0-x64.dmg`)
+      .replace(`${HASH_C}  OmO-0.1.0-x64.exe\n`, "")
+    const { fetchImpl } = publishedStable(manifest, sums)
 
     // when
-    const state: ChannelState = await fetchChannelState("stable", { baseUrl, fetchImpl })
+    const state = await fetchChannelState("stable", { baseUrl, fetchImpl })
 
     // then
-    expect(state).toEqual({ status: "coming", launchAt: "2026-11-10T00:00:00.000Z" })
+    const files = state.status === "ready" ? state.release.installers.map((i) => i.fileName) : []
+    expect(files.sort()).toEqual([
+      "OmO-0.1.0-amd64.deb",
+      "OmO-0.1.0-arm64.dmg",
+      "OmO-0.1.0-x64.AppImage",
+    ])
   })
+
+  test("a release whose SHA256SUMS cannot be read offers nothing", async () => {
+    // given
+    const { fetchImpl } = host({
+      "/stable/manifest.json": () => jsonResponse(stableManifest()),
+      "/stable/0.1.0/SHA256SUMS": () => new Response("boom", { status: 503 }),
+    })
+
+    // when
+    const state = await fetchChannelState("stable", { baseUrl, fetchImpl })
+
+    // then
+    expect(state).toEqual({ status: "unavailable" })
+  })
+
+  test("a release where no installer matches SHA256SUMS offers nothing", async () => {
+    // given
+    const { fetchImpl } = publishedStable(stableManifest(), `${"0".repeat(64)}  other.dmg\n`)
+
+    // when
+    const state = await fetchChannelState("stable", { baseUrl, fetchImpl })
+
+    // then
+    expect(state).toEqual({ status: "unavailable" })
+  })
+
+  test.each([401, 403, 404])(
+    "a channel the host does not serve publicly (%i) shows the launch date instead of an error",
+    async (status) => {
+      // given: before launch the host has no stable manifest or does not serve it to the public
+      const fetchImpl = async (): Promise<Response> => new Response("no", { status })
+
+      // when
+      const state: ChannelState = await fetchChannelState("stable", { baseUrl, fetchImpl })
+
+      // then
+      expect(state).toEqual({ status: "coming", launchAt: "2026-11-10T00:00:00.000Z" })
+    },
+  )
 
   test("a server error is unavailable, never a made-up release", async () => {
     // given
