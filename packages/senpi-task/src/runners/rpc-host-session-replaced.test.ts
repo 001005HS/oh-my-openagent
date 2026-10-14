@@ -86,6 +86,40 @@ describe("a child whose session the host replaces", () => {
     ])
   })
 
+  test("#given a running child #when the host replaces its session mid-turn #then the child ends interrupted with the replacement as its cause and a task_send action", async () => {
+    // given
+    const child = await oneChild()
+    const seen = replaceSeen(child)
+    const sessionFile = join(child.world.projectDir, "replaced-child.jsonl")
+    const settled = child.parent.manager.waitFor(child.record.task_id)
+
+    // when - senpi stops the turn first, naming the replacement, then announces it
+    child.world.host.abortTurn(child.routingId, "partial", { kind: "session_replaced", reason: "new", targetSessionFile: sessionFile, targetSessionId: "durable-replaced-1" })
+    emitReplaced(child, "durable-replaced-1", sessionFile)
+    await seen
+    await settled
+
+    // then
+    const record = child.parent.store.load(child.record.task_id)
+    expect(record?.status).toBe("interrupted")
+    expect(record?.interrupt_cause).toBe("session_replaced")
+    expect(record?.error_message).toContain("task_send")
+  })
+
+  test("#given a running child #when the parent interrupts it itself #then it ends interrupted with no cause, so the parent is not notified", async () => {
+    // given
+    const child = await oneChild()
+
+    // when
+    const outcome = await child.parent.manager.interruptTask(child.record.task_id)
+
+    // then
+    expect(outcome.kind).toBe("interrupted")
+    const record = child.parent.store.load(child.record.task_id)
+    expect(record?.status).toBe("interrupted")
+    expect(record?.interrupt_cause).toBeUndefined()
+  })
+
   test("#given a replaced child #when its transport drops and recovers #then the reattach reopens the NEW session path and the child finishes there", async () => {
     // given
     const child = await oneChild({ host: { transcripts: true }, parent: { reattachDelaysMs: [0, 0] } })

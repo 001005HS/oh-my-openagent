@@ -1,6 +1,7 @@
 import type { AgentSession } from "@code-yeongyu/senpi"
 import { reportedEffectiveModel, type CatalogModelIdentity, type EffectiveModel } from "../pinned-model-equivalence"
 
+import type { TaskInterruptCause } from "../../state/record-types"
 import type { TaskStartFailureKind, TaskStartFailureReason } from "../../state/start-failure"
 
 /** How the engine settled a steer/follow-up: delivered to the running turn, or queued behind it. */
@@ -87,6 +88,8 @@ export type RunnerOutcome =
   | { readonly status: "completed"; readonly finalResponse: string; readonly model?: string }
   | { readonly status: "error"; readonly failure: RunnerFailure; readonly killed?: boolean; readonly model?: string }
   | { readonly status: "cancelled" }
+  /** The run stopped for a reason the parent did not request (its session was replaced); task_send continues it. */
+  | { readonly status: "interrupted"; readonly cause: TaskInterruptCause; readonly message: string }
 
 export type ChildCompletionPolicy = "final-text" | "turn"
 

@@ -94,12 +94,20 @@ function applyTransitionFields(record: TaskRecord, transition: TaskTransition): 
     case "lose":
       return { ...record, error_message: transition.error_message }
     case "cancel":
-    case "interrupt":
       return {
         ...record,
         ...(transition.error_message === undefined ? {} : { error_message: transition.error_message }),
         ...runStatsField(transition.run_stats),
       }
+    case "interrupt": {
+      const { interrupt_cause: _staleCause, ...withoutCause } = record
+      return {
+        ...withoutCause,
+        ...(transition.error_message === undefined ? {} : { error_message: transition.error_message }),
+        ...(transition.interrupt_cause === undefined ? {} : { interrupt_cause: transition.interrupt_cause }),
+        ...runStatsField(transition.run_stats),
+      }
+    }
     case "persist_only": {
       // In-process suspension: the owning engine is gone, so host_pid AND the last child pid are
       // both meaningless. Status, epochs, terminal fields, and run stats ride through untouched.

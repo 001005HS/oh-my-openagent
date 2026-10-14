@@ -283,6 +283,14 @@ export function createOutcomeTracker(ports: OutcomeTrackerPorts): OutcomeTracker
             error_message: "child turn produced no assistant output",
             ...runStatsField,
           })
+        } else if (outcome.status === "interrupted") {
+          persistTerminal(taskId, owned, timestamp, {
+            type: "interrupt",
+            timestamp,
+            error_message: outcome.message,
+            interrupt_cause: outcome.cause,
+            ...runStatsField,
+          })
         } else {
           persistTerminal(taskId, owned, timestamp, { type: "cancel", timestamp, ...runStatsField })
         }

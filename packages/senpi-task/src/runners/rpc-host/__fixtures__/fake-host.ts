@@ -62,6 +62,8 @@ export interface FakeHost {
   stall(driftMs: number): void
   /** Finish the turn in flight with an assistant answer, exactly as a real session would. */
   completeTurn(routingId: string, text: string): void
+  /** End the running turn with a host-side abort, optionally naming its cause (senpi's `abortCause`), then idle. */
+  abortTurn(routingId: string, text: string, abortCause?: Readonly<Record<string, unknown>>): void
   evict(sessionPath: string): void
   closeSession(routingId: string, reason: string): void
   holdPath(sessionPath: string, ownerInstanceId: string): void
@@ -211,6 +213,14 @@ export async function startFakeHost(options: FakeHostOptions = {}): Promise<Fake
       table.setStreaming(routingId, false)
       sendTo(routingId, { type: "message_end", message })
       sendTo(routingId, { type: "agent_end", willRetry: false, messages: [message] })
+      sendTo(routingId, { type: "agent_idle" })
+    },
+    abortTurn: (routingId, text, abortCause) => {
+      const message = { role: "assistant", content: [{ type: "text", text }], stopReason: "aborted" }
+      table.appendTranscript(routingId, message)
+      table.setStreaming(routingId, false)
+      sendTo(routingId, { type: "message_end", message })
+      sendTo(routingId, { type: "agent_end", willRetry: false, messages: [message], aborted: true, abortSource: "user", ...(abortCause === undefined ? {} : { abortCause }) })
       sendTo(routingId, { type: "agent_idle" })
     },
     evict: (sessionPath) => {

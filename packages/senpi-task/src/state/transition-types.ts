@@ -1,5 +1,5 @@
 import type { TaskStartFailureTransition } from "./start-failure"
-import type { TaskRecord } from "./record-types"
+import type { TaskInterruptCause, TaskRecord } from "./record-types"
 import type { TaskRunStats } from "./run-stats-types"
 import type { HostSessionIdentity, ResidencyState, RunnerKind, TaskStatus } from "./types"
 
@@ -32,6 +32,8 @@ export type TaskTransition =
       readonly timestamp: string
       readonly error_message?: string
       readonly run_stats?: TaskRunStats
+      /** Set only for an interrupt the parent did not request (it then notifies the parent). */
+      readonly interrupt_cause?: TaskInterruptCause
     }
   | {
       readonly type: "lose"

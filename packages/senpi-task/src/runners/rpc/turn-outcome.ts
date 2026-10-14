@@ -26,6 +26,8 @@ export function agentEndOutcome(
   const stopReason = assistant === undefined ? undefined : readString(assistant.stopReason)
   const errorMessage = assistant === undefined ? undefined : readString(assistant.errorMessage)
   const aborted = readBooleanField(event, "aborted")
+  const replaced = aborted ? replacementCause(event) : undefined
+  if (replaced !== undefined) return replaced
   if (aborted || stopReason === "error" || stopReason === "aborted") {
     return {
       status: "error",
@@ -41,6 +43,24 @@ export function agentEndOutcome(
   return {
     status: "error",
     failure: { kind: "child-turn-failed", message: errorMessage ?? "RPC child turn produced no assistant output" },
+  }
+}
+
+/**
+ * A host that replaces a busy session (new_session, fork, switch_session) aborts its turn first and names
+ * the replacement on that agent_end (senpi#3357). The child did not ask for that stop: it is an interrupt
+ * the parent must hear about, resumable with task_send, never a failed turn.
+ */
+function replacementCause(event: unknown): RunnerOutcome | undefined {
+  const cause = isRecord(event) ? event.abortCause : undefined
+  if (!isRecord(cause) || cause.kind !== "session_replaced") return undefined
+  const by = readString(cause.reason)
+  const target = readString(cause.targetSessionId)
+  return {
+    status: "interrupted",
+    cause: "session_replaced",
+    message:
+      `The child's session was replaced${by === undefined ? "" : ` (${by})`}${target === undefined ? "" : ` by ${target}`}, which stopped its running turn. Use task_send to continue it in the new session.`,
   }
 }
 
