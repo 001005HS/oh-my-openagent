@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**`omo setup` carries OpenCode's catalog providers, such as Neuralwatt.** OpenCode serves every provider in its models.dev catalog once it has a key, but setup used to carry only omo's built-in providers and `provider.<id>` blocks. A key for a provider like `neuralwatt` was dropped as "a provider omo does not serve", and a default model on it was lost. Setup now describes such a provider from OpenCode's own catalog cache: endpoint, models and limits. A config block for it extends the catalog the way OpenCode does, so a proxy `baseURL` or a single model's limit works. Thanks to @taxilian for the report. ([#10158](https://github.com/code-yeongyu/oh-my-openagent/issues/10158), [#10163](https://github.com/code-yeongyu/oh-my-openagent/pull/10163))
+
 **macOS computer use shows a display-only virtual cursor by default.** The overlay follows the agent's pointer actions without moving your real cursor or changing input permissions; set `computer.showCursor: false` to hide it. ([#9887](https://github.com/code-yeongyu/oh-my-openagent/issues/9887), [#9889](https://github.com/code-yeongyu/oh-my-openagent/pull/9889))
 
 **Internal: the model-version migration skip bookkeeping is cleaned up.** The set of already-migrated models is now built once per run, and the comment describes the source-keyed rule; behaviour is unchanged. ([#10145](https://github.com/code-yeongyu/oh-my-openagent/pull/10145))
