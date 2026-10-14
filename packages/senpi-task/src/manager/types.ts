@@ -29,6 +29,7 @@ import type { TaskConcurrency } from "./concurrency"
 import type { InheritedExtensions } from "../runners/rpc/parent-extensions"
 import type { WorkpoolEngine } from "../workpool/engine"
 import type { ChildExtensionEvent } from "../runners/child-extension-events"
+import type { ExitConfirmationSchedule } from "./provisional-exit"
 
 export type { ExecutionMode, ExecutionModeGate } from "./execution-mode"
 
@@ -150,6 +151,9 @@ export type StartResult =
       readonly status: "running" | "pending"
       readonly name: string
       readonly resolved_model?: ResolvedModelRecord
+      // The model the child ACTUALLY started on, read from the child itself (never the plan) -
+      // absent for a queued start that has not launched yet (#9722).
+      readonly effective_model?: ResolvedModelRecord
       readonly queue_position?: number
       readonly name_warning?: string
       // Where an isolated child is working. The merge outcome is NOT here: it does not exist yet.
@@ -216,6 +220,8 @@ export type ContinueResult =
     }
   | { readonly kind: "not_continuable"; readonly task_id?: string; readonly reason: string; readonly suggestion: string }
 
+export type ForgetOptions = { readonly path: "park" | "evict" } | { readonly path: "end"; readonly reason?: "target_gone" }
+
 export type ListScope =
   | { readonly scope: "parent-session"; readonly session_id: string }
   | { readonly scope: "all" }
@@ -261,6 +267,7 @@ export type TaskManagerOptions = {
   readonly config: OmoTaskSettings
   readonly cwd: string
   readonly now?: () => number
+  readonly scheduleExitConfirmation?: ExitConfirmationSchedule
   // Injected by lifecycle (todo 12). Steering-driven cancel delegates destruction here; defaults to
   // a no-op so the manager stays usable before lifecycle wiring lands.
   readonly destruction?: DestructionPort
@@ -302,6 +309,7 @@ export type TaskManager = {
   cancelTask(idOrName: string, reason?: string, options?: CancelOptions): Promise<CancelOutcome>
   get(taskId: string): TaskRecord | undefined
   hasPendingSends?(taskId: string): boolean
+  hasInFlightSends?(taskId: string): boolean
   tryClaimEviction?(taskId: string): boolean
   releaseEviction?(taskId: string): void
   isEvicting?(taskId: string): boolean
@@ -315,7 +323,7 @@ export type TaskManager = {
   runStatsSnapshot?(taskId: string): TaskRunStats | undefined
   // W1-V F3: prune a live handle (and its per-epoch release/background bookkeeping) so the lifecycle
   // destruction port and eviction path never leave a stale handle behind or grow #live unbounded.
-  forget(taskId: string): void
+  forget(taskId: string, options: ForgetOptions): void
   // Live-handle read seam for the wiring's ResidencyRegistry (W1-V F7: registry and #live share one
   // forget path). Returns the ManagedChildHandle for a task this process still owns, if any.
   getResidentHandle(taskId: string): ManagedChildHandle | undefined

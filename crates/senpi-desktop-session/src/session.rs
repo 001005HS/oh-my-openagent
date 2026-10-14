@@ -99,7 +99,8 @@ impl Session {
         self.capabilities.lock().clone()
     }
 
-    /// Re-creates the backend for `options.display` and opens the session.
+    /// Opens or reconfigures the session. Cursor-only changes preserve the
+    /// backend, refs, frames, stop latch and control grant.
     /// The reply is [`Response::Capabilities`].
     pub fn open(&self, options: DesktopSessionOptions) -> Pending {
         self.enqueue(|reply| Message::Open { options, reply })
@@ -151,15 +152,16 @@ fn serve(mut worker: Worker, requests: &flume::Receiver<Message>) {
             // A waiter that already gave up (deadline or `$/cancel`) dropped
             // its receiver: its request must not reach the desktop.
             Message::Open { reply, .. } | Message::Op { reply, .. } if reply.is_disconnected() => continue,
-            Message::Open { options, reply } => (
-                reply,
-                guarded(|| Ok(Response::Capabilities(worker.open(options)))),
-            ),
+            Message::Open { options, reply } => (reply, guarded(|| Ok(Response::Capabilities(worker.open(options))))),
             Message::Op { op, reply } => {
                 // `$/cancel` or a deadline drops the waiter: that is the
                 // request's cancellation signal while it runs.
-                let result = guarded(|| worker.process(op, &|| reply.is_disconnected()));
-                (reply, result)
+                worker.dispatch(
+                    op,
+                    &|| reply.is_disconnected(),
+                    |result| reply.send(result).is_ok(),
+                );
+                continue;
             }
         };
         // The waiter may give up while the request runs; its result is then moot.
@@ -204,8 +206,7 @@ impl Pending {
     /// The request's own error, `Timeout` past the deadline, or `Internal`
     /// when the session thread ended without replying.
     pub async fn wait(self) -> CoreResult<Response> {
-        let timed_out =
-            |what: &str| DesktopError::timeout(format!("{what} within {} ms", self.budget.as_millis()));
+        let timed_out = |what: &str| DesktopError::timeout(format!("{what} within {} ms", self.budget.as_millis()));
         let lost = || DesktopError::internal(format!("{THREAD_NAME} ended without replying"));
         match self.kind {
             PendingKind::Ready(result) => *result,

@@ -1,3 +1,51 @@
+## 2026-10-12 - OmO Native retires the Codex-compatible app-server command (#10033)
+
+`omo app-server` is no longer a launch path. The npm launcher and the compiled entry answer the retired command with a diagnostic and exit 2 instead of forwarding it to the engine with the OmO extension appended, so the old invocation cannot become a prompt. OmO Native keeps its RPC host, daemon, thread, doctor and every one-shot engine command dispatch unchanged (#9572/#9573 remain the dispatch contract).
+
+`bin/lib/launcher.js` and `compile-entry.ts` share the refusal in `bin/lib/retired-command.js`; `compile-args.ts` drops the app-server extension placement and banner special case; `bin/lib/engine-commands.js` and `bin/lib/doctor.js` no longer name the retired mode. Protocol-only launcher/compile tests are removed with the behavior, the parity test routes every other argv constant the installed engine exports and keeps excluding `APP_SERVER_COMMAND_ARGV` (asserting `app-server` is never handed to the engine) until the pinned engine is a Senpi release without it, and shared-behavior fixtures that borrowed the app-server mode (doctor stale-engine classification, `--` delimiter handling) use remaining modes instead. Full removal lands when the pinned engine is the Senpi release that removes the compatibility implementation; this change is source-only and keeps the current pin.
+
+## 2026-10-11 - Eval smoke and daemon waits cover the engine stop budget (#9836)
+
+The eval smoke derives its shutdown wait and outer execution deadline from the pinned Senpi stop budget instead of 30/60-second cutoffs. It accounts for every endpoint's serial stop request and observation wait, and a shutdown failure includes the owning pids and command output. A normal stop still returns as soon as the generations and claims end.
+
+`daemon stop --all --wait --timeout` cannot shorten the engine's own shutdown budget, including `SENPI_RPC_CHILD_STALLED_STOP_MAX_MS` overrides. The existing 600-second default remains for draining work; it already covers the ordinary engine budget. Senpi does not publicly export the budget in 2026.10.10-12, so one shared helper mirrors its formula, and a compatibility test checks the installed engine's actual `STOP_WAIT_BUDGET_MS` for default, raised and invalid environment values.
+
+## 2026-10-11 - The never-replies doctor test pins the whole probe timeout message (#9742 follow-up)
+
+The fake engine in `computer-use-doctor-failures.test.ts` never replies, so the phase in the timeout report is deterministic. The test asserted only the message shape with `/(phase: [^)]+)$/`, which accepted any phase label; it now asserts the exact message ending in `(phase: requests sent, awaiting engine.hello and capabilities)`.
+
+## 2026-10-09 - Settle native logout refresh failures and crash recovery (#9833)
+
+The regenerated auth bundle distinguishes refresh refusals from unconfirmed outcomes. Both clear locally and exit successfully. The unconfirmed-revocation warning is skipped only for `account_deleted` and `reauth_required`, where the service has already revoked the device; `unauthorized`, `invalid_grant` and every unconfirmed outcome warn. Crash recovery never replays a refresh token marked uncertain.
+
+## 2026-10-09 - Recover native sign-in after TLS and opener failures (#9831 follow-up)
+
+The refreshed authentication bundle treats certificate and proven connection failures as retryable, refreshes safe expired credentials before logout revocation, and preserves an accepted callback despite browser-opener failure. Secret-output and chooser/C1-control regression tests cover the native command surface.
+
+## 2026-10-09 - Harden native service sign-in recovery (#9831)
+
+The regenerated authentication bundle retains offline credentials, prevents replay of refresh tokens with unknown outcomes, sanitizes terminal output, backs off device polling on rate limits, and attempts server-side device revocation on logout while always clearing local credentials.
+
+## 2026-10-09 - Route CLI service sign-in before launching the engine (#9829)
+
+The npm launcher and compiled entry now handle `omo login`, `omo logout`, and `omo whoami` as standalone service commands. They share the toolkit's PKCE/device flows and OS-only credential storage. The npm payload includes a generated command bundle, checked against source before shipping; a runtime without Bun.secrets reports the requirement instead of saving credentials to disk.
+
+## 2026-10-04 - Every bun is held to the engine's 1.4 floor; a too-old bun you chose says so at startup (#9563)
+
+The engine needs bun 1.4 (`node:sqlite`, and the `worker_threads` compatibility the JS eval kernel uses), and `BUN_MIN_VERSION` said so, but `bin/lib/bun-runtime.js` applied the floor only to a bun it discovered on an npm install. A `bun add -g` install re-exec'd under its bun with no probe, and the POSIX bun-global shim runs bun directly, where "already on bun" stayed put whatever the version. So on bun 1.3.x, `/computer on` failed with `ResolveMessage: No such built-in module: node:sqlite`, the first of several things that could not work there.
+
+Now every path checks the floor. A bun the user chose (a bun-global install or `OMO_RUNTIME=bun`) that is older stops at startup with `omo: OmO needs Bun >= 1.4.0 (found 1.3.14); run \`bun upgrade\`` instead of silently switching runtimes. Any other install keeps using node when the bun it finds is older. A process already running on an older bun that nobody chose hands off to a real node (bun's own `node` shim does not count), pinned with `OMO_RUNTIME=node` so it cannot bounce back. With no real node, it fails with the same message. Bun 1.4+ is unchanged, apart from one `bun --version` probe on the node-launched path of a bun-global install.
+
+## 2026-10-04 - The provisioned-handoff test's teardown no longer fails the Windows shard (#9556)
+
+`packages/omo-native/test/provisioned-handoff.test.ts` removed its temp root with a bare `rmSync` in `afterAll`. On Windows, a file the just-exited compiled `omo` child still held made it throw `EBUSY`; bun reported that as an unnamed failed test and failed `test (windows-latest, 2/2)` on unrelated PRs. The teardown now uses the shared `test-support/remove-tree.ts` `removeTree`, which retries a transient `EBUSY`/`EPERM` within a bounded budget and still throws a persistent one.
+
+## 2026-10-04 - Every one-shot engine command reaches the engine, so `omo models discover` works (#9572)
+
+The engine dispatches its one-shot commands on `argv[0]`, but the launcher handed only a fixed list straight through (`install, remove, list, config, auth, app-server, host`, plus `update`) and put `--extension <plugin>` in front of everything else. So `omo models discover <provider>` started an interactive session instead of discovering models, and `omo schedule ...` and the `uninstall` alias of `remove` did the same.
+
+`bin/lib/engine-commands.js` (`isEngineCommand`) now names every command the engine dispatches before a session starts, including `models discover`, `schedule` and `uninstall`. The npm launcher and the compiled entry (`compile-args.ts`) both hand those over unchanged. `app-server` keeps its plugin after its arguments, and a prompt that merely starts with `models` is still a chat launch with the plugin. `test/engine-commands.test.ts` walks the installed engine's own dispatch (`cli/deferred-commands`, the package verbs, auth, `models discover`), so a command the engine adds fails until the launcher routes it.
+
 ## 2026-10-02 - Gate each platform publish on that platform's release-binary smoke (#9385)
 
 In `.github/workflows/publish-platform.yml` the build leg uploaded the npm payload artifact (`binary-<platform>`)

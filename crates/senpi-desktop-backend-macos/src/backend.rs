@@ -8,6 +8,7 @@ use senpi_desktop_core::backend::{Backend, DeliveryMode, PointerEvent};
 use senpi_desktop_core::error::{CoreResult, DesktopError, TccPermission};
 use senpi_desktop_core::frame::FrameGeometry;
 use senpi_desktop_core::keys::KeyName;
+use senpi_desktop_core::menus::MenuItem;
 use senpi_desktop_core::types::{
     CaptureCaps, DesktopCapabilities, DesktopDisplay, DesktopPoint, DesktopWindow, DisplaySelector,
     FrontWindow, Target,
@@ -24,15 +25,42 @@ pub struct MacosBackend {
     capture: MacCapture,
     input: MacInput,
     ax: MacAx,
+    overlay: crate::overlay::Overlay,
 }
 
 impl MacosBackend {
     pub fn new(display: DisplaySelector) -> CoreResult<Self> {
+        let overlay = crate::overlay::Overlay::default();
         Ok(Self {
-            capture: MacCapture::new(display, Screencapture::system()),
-            input: MacInput::new(CanaryMode::Session)?,
-            ax: MacAx::new(),
+            capture: MacCapture::new(display, Screencapture::system()).with_overlay(overlay.clone()),
+            input: MacInput::new(CanaryMode::Session)?.with_overlay(overlay.clone()),
+            ax: MacAx::with_overlay(overlay.clone()),
+            overlay,
         })
+    }
+
+    /// Display-only setting; it does not change delivery mode or control admission.
+    pub fn set_show_cursor(&mut self, enabled: bool) {
+        self.overlay.configure(enabled);
+    }
+
+    pub fn overlay_available(&self) -> bool {
+        self.overlay.available()
+    }
+
+    fn show_typing_target(&self, target: &Target) {
+        if !self.overlay.available() {
+            return;
+        }
+        if let Ok(windows) = self.capture.windows() {
+            let window = windows.iter().find(|window| match target {
+                Target::Desktop | Target::Display(_) => window.focused,
+                Target::Window(id) => window.id == *id,
+            });
+            if let Some(window) = window {
+                self.ax.show_typing_target(window);
+            }
+        }
     }
 
     /// Applies the `computer.macosCanary` setting (`session` default).
@@ -71,6 +99,7 @@ impl MacosBackend {
             input: trusted,
             ax: trusted,
             background_window_input: trusted && crate::skylight::is_available() && !canary_failed,
+            cursor_overlay: self.overlay_available(),
             delivery_modes: vec!["background".to_string(), "foreground".to_string()],
             capture_permission: permission_label(capture_permission),
             input_permission: permission_label(trusted),
@@ -112,8 +141,12 @@ impl Backend for MacosBackend {
         MacosBackend::capabilities(self)
     }
 
+    fn set_show_cursor(&mut self, enabled: bool) {
+        MacosBackend::set_show_cursor(self, enabled);
+    }
+
     fn displays(&mut self) -> CoreResult<Vec<DesktopDisplay>> {
-        self.capture.displays()
+        self.capture.all_displays()
     }
 
     fn windows(&mut self) -> CoreResult<Vec<DesktopWindow>> {
@@ -137,6 +170,7 @@ impl Backend for MacosBackend {
 
     fn type_text(&mut self, target: &Target, text: &str, mode: DeliveryMode) -> CoreResult<()> {
         Self::require_input_permission()?;
+        self.show_typing_target(target);
         self.input.type_text(target, text, mode, &self.capture)
     }
 
@@ -157,12 +191,42 @@ impl Backend for MacosBackend {
         delivered: &mut dyn FnMut(),
     ) -> CoreResult<()> {
         Self::require_input_permission()?;
+        self.show_typing_target(target);
         self.input.type_text_interruptible(target, text, mode, &self.capture, check_stop, delivered)
     }
 
     fn key_chord(&mut self, target: &Target, keys: &[KeyName], mode: DeliveryMode) -> CoreResult<()> {
         Self::require_input_permission()?;
+        self.show_typing_target(target);
         self.input.key_chord(target, keys, mode, &self.capture)
+    }
+
+    fn menu_items(&mut self, window: &DesktopWindow, path: &[String]) -> CoreResult<Vec<MenuItem>> {
+        Self::require_input_permission()?;
+        crate::ax::menus::items(window, path)
+    }
+
+    fn menu_select(
+        &mut self,
+        window: &DesktopWindow,
+        path: &[String],
+        delivery: DeliveryMode,
+        check_stop: &dyn Fn() -> CoreResult<()>,
+    ) -> CoreResult<()> {
+        Self::require_input_permission()?;
+        let (input, capture) = (&mut self.input, &self.capture);
+        match delivery {
+            DeliveryMode::Background => crate::ax::menus::select(window, path, check_stop, &mut || {
+                input.make_menu_window_key(window, capture)
+            }),
+            // The window is already key inside the foreground scope, so `make_key` only verifies it.
+            DeliveryMode::Foreground => {
+                crate::ax::menus::preflight(window, path, check_stop)?;
+                input.with_menu_window_foreground(window, || {
+                    crate::ax::menus::select(window, path, check_stop, &mut || Ok(()))
+                })
+            }
+        }
     }
 
     fn raise_window(&mut self, id: &str) -> CoreResult<()> {
