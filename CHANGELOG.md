@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**A client re-attaching to a retained session gets the full task snapshot again, and can pull it on demand.** The task RPC bridge listens for `session_resumed`, which senpi fires when the first client re-attaches to a still-open session, and re-emits the complete `omo.task.updated` snapshot instead of waiting for the next store change to alter its fingerprint; a new `omo.task.list` request answers the same payload for the parent session it names. ([#10016](https://github.com/code-yeongyu/oh-my-openagent/issues/10016))
+
 **`omo app-server` is retired.** The Codex app-server protocol is gone from the engine, so omo no longer forwards `omo app-server`: it exits with status 2 and points to `omo --mode rpc` or `omo host`, which are the supported ways to drive a session from another program. `omo doctor`, the ulw-loop skill and the task status view no longer mention it. ([#10033](https://github.com/code-yeongyu/oh-my-openagent/issues/10033), [#10098](https://github.com/code-yeongyu/oh-my-openagent/pull/10098))
 
 ## [5.1.33] - 2026-10-13

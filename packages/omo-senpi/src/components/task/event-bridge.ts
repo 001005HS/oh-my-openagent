@@ -87,6 +87,13 @@ export function wireEventBridge(
     taskRpc.attach()
   })
 
+  // A retained session outlives its clients: the first reattach fires session_resumed without
+  // another session_start, so the bridge re-attach clears the dedupe fingerprint and pushes the
+  // full snapshot for the new client (#10016).
+  pi.on("session_resumed", () => {
+    taskRpc.attach()
+  })
+
   pi.on("session_before_switch", (_payload, eventCtx) => {
     taskRpc.detach()
     engine.runtime.captureFrom(asLiveContext(eventCtx))
