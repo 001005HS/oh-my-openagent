@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Thread tools keep non-ASCII text whole, refuse look-alike names, and keep fuzzy hand-offs in the workspace.** A reply from a session host whose Korean, Japanese or emoji text arrived split across socket reads came back with replacement characters; frames are now decoded as one UTF-8 stream. `thread_create` and `thread_rename` compare names the way addressing resolves them (NFKC, case, collapsed spaces), so a full-width or double-spaced copy of an existing name is `name_conflict` instead of a second thread that later turns every lookup into `ambiguous_target`. A fuzzy `thread_handoff` picks among threads in the caller's workspace unless `all_scope` is set, where it used to pick a better-scoring thread in another project and then refuse it. Listing a dead endpoint's sessions reads two bounded windows of each transcript instead of the whole file. ([#9356](https://github.com/code-yeongyu/oh-my-openagent/issues/9356))
+
 **Internal: the model-version migration skip bookkeeping is cleaned up.** The set of already-migrated models is now built once per run, and the comment describes the source-keyed rule; behaviour is unchanged. ([#10145](https://github.com/code-yeongyu/oh-my-openagent/pull/10145))
 
 **The [CC] `opus` alias and the retired-model migration no longer land on Opus 4.8.** `mapClaudeModelToOpenCode("opus")` now resolves to the current Opus 5.5 id instead of 4.8, and the config migration that upgrades a retired `anthropic/` entry now targets Opus 5.5, so a default or an automatic migration never puts a user on Opus 4.8 without an explicit pick.
