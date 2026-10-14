@@ -634,10 +634,12 @@ class TaskManagerImpl implements TaskManager {
       releaseLease()
       return { kind: "invalid_state", task_id: taskId, reason: `Task ${taskId} moved on while its old session was closing; nothing was re-dispatched.` }
     }
-    const raced = redispatchRefusal(fresh)
-    if (raced !== undefined) {
+    // The old child is gone now: only a task that became terminal (a cancel won) stops the relaunch.
+    // A flag withdrawn mid-teardown (a delivery that read the old handle first) must not strand the
+    // record with no child behind it, so it no longer refuses here.
+    if (isTerminalRecord(fresh)) {
       releaseLease()
-      return raced
+      return { kind: "invalid_state", task_id: taskId, reason: `Task ${taskId} is ${fresh.status}; it ended while its old session was closing, so nothing was re-dispatched.` }
     }
     const respawned = await this.respawn(fresh, undefined)
     if (!respawned.ok) {
