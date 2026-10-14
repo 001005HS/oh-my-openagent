@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { bounded } from "../../lifecycle/__fixtures__/live-parent-clock"
 
 import { adaptRpcHandle } from "../../manager/child-handle"
 import { HOST_TURN_RESUMED_EVENT } from "../../manager/host-turn-resumed"
@@ -256,7 +257,7 @@ describe("host-session handle reattach", () => {
     host.crash()
 
     // then
-    expect(await parked.promise).toBe("daemon_unavailable")
+    expect(await bounded(parked.promise)).toBe("daemon_unavailable")
     expect(handle.exitOutcome()).toBeUndefined()
     expect(handle.attached).toBe(false)
     await handle.dispose()

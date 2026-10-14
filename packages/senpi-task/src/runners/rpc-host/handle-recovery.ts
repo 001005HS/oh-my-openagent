@@ -1,7 +1,7 @@
-import { isRpcResponseTimeout } from "../../manager/start-failure-cause"
 import type { HostSessionIdentity, HostSessionPort } from "./handle-port"
 import { recoverLostTransport, type HostShardEvents } from "./handle-reattach"
 import {
+  isRpcResponseTimeout,
   isTransportLossError,
   type HostSessionReattach,
   type HostSessionReattached,

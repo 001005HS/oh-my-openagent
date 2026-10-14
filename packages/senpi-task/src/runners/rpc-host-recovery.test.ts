@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { bounded } from "../lifecycle/__fixtures__/live-parent-clock"
 
 import { HOST_SESSION_REATTACH_TAG } from "./rpc-host/reattach"
 import { HostSessionClient } from "./rpc-host/session-client"
@@ -123,7 +124,7 @@ describe("RpcHostRunner transport recovery", () => {
 
       // when
       await host.restart()
-      expect(await parked.promise).toBe("daemon_unavailable")
+      expect(await bounded(parked.promise)).toBe("daemon_unavailable")
       await handle.dispose()
 
       // then
@@ -148,7 +149,7 @@ describe("RpcHostRunner transport recovery", () => {
     host.crash()
 
     // then
-    expect(await parked.promise).toBe("daemon_unavailable")
+    expect(await bounded(parked.promise)).toBe("daemon_unavailable")
     expect(handle.exitOutcome()).toBeUndefined()
     await handle.dispose()
   })
