@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 **macOS computer use shows a display-only virtual cursor by default.** The overlay follows the agent's pointer actions without moving your real cursor or changing input permissions; set `computer.showCursor: false` to hide it. ([#9887](https://github.com/code-yeongyu/oh-my-openagent/issues/9887), [#9889](https://github.com/code-yeongyu/oh-my-openagent/pull/9889))
+**`omo app-server` is retired.** The Codex app-server protocol is gone from the engine, so omo no longer forwards `omo app-server`: it exits with status 2 and points to `omo --mode rpc` or `omo host`, which are the supported ways to drive a session from another program. `omo doctor`, the ulw-loop skill and the task status view no longer mention it. ([#10033](https://github.com/code-yeongyu/oh-my-openagent/issues/10033), [#10098](https://github.com/code-yeongyu/oh-my-openagent/pull/10098))
 
 ## [5.1.33] - 2026-10-13
 
