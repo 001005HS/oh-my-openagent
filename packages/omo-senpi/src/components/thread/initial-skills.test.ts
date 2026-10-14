@@ -107,20 +107,20 @@ test("#given a skill the workspace loads #when a thread is created with it #then
   const agentDir = tempDir("initial-skills-agent-")
   writeSkill(join(agentDir, "skills"), "gateway-lead", "You lead the gateway scope.")
   const c = creator(agentDir)
-  expect(await c.create({ skills: ["gateway-lead"] })).toMatchObject({ kind: "ok", thread: { thread_id: "dur-new", skills: ["gateway-lead"] } })
+  expect(await c.create({ skills: ["gateway-lead"] })).toMatchObject({ kind: "ok", thread: { thread_id: "dur-new", requested_skills: ["gateway-lead"] } })
   expect(c.opened).toHaveLength(1)
   expect(c.opened[0]?.initialSkills).toEqual(["gateway-lead"])
   expect(c.prompts).toEqual([])
 })
 
-test("#given a name no installed skill has #when a thread is created with it #then the create is refused naming it and no session is opened", async () => {
-  const agentDir = tempDir("initial-skills-agent-")
-  writeSkill(join(agentDir, "skills"), "gateway-lead", "You lead.")
-  const c = creator(agentDir)
-  const refused = await c.create({ skills: ["gateway-lead", "no-such-skill"] })
-  expect(refused).toMatchObject({ kind: "error", error: { code: "invalid_arguments", details: { unknown: ["no-such-skill"] } } })
-  expect((refused as { error: { message: string } }).error.message).toContain("no-such-skill")
-  expect(c.opened).toEqual([])
+test("#given a skill only a root the creator cannot see holds (~/.agents/skills, a package, a settings path) #when a thread is created with it #then the create passes the name on and the session's own registry decides", async () => {
+  // The creator holds no copy of senpi's skill roots, trust rules or package skills, and the session may
+  // open in the host's default cwd when none is passed. Only the new session's registry knows what it
+  // loads, so the creator checks names only and the session applies or skips (and logs) each one.
+  const c = creator(tempDir("initial-skills-agent-"))
+  const created = await c.create({ skills: ["skill-from-agents-root"] })
+  expect(created).toMatchObject({ kind: "ok", thread: { requested_skills: ["skill-from-agents-root"] } })
+  expect(c.opened[0]?.initialSkills).toEqual(["skill-from-agents-root"])
 })
 
 test("#given a path or raw text instead of a name #when a thread is created with it #then it is refused as not a skill name and no session is opened", async () => {
@@ -140,7 +140,7 @@ test("#given a thread created without skills #when it opens #then nothing about 
   const c = creator(tempDir("initial-skills-agent-"))
   const created = await c.create({})
   expect(created).toMatchObject({ kind: "ok" })
-  expect((created as { thread: Record<string, unknown> }).thread.skills).toBeUndefined()
+  expect((created as { thread: Record<string, unknown> }).thread.requested_skills).toBeUndefined()
   expect(c.opened[0]?.initialSkills).toBeUndefined()
 })
 

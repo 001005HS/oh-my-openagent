@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**`thread_create` can start a thread with skills it follows from its first turn.** Pass `skills: ["<name>", ...]` with the names of installed skills; the new session applies each one as if it were loaded with `/skill`, without a slash command and without starting a turn, and keeps applying it after a restart. A path, raw text or a name no installed skill has refuses the create, and nothing is opened. The result lists the attached skills as `thread.skills`.
+**`thread_create` can start a thread with skills it follows from its first turn.** Pass `skills: ["<name>", ...]` with the names of installed skills; the new session applies each one as if it were loaded with `/skill`, without a slash command and without starting a turn, and keeps applying it after a restart. A path or raw text refuses the create, and nothing is opened. The new session applies each skill its own registry holds (the same roots and trust rules as `/skill`) and logs any it does not; the result echoes the names passed as `thread.requested_skills`.
 
 **A screenshot never captures a live virtual cursor that capture could not exclude.** When another session's cursor helper is still open but missing from what ScreenCaptureKit lists, the capture now fails instead of taking a frame that could show that cursor; a helper that has really closed is still skipped without an error. ([#10161](https://github.com/code-yeongyu/oh-my-openagent/pull/10161), follow-up to [#9889](https://github.com/code-yeongyu/oh-my-openagent/pull/9889))
 

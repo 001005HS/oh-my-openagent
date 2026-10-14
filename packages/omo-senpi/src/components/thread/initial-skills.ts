@@ -1,17 +1,14 @@
-import { existsSync, readFileSync } from "node:fs"
-import { join } from "node:path"
+import { readFileSync } from "node:fs"
 
 import type { ComponentContext, SenpiExtensionAPI } from "../../extension/types"
-import { readDisabledSkills } from "../bundled-skills/contributed-skill"
-import { resolveBundledSkillsDir } from "../bundled-skills"
 
 /**
  * Skills a session created by `thread_create` / `omo thread create` runs with from its first turn
  * (`skills: ["gateway-lead"]`): each named skill's body becomes part of the session's instructions,
  * without a slash command and without starting a turn.
  *
- * - The creator checks every name before the session exists: a name that is not a skill name, or
- *   that no skill directory the session would load from holds, refuses the create.
+ * - The creator checks every name's shape before the session exists: anything that is not a skill
+ *   name (a path, raw text) refuses the create. Whether the skill is installed is the session's call.
  * - The list rides on the `open_session` context (`initial_skills`), and the session's own thread
  *   component copies it into a durable session entry (`omo-initial-skills`) on its first start, so a
  *   restart that re-opens the session re-applies it whatever the re-open passed.
@@ -27,30 +24,18 @@ const SKILL_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/
 export type InitialSkillsCheck =
   | { readonly kind: "ok"; readonly names: readonly string[] }
   | { readonly kind: "invalid"; readonly names: readonly string[] }
-  | { readonly kind: "unknown"; readonly names: readonly string[] }
-
-export type SkillLookup = { readonly cwd: string; readonly agentDir: string; readonly env?: Record<string, string | undefined>; readonly bundledSkillsDir?: string }
 
 /**
- * Where a session would load a skill from: omo's bundled skills (unless `disabled_skills` hides
- * it), then the project's `.senpi/skills`, then the agent dir's `skills`.
+ * Names only: a path, raw text or anything not shaped like a skill name is `invalid`. Duplicates
+ * collapse, order kept. Whether a name is installed is not checked here: the creator holds no copy of
+ * senpi's skill roots (`~/.agents/skills`, ancestor `.agents/skills` under trust, settings paths,
+ * package skills, omo's bundled skills) and the session may open in the host's default cwd, so only the
+ * new session's own registry can answer that. It applies the names it holds and logs the rest.
  */
-export function findSkillFile(name: string, lookup: SkillLookup): string | undefined {
-  const bundled = lookup.bundledSkillsDir ?? resolveBundledSkillsDir()
-  const dirs: string[] = []
-  if (bundled !== undefined && !readDisabledSkills(lookup.cwd, lookup.env ?? process.env).has(name)) dirs.push(bundled)
-  dirs.push(join(lookup.cwd, ".senpi", "skills"), join(lookup.agentDir, "skills"))
-  return dirs.map((dir) => join(dir, name, "SKILL.md")).find((file) => existsSync(file))
-}
-
-/** Names only: a path, raw text or anything not shaped like a skill name is `invalid`; a name no skill directory holds is `unknown`. Duplicates collapse, order kept. */
-export function checkInitialSkills(names: readonly string[], lookup: SkillLookup): InitialSkillsCheck {
+export function checkInitialSkills(names: readonly string[]): InitialSkillsCheck {
   const unique = [...new Set(names)]
   const invalid = unique.filter((name) => !SKILL_NAME.test(name))
-  if (invalid.length > 0) return { kind: "invalid", names: invalid }
-  const unknown = unique.filter((name) => findSkillFile(name, lookup) === undefined)
-  if (unknown.length > 0) return { kind: "unknown", names: unknown }
-  return { kind: "ok", names: unique }
+  return invalid.length > 0 ? { kind: "invalid", names: invalid } : { kind: "ok", names: unique }
 }
 
 function namesFrom(value: unknown): readonly string[] | undefined {
