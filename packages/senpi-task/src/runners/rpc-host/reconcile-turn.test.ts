@@ -41,7 +41,7 @@ function scenario(options: {
 
 describe("host turn reconciliation authority", () => {
   for (const prompt of [reattachContinuationPrompt(), HOST_RESPAWN_CONTINUATION]) {
-    test(`idle unanswered ${prompt === HOST_RESPAWN_CONTINUATION ? "respawn" : "reattach"} continuation interrupts instead of empty success`, async () => {
+    test(`idle unanswered ${prompt === HOST_RESPAWN_CONTINUATION ? "respawn" : "reattach"} continuation interrupts instead of empty success, even with an applied receipt`, async () => {
       const f = scenario({ receipt: { state: "applied" } })
       appendFileSync(f.path, `\n${JSON.stringify({
         type: "message", message: { role: "user", content: [{ type: "text", text: prompt }] },
