@@ -347,6 +347,19 @@ describe("thread session controls", () => {
     expect(wide).toMatchObject({ kind: "ok", thread: { thread_id: "dur-far" }, resolved_by: "fuzzy" })
   })
 
+  test("#given a caller with no workspace root #when a fuzzy handoff runs without all_scope #then it is caller_context_missing, as the exact ladder answers, not not_found", async () => {
+    // given
+    const f = fixture()
+    f.sessions.push({ sessionId: "route-self", durableSessionId: "dur-self", cwd: process.cwd(), name: "self" })
+
+    // when
+    const result = await runner(f, "unknown-caller", "")("thread_handoff", { thread: "peer", match: "fuzzy", message: "continue" }, "dur-self", "call-blank-root")
+
+    // then
+    expect(result).toMatchObject({ kind: "error", error: { code: "caller_context_missing", next_action: expect.stringContaining("all_scope") } })
+    expect(f.prompt).not.toHaveBeenCalled()
+  })
+
   test("fuzzy handoff cannot select the caller when it is the only candidate", async () => {
     const f = fixture()
     expect(await runner(f)("thread_handoff", { thread: "peer", match: "fuzzy", message: "continue" }, "dur-peer")).toMatchObject({ kind: "error", error: { code: "not_found" } })
