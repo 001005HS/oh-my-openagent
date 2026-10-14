@@ -28,6 +28,21 @@ function migrationKey(oldModel: string, newModel: string): string {
   return `model-version:${oldModel}->${newModel}`
 }
 
+function migrationSourceKey(oldModel: string): string {
+  return `model-version:${oldModel}->`
+}
+
+function hasAppliedMigration(appliedMigrations: Set<string> | undefined, oldModel: string): boolean {
+  if (!appliedMigrations) return false
+  const sourceKey = migrationSourceKey(oldModel)
+  for (const key of appliedMigrations) {
+    // A migration away from this source counts as applied whatever its target was,
+    // so a user's deliberate revert is never overridden by a later target bump.
+    if (key.startsWith(sourceKey)) return true
+  }
+  return false
+}
+
 export function migrateModelVersions(
   configs: Record<string, unknown>,
   appliedMigrations?: Set<string>
@@ -49,7 +64,7 @@ export function migrateModelVersions(
         const mKey = migrationKey(oldModel, newModel)
 
         // Skip if this migration was already applied (user may have reverted)
-        if (appliedMigrations?.has(mKey)) {
+        if (hasAppliedMigration(appliedMigrations, oldModel)) {
           migrated[key] = value
           continue
         }
