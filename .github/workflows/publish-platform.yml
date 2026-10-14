@@ -89,9 +89,11 @@ jobs:
             -framework AppKit -framework ScreenCaptureKit -framework CoreVideo \
             crates/senpi-desktop-backend-macos/native/senpi-desktop-capture-helper.m \
             -o "$HELPER"
-          # The helper carries the engine's identifier (build.rs signs dev builds the same way) so both
-          # builds present one code identity to TCC. It is signed, not notarized: the engine writes it
-          # unquarantined into a private directory at runtime, so Gatekeeper never assesses it.
+          # The helper carries the engine's identifier (build.rs signs dev builds the same way). The
+          # engine stages it at a fresh temp path on every start, so TCC charges Screen Recording to the
+          # responsible process (the app that launched OmO), not to the helper. It is signed, not
+          # notarized: the engine writes it unquarantined into a private directory at runtime, so
+          # Gatekeeper never assesses it.
           bash .github/scripts/macos-sign-and-notarize.sh --sign-only \
             --identifier ai.sisyphuslabs.senpi-desktop-engine "$HELPER"
           test -s "$HELPER"

@@ -6,7 +6,9 @@
 #   macos-sign-and-notarize.sh [--sign-only] --identifier <id> [--entitlements <plist>] <file>...
 #
 # --sign-only signs and verifies (team, hardened runtime) without notarizing, for code that is
-# never assessed by Gatekeeper, such as a helper written unquarantined at runtime.
+# never assessed by Gatekeeper, such as a helper written unquarantined at runtime. That holds
+# only while the writer does not opt into quarantine; an app bundle that sets
+# LSFileQuarantineEnabled would need the helper notarized again.
 #
 # Signing material comes from the environment (GitHub Actions secrets):
 #   CSC_LINK          base64 of the Developer ID Application .p12
