@@ -19,7 +19,7 @@ fn an_immediately_exiting_helper_routes_to_fallback_without_error() {
         DisplaySelector::All,
         Screencapture::with("/usr/bin/true".into(), Duration::from_secs(60), || true),
     );
-    let result = capture.capture_via_sck(&Target::Window("42".to_owned()), &[]);
+    let result = capture.capture_via_sck(&Target::Window("42".to_owned()), &[], &[]);
     assert!(matches!(result, Ok(None)), "{result:?}");
 }
 
