@@ -48,7 +48,7 @@ describe("event-bridge omo.task.list request", () => {
     ).resolves.toMatchObject({ kind: "invalid_arguments" })
     await expect(
       invokeRpc("omo.task.list", { parent_session_id: "other-session" }),
-    ).resolves.toEqual({ kind: "not_found", reason: "Task not found." })
+    ).resolves.toEqual({ kind: "not_found", reason: "No such parent session on this connection." })
   })
 
   it("#given no attached parent session #when omo.task.list runs #then it answers unavailable", async () => {
