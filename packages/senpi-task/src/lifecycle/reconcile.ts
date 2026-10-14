@@ -49,7 +49,11 @@ export async function reconcileOnSessionStart(
       continue
     }
     if (hasLiveResidentHandle(context, record.task_id)) {
-      if (record.uncertain_inputs !== undefined) await context.registry.get(record.task_id)?.reconcileInputs?.()
+      // Each retry can wait out a full request deadline; never hold session start on it.
+      if (record.uncertain_inputs !== undefined) {
+        void context.registry.get(record.task_id)?.reconcileInputs?.()
+          ?.catch((error: unknown) => log("senpi-task uncertain input reconcile failed", { taskId: record.task_id, error: String(error) }))
+      }
       outcomes.push({ task_id: record.task_id, kind: "resumed", reason: "owned by this process" })
       continue
     }

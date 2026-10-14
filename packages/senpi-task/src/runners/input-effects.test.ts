@@ -92,7 +92,7 @@ test("#given a timed-out id rebound to different text #when retry conflicts #the
   const rendered = mapSendOutcome({ kind: "failed", task_id: taskId, effect_id: "input",
     reason: conflict.reason, detail: conflict.detail, action: conflict.action })
   expect(rendered.isError).toBe(true)
-  expect(conflict.action).toBe("send the message again with a new id")
+  expect(conflict.action).toBe("send the message again")
 })
 
 test("#given two timeouts #when a reloaded sender reconciles #then the pending payload keeps its original identity", async () => {
@@ -112,6 +112,41 @@ test("#given two timeouts #when a reloaded sender reconciles #then the pending p
   } }).reconcile()
   expect(commands).toHaveLength(3)
   expect(commands[2]).toEqual(commands[0])
+})
+
+test("#given an unacknowledged input #when the cause is the request deadline or a lost connection #then the uncertain reason names that cause", async () => {
+  const { store, taskId } = fixture()
+  const gone = Object.assign(new Error("transport gone"), { name: "RpcTransportGoneError" })
+  const causes: Error[] = [new RpcRequestTimeout("steer", 45_000), gone]
+  const effects = createInputEffects({ taskId, store, send: async () => { throw causes.shift() ?? new Error("unexpected") } })
+  effects.stopRetrying()
+  const timedOut = await effects.send({ type: "steer", message: "a" }).catch(e => e)
+  const lost = await effects.send({ type: "steer", message: "b" }).catch(e => e)
+  expect(timedOut).toBeInstanceOf(InputUncertainError)
+  expect(timedOut.message).toContain("45 s")
+  expect(lost).toBeInstanceOf(InputUncertainError)
+  expect(lost.message).toContain("connection to the host was lost")
+  expect(lost.message).not.toContain("45 s")
+})
+
+test("#given an input left uncertain by an earlier run #when a later run reconciles #then it is not delivered into the new run and the record forgets it", async () => {
+  const { dir, store, taskId } = fixture()
+  const effects = createInputEffects({ taskId, store, send: async () => { throw new RpcRequestTimeout("prompt", 30_000) } })
+  effects.stopRetrying()
+  await expect(effects.send({ type: "prompt", message: "old run" })).rejects.toBeInstanceOf(InputUncertainError)
+  expect(store.load(taskId)?.uncertain_inputs).toHaveLength(1)
+  store.mutate(taskId, record => ({ ...record, notification: { ...record.notification, run_epoch: record.notification.run_epoch + 1 } }))
+  const sent: unknown[] = []
+  const events: string[] = []
+  const reloaded = createTaskRecordStore({ project_dir: dir })
+  const append = reloaded.appendEvent
+  await createInputEffects({ taskId, store: { ...reloaded, appendEvent: (id: string, event: { type: string; payload: unknown }) => {
+    events.push(`${event.type}:${String((event.payload as { reason?: string }).reason)}`)
+    return append(id, event)
+  } }, send: async command => { sent.push(command) } }).reconcile()
+  expect(sent).toEqual([])
+  expect(events).toEqual(["effect_failed:superseded_by_new_run"])
+  expect(store.load(taskId)?.uncertain_inputs).toBeUndefined()
 })
 
 async function bounded<T>(promise: Promise<T>): Promise<T> {

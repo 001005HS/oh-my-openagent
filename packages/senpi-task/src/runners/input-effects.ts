@@ -11,16 +11,22 @@ export type IdentifiedInput = InputCommand & { readonly clientMessageId: string 
 
 export class InputUncertainError extends Error {
   constructor(readonly effectId: string, override readonly cause: Error) {
-    super("uncertain: the host did not acknowledge this message within 30 s; it may still be delivered. omo will confirm by itself; do not resend the same text.", { cause })
+    super(`uncertain: ${unacknowledgedReason(cause)}; it may still be delivered. omo will confirm by itself; do not resend the same text.`, { cause })
   }
+}
+
+function unacknowledgedReason(cause: Error): string {
+  if (cause instanceof RpcRequestTimeout) return `the host did not acknowledge this message within ${Math.round(cause.deadlineMs / 1000)} s`
+  if (cause.name === "RpcTransportGoneError") return "the connection to the host was lost before it acknowledged this message"
+  return "the host did not acknowledge this message before its request deadline"
 }
 
 export class InputConflictError extends Error {
   readonly reason = "effect_id_conflict"
   readonly detail = "this message id is already bound to a different message on the host"
-  readonly action = "send the message again with a new id"
+  readonly action = "send the message again"
   constructor(readonly effectId: string) {
-    super("this message id is already bound to a different message on the host; send the message again with a new id")
+    super("this message id is already bound to a different message on the host; send the message again")
   }
 }
 
@@ -57,7 +63,7 @@ export function createInputEffects(input: {
   const event = (type: string, command: IdentifiedInput, extra: Record<string, unknown> = {}): void => {
     store?.appendEvent(taskId, { type, payload: {
       effect_id: command.clientMessageId,
-      run_epoch: Number(command.clientMessageId.split(":").at(-2)),
+      run_epoch: epochOf(command),
       ...extra,
     } })
   }
@@ -115,8 +121,19 @@ export function createInputEffects(input: {
       }
     },
     async reconcile(): Promise<void> {
-      const commands = store?.load(taskId)?.uncertain_inputs ?? [...pending.values()]
-      await Promise.all(commands.map(retry))
+      const record = store?.load(taskId)
+      const commands = record?.uncertain_inputs ?? [...pending.values()]
+      const currentEpoch = record?.notification.run_epoch
+      const stale = currentEpoch === undefined ? [] : commands.filter(command => epochOf(command) !== currentEpoch)
+      for (const command of stale) {
+        forget(command)
+        event("effect_failed", command, {
+          reason: "superseded_by_new_run",
+          detail: "this message was never confirmed before its run ended, so it is not delivered into a later run",
+          action: "send the message again if the task still needs it",
+        })
+      }
+      await Promise.all(commands.filter(command => !stale.includes(command)).map(retry))
     },
     stopRetrying(): void {
       retrying = false
@@ -124,6 +141,10 @@ export function createInputEffects(input: {
       scheduled.clear()
     },
   }
+}
+
+function epochOf(command: IdentifiedInput): number {
+  return Number(command.clientMessageId.split(":").at(-2))
 }
 
 function isConflict(error: unknown): boolean {

@@ -78,7 +78,7 @@ for (const conflict of [false, true]) {
       expect(events.filter(event => event.type === "effect_uncertain")).toHaveLength(1)
       expect(events.filter(event => event.type === "steered")).toHaveLength(conflict ? 0 : 1)
       if (conflict) expect(events.find(event => event.type === "effect_failed")?.payload).toMatchObject({
-        reason: "effect_id_conflict", action: "send the message again with a new id",
+        reason: "effect_id_conflict", action: "send the message again",
       })
       expect(h.store.load(record.task_id)?.uncertain_inputs).toBeUndefined()
     } finally {
