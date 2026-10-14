@@ -8,8 +8,9 @@ const FETCH_TIMEOUT_MS = 5000
 
 /**
  * The download page, its hero button, its sitemap entry and the /desktop redirect exist only when
- * OMO_WEB_DESKTOP_DOWNLOAD=1. Production deploys do not set it, so merging the page changes nothing
- * on omo.dev until the desktop app launches.
+ * the site was BUILT with OMO_WEB_DESKTOP_DOWNLOAD=1: next.config.ts inlines the value into every
+ * bundle, so a Worker variable has no effect. Production deploys do not set it, so merging changes
+ * nothing on omo.dev; launch = add it to the build step of web-deploy.yml and deploy.
  */
 export function desktopDownloadEnabled(): boolean {
   return process.env.OMO_WEB_DESKTOP_DOWNLOAD === "1"
@@ -66,28 +67,46 @@ function onHost(value: unknown, hosts: ReadonlySet<string>): string | null {
   if (typeof value !== "string") return null
   try {
     const url = new URL(value)
-    return url.protocol === "https:" && hosts.has(url.hostname) ? url.href : null
+    const plain = url.port === "" && url.username === "" && url.password === ""
+    return url.protocol === "https:" && plain && hosts.has(url.hostname) ? url.href : null
   } catch {
     return null
   }
 }
 
-function parseInstaller(key: string, raw: unknown): DesktopInstaller | null {
+/** A plain installer file name: what `SHA256SUMS` lists and the verify commands can take unquoted. */
+const FILE_NAME = /^[A-Za-z0-9._+-]+$/
+
+/**
+ * An installer of this release: on the download host, inside the release's own folder
+ * (`/<channel>/<version>/<file>`), with a plain file name and a well-formed SHA-256.
+ */
+function parseInstaller(folder: string, key: string, raw: unknown): DesktopInstaller | null {
   const platform = PLATFORM_KEYS[key]
   if (!platform || !isRecord(raw) || !isKind(raw.kind)) return null
   const url = onHost(raw.url, new Set([DOWNLOAD_HOST]))
   const sha256 = typeof raw.sha256 === "string" ? raw.sha256.toLowerCase() : ""
   if (url === null || !/^[0-9a-f]{64}$/.test(sha256)) return null
+  const { pathname } = new URL(url)
+  if (!pathname.startsWith(folder)) return null
+  let fileName: string
+  try {
+    fileName = decodeURIComponent(pathname.slice(folder.length))
+  } catch {
+    return null
+  }
+  if (!FILE_NAME.test(fileName)) return null
   const size =
     typeof raw.size === "number" && Number.isSafeInteger(raw.size) && raw.size > 0 ? raw.size : null
-  const fileName = decodeURIComponent(new URL(url).pathname.split("/").pop() ?? "")
   return { ...platform, kind: raw.kind, url, fileName, sha256, size }
 }
 
-function parseInstallers(platforms: unknown): DesktopInstaller[] {
+function parseInstallers(folder: string, platforms: unknown): DesktopInstaller[] {
   if (!isRecord(platforms)) return []
   return Object.entries(platforms).flatMap(([key, value]) =>
-    (Array.isArray(value) ? value : [value]).flatMap((raw) => parseInstaller(key, raw) ?? []),
+    (Array.isArray(value) ? value : [value]).flatMap(
+      (raw) => parseInstaller(folder, key, raw) ?? [],
+    ),
   )
 }
 
@@ -103,10 +122,9 @@ export function parseChannelManifest(channel: DesktopChannel, raw: unknown): Cha
     const launchAt = parseDate(raw.launchAt)
     return launchAt === null ? { status: "unavailable" } : { status: "coming", launchAt }
   }
-  const installers = parseInstallers(raw.platforms)
-  if (!/^[0-9A-Za-z][0-9A-Za-z.+-]*$/.test(raw.version) || installers.length === 0) {
-    return { status: "unavailable" }
-  }
+  if (!/^[0-9A-Za-z][0-9A-Za-z.+-]*$/.test(raw.version)) return { status: "unavailable" }
+  const installers = parseInstallers(`/${channel}/${raw.version}/`, raw.platforms)
+  if (installers.length === 0) return { status: "unavailable" }
   return {
     status: "ready",
     release: {
@@ -130,22 +148,28 @@ export interface FetchChannelOptions {
 /** Statuses the host answers for a channel it does not serve to the public yet (missing or gated). */
 const NOT_PUBLIC_YET: ReadonlySet<number> = new Set([401, 403, 404])
 
-/** `<sha256>  <file name>` lines of a release's SHA256SUMS, keyed by file name. */
-function parseSha256Sums(text: string): ReadonlyMap<string, string> {
+/**
+ * `<sha256>  <file name>` lines of a release's SHA256SUMS, keyed by file name; `null` when a name
+ * appears twice, because then the file does not say which checksum is the release's.
+ */
+function parseSha256Sums(text: string): ReadonlyMap<string, string> | null {
   const sums = new Map<string, string>()
   for (const line of text.split("\n")) {
     const match = /^([0-9a-fA-F]{64}) [ *](.+)$/.exec(line.trim())
-    if (match?.[1] && match[2]) sums.set(match[2], match[1].toLowerCase())
+    if (!match?.[1] || !match[2]) continue
+    if (sums.has(match[2])) return null
+    sums.set(match[2], match[1].toLowerCase())
   }
   return sums
 }
 
-async function fetchFromHost(fetchImpl: FetchLike, url: string, accept: string): Promise<Response> {
-  return fetchImpl(url, {
-    headers: { Accept: accept },
-    cache: "no-store",
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  })
+async function fetchFromHost(
+  fetchImpl: FetchLike,
+  url: string,
+  accept: string,
+  signal: AbortSignal,
+): Promise<Response> {
+  return fetchImpl(url, { headers: { Accept: accept }, cache: "no-store", signal })
 }
 
 /**
@@ -157,11 +181,14 @@ export async function fetchChannelState(
   channel: DesktopChannel,
   { baseUrl, fetchImpl = fetch }: FetchChannelOptions,
 ): Promise<ChannelState> {
+  // One deadline for both reads, so a hanging host delays the page by at most FETCH_TIMEOUT_MS.
+  const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
   try {
     const response = await fetchFromHost(
       fetchImpl,
       `${baseUrl}/${channel}/manifest.json`,
       "application/json",
+      signal,
     )
     if (NOT_PUBLIC_YET.has(response.status)) {
       return { status: "coming", launchAt: DEFAULT_LAUNCH_AT }
@@ -174,9 +201,11 @@ export async function fetchChannelState(
       fetchImpl,
       `${baseUrl}/${channel}/${state.release.version}/SHA256SUMS`,
       "text/plain",
+      signal,
     )
     if (!sumsResponse.ok) return { status: "unavailable" }
     const sums = parseSha256Sums(await sumsResponse.text())
+    if (sums === null) return { status: "unavailable" }
     const installers = state.release.installers.filter(
       (installer) => sums.get(installer.fileName) === installer.sha256,
     )
@@ -184,6 +213,34 @@ export async function fetchChannelState(
     return { status: "ready", release: { ...state.release, installers } }
   } catch {
     return { status: "unavailable" }
+  }
+}
+
+/** How long a ready or "coming" answer is reused before the host is asked again. */
+export const DEFAULT_CHANNEL_CACHE_MS = 60_000
+
+export interface ChannelReaderOptions extends FetchChannelOptions {
+  readonly now?: () => number
+  readonly cacheMs?: number
+}
+
+/**
+ * Reads channel states through a short cache, so page views and crawlers within a minute share one
+ * pair of requests to the download host. An unavailable answer is never kept: the next view retries.
+ */
+export function createChannelReader({
+  now = Date.now,
+  cacheMs = DEFAULT_CHANNEL_CACHE_MS,
+  ...options
+}: ChannelReaderOptions): (channel: DesktopChannel) => Promise<ChannelState> {
+  const cache = new Map<DesktopChannel, { readonly state: ChannelState; readonly at: number }>()
+  return async (channel) => {
+    const hit = cache.get(channel)
+    if (hit && now() - hit.at < cacheMs) return hit.state
+    const state = await fetchChannelState(channel, options)
+    if (state.status === "unavailable") cache.delete(channel)
+    else cache.set(channel, { state, at: now() })
+    return state
   }
 }
 

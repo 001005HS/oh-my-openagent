@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 
 import {
   chooseInstallers,
+  createChannelReader,
   detectDesktopPlatform,
   fetchChannelState,
   formatInstallerSize,
@@ -370,6 +371,42 @@ describe("what the page reads from the manifest", () => {
     expect(state).toEqual({ status: "coming", launchAt: "2026-12-01T00:00:00.000Z" })
   })
 
+  test.each([
+    ["an URL that cannot be decoded", "https://get.omo.dev/stable/0.1.0/OmO-%E0%A4%A.exe"],
+    [
+      "a file name that hides a path",
+      "https://get.omo.dev/stable/0.1.0/x%2F..%2FOmO-0.1.0-x64.exe",
+    ],
+    ["a file name with a space", "https://get.omo.dev/stable/0.1.0/OmO%20setup.exe"],
+    ["a file from another release", "https://get.omo.dev/stable/0.0.9/OmO-0.1.0-x64.exe"],
+    ["a file from another channel", "https://get.omo.dev/beta/0.1.0/OmO-0.1.0-x64.exe"],
+    ["a port on the download host", "https://get.omo.dev:8443/stable/0.1.0/OmO-0.1.0-x64.exe"],
+    ["credentials in the URL", "https://user:pass@get.omo.dev/stable/0.1.0/OmO-0.1.0-x64.exe"],
+  ])("an installer with %s is dropped and the rest of the release stays", (_label, url) => {
+    // given
+    const manifest = stableManifest({
+      platforms: {
+        "win-x64": { url, sha256: HASH_C, size: 198_300_000, kind: "exe" },
+        "mac-arm64": {
+          url: "https://get.omo.dev/stable/0.1.0/OmO-0.1.0-arm64.dmg",
+          sha256: HASH_A,
+          size: 212_000_000,
+          kind: "dmg",
+        },
+      },
+    })
+
+    // when
+    const state = parseChannelManifest("stable", manifest)
+
+    // then
+    expect(state.status).toBe("ready")
+    if (state.status !== "ready") return
+    expect(state.release.installers.map((installer) => installer.fileName)).toEqual([
+      "OmO-0.1.0-arm64.dmg",
+    ])
+  })
+
   test("a body that is not a manifest at all is unavailable", () => {
     expect(parseChannelManifest("stable", "<html>oops</html>").status).toBe("unavailable")
     expect(parseChannelManifest("stable", null).status).toBe("unavailable")
@@ -441,7 +478,12 @@ describe("loading a channel's manifest from the download host", () => {
 
   test("the beta channel reads beta/manifest.json and the beta release's SHA256SUMS", async () => {
     // given
-    const manifest = stableManifest({ channel: "beta", version: "0.1.1-beta.2" })
+    const manifest = JSON.parse(
+      JSON.stringify(stableManifest({ channel: "beta", version: "0.1.1-beta.2" })).replaceAll(
+        "/stable/0.1.0/",
+        "/beta/0.1.1-beta.2/",
+      ),
+    ) as Record<string, unknown>
     const { requested, fetchImpl } = host({
       "/beta/manifest.json": () => jsonResponse(manifest),
       "/beta/0.1.1-beta.2/SHA256SUMS": () => new Response(sumsFor(manifest)),
@@ -503,6 +545,19 @@ describe("loading a channel's manifest from the download host", () => {
     expect(state).toEqual({ status: "unavailable" })
   })
 
+  test("a SHA256SUMS that names one file twice is not trusted at all", async () => {
+    // given: two lines for the same disk image, the second with another hash
+    const manifest = stableManifest()
+    const sums = `${sumsFor(manifest)}${"f".repeat(64)}  OmO-0.1.0-arm64.dmg\n`
+    const { fetchImpl } = publishedStable(manifest, sums)
+
+    // when
+    const state = await fetchChannelState("stable", { baseUrl, fetchImpl })
+
+    // then
+    expect(state).toEqual({ status: "unavailable" })
+  })
+
   test.each([401, 403, 404])(
     "a channel the host does not serve publicly (%i) shows the launch date instead of an error",
     async (status) => {
@@ -550,5 +605,79 @@ describe("loading a channel's manifest from the download host", () => {
 
     // then
     expect(state).toEqual({ status: "unavailable" })
+  })
+})
+
+describe("reading channels across requests", () => {
+  const baseUrl = "https://get.omo.dev"
+  const manifest = {
+    channel: "stable",
+    version: "0.1.0",
+    date: "2026-11-10T08:00:00Z",
+    platforms: {
+      "mac-arm64": {
+        url: "https://get.omo.dev/stable/0.1.0/OmO-0.1.0-arm64.dmg",
+        sha256: HASH_A,
+        size: 212_000_000,
+        kind: "dmg",
+      },
+    },
+  }
+
+  function countingHost(status = 200) {
+    let requests = 0
+    const fetchImpl = async (input: string | URL | Request): Promise<Response> => {
+      requests += 1
+      if (status !== 200) return new Response("no", { status })
+      return String(input).endsWith("SHA256SUMS")
+        ? new Response(`${HASH_A}  OmO-0.1.0-arm64.dmg\n`)
+        : jsonResponse(manifest)
+    }
+    return { fetchImpl, requests: () => requests }
+  }
+
+  test("a page view within a minute of the last one reuses its answer instead of asking the host again", async () => {
+    // given
+    let now = 1_000_000
+    const host = countingHost()
+    const read = createChannelReader({ baseUrl, fetchImpl: host.fetchImpl, now: () => now })
+
+    // when
+    const first = await read("stable")
+    now += 59_000
+    const second = await read("stable")
+
+    // then
+    expect(first.status).toBe("ready")
+    expect(second).toEqual(first)
+    expect(host.requests()).toBe(2)
+  })
+
+  test("after a minute the host is asked again", async () => {
+    // given
+    let now = 1_000_000
+    const host = countingHost()
+    const read = createChannelReader({ baseUrl, fetchImpl: host.fetchImpl, now: () => now })
+
+    // when
+    await read("stable")
+    now += 61_000
+    await read("stable")
+
+    // then
+    expect(host.requests()).toBe(4)
+  })
+
+  test("an unavailable answer is not kept, so a recovered host is seen on the next view", async () => {
+    // given
+    const host = countingHost(503)
+    const read = createChannelReader({ baseUrl, fetchImpl: host.fetchImpl, now: () => 1_000_000 })
+
+    // when
+    await read("stable")
+    await read("stable")
+
+    // then
+    expect(host.requests()).toBe(2)
   })
 })

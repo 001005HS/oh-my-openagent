@@ -5,6 +5,8 @@ import { defineConfig, devices } from "@playwright/test"
  */
 export default defineConfig({
   testDir: "./e2e",
+  // The production (flag-off) build is covered by playwright.flag-off.config.ts.
+  testIgnore: "download-flag-off.spec.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -52,11 +54,13 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
     },
     {
-      command: "bun run build && bun --bun next start",
+      // The launch flag is a build input: only the build sees it, the server does not.
+      command:
+        "OMO_WEB_DESKTOP_DOWNLOAD=1 bun run build && OMO_WEB_DESKTOP_DOWNLOAD= bun --bun next start",
       url: "http://127.0.0.1:3000",
       reuseExistingServer: !process.env.CI,
       timeout: 180000,
-      env: { DESKTOP_DOWNLOAD_BASE_URL: "http://127.0.0.1:4310", OMO_WEB_DESKTOP_DOWNLOAD: "1" },
+      env: { DESKTOP_DOWNLOAD_BASE_URL: "http://127.0.0.1:4310", DESKTOP_DOWNLOAD_CACHE_MS: "0" },
     },
   ],
 })

@@ -5,13 +5,21 @@ import { setRequestLocale, getTranslations } from "next-intl/server"
 
 import { DownloadExperience } from "@/components/download/download-experience"
 import {
+  createChannelReader,
+  DEFAULT_CHANNEL_CACHE_MS,
   DEFAULT_DOWNLOAD_BASE_URL,
   desktopDownloadEnabled,
-  fetchChannelState,
   type DesktopChannel,
 } from "@/lib/desktop-download"
 
 export const dynamic = "force-dynamic"
+
+// One reader per Worker isolate: its short cache spans requests. The e2e server sets the cache to 0
+// because its fixture host changes between tests.
+const readChannel = createChannelReader({
+  baseUrl: process.env.DESKTOP_DOWNLOAD_BASE_URL ?? DEFAULT_DOWNLOAD_BASE_URL,
+  cacheMs: Number(process.env.DESKTOP_DOWNLOAD_CACHE_MS ?? DEFAULT_CHANNEL_CACHE_MS),
+})
 
 export async function generateMetadata({
   params,
@@ -35,11 +43,7 @@ export default async function DownloadPage({
   const [{ locale }, query] = await Promise.all([params, searchParams])
   setRequestLocale(locale)
 
-  const baseUrl = process.env.DESKTOP_DOWNLOAD_BASE_URL ?? DEFAULT_DOWNLOAD_BASE_URL
-  const [stable, beta] = await Promise.all([
-    fetchChannelState("stable", { baseUrl }),
-    fetchChannelState("beta", { baseUrl }),
-  ])
+  const [stable, beta] = await Promise.all([readChannel("stable"), readChannel("beta")])
   const requested: DesktopChannel =
     query.channel === "beta" && beta.status === "ready" ? "beta" : "stable"
 
