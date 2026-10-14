@@ -257,8 +257,13 @@ fn started_signal(dir: &tempfile::TempDir) -> (std::path::PathBuf, std::sync::mp
 }
 
 /// Runs one capture on its own session thread with `helper` and a private lock.
-fn capture_on_session_thread(helper: std::path::PathBuf, lock: std::path::PathBuf) -> std::thread::JoinHandle<()> {
+fn capture_on_session_thread(
+    helper: std::path::PathBuf,
+    lock: std::path::PathBuf,
+    warm: Duration,
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
+        super::super::sck::TEST_WARM_TIMEOUT.set(Some(warm));
         let _reasons = ReasonsGuard::new();
         override_availability(Some(Ok(())));
         super::super::TEST_LOCK_PATH.with_borrow_mut(|path| *path = Some(lock));
@@ -268,7 +273,7 @@ fn capture_on_session_thread(helper: std::path::PathBuf, lock: std::path::PathBu
     })
 }
 
-/// Another session's capture: the same lock, its two-second wait, no pixels.
+/// Another session's capture: the same lock, its normal wait, no pixels.
 fn concurrent_capture(lock: &std::path::Path) -> CoreResult<()> {
     crate::overlay::Overlay::default().capture(lock, || Ok(Vec::new()), std::thread::sleep, |_excluded| Ok(()))
 }
@@ -280,11 +285,11 @@ fn a_stalled_helper_start_does_not_hold_the_capture_lock() {
     let lock = dir.path().join("capture.lock");
     let (fifo, signalled) = started_signal(&dir);
     let helper = signalling_helper(&dir, &fifo, "signal()\ntime.sleep(30)");
-    let session = capture_on_session_thread(helper, lock.clone());
+    let session = capture_on_session_thread(helper, lock.clone(), Duration::from_secs(1));
     signalled.recv_timeout(Duration::from_secs(10)).expect("helper started");
     // When: another session captures while that helper is still starting
     let other = concurrent_capture(&lock);
-    // Then: it gets the lock inside its two-second wait instead of failing
+    // Then: it gets the lock instead of failing
     assert!(other.is_ok(), "{other:?}");
     session.join().unwrap();
 }
@@ -296,11 +301,30 @@ fn a_stalled_capture_under_the_lock_lets_a_concurrent_capture_through() {
     let lock = dir.path().join("capture.lock");
     let (fifo, signalled) = started_signal(&dir);
     let helper = signalling_helper(&dir, &fifo, "ready()\nsys.stdin.readline()\nsignal()\ntime.sleep(30)");
-    let session = capture_on_session_thread(helper, lock.clone());
-    signalled.recv_timeout(Duration::from_secs(10)).expect("capture request reached the helper");
+    let session = capture_on_session_thread(helper, lock.clone(), Duration::from_secs(30));
+    signalled.recv_timeout(Duration::from_secs(40)).expect("capture request reached the helper");
     // When: another session captures while the stalled capture holds the lock
     let other = concurrent_capture(&lock);
     // Then: the in-lock budget ends the stall inside the other session's wait
     assert!(other.is_ok(), "{other:?}");
     session.join().unwrap();
+}
+
+fn fake_timed_out(_requests: &[SckTargetRequest]) -> Result<Vec<SckFrame>, SckCaptureError> {
+    Err(SckCaptureError::TimedOut(DesktopError::timeout("budget exceeded")))
+}
+
+#[test]
+fn an_in_lock_timeout_falls_back_to_legacy_instead_of_failing() {
+    // Given: a warm worker that exceeds its in-lock budget
+    let _reasons = ReasonsGuard::new();
+    override_availability(Some(Ok(())));
+    override_capture(Some(fake_timed_out));
+    // When: the SCK route runs
+    let result = capture().capture_via_sck(&Target::Window("42".to_owned()), &[], &[]);
+    override_capture(None);
+    override_availability(None);
+    // Then: it asks for the legacy fallback (Ok(None)) and reports legacy capture
+    assert!(matches!(result, Ok(None)), "{result:?}");
+    assert!(capture().legacy_capture());
 }

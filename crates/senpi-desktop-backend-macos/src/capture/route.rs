@@ -16,6 +16,7 @@ use super::{parse_window_id, MacCapture};
 const REASON_UNSUPPORTED: u8 = 1;
 const REASON_HELPER_MISSING: u8 = 2;
 const REASON_START_FAILED: u8 = 4;
+const REASON_TIMED_OUT: u8 = 8;
 #[cfg(not(test))]
 static LEGACY_REASONS: AtomicU8 = AtomicU8::new(0);
 
@@ -43,6 +44,16 @@ fn note_legacy_into(store: &AtomicU8, reason: u8, log_line: &str, log: impl FnOn
     if prior & reason == 0 {
         log(log_line);
     }
+}
+
+fn note_timed_out(error: &DesktopError) {
+    note_legacy(
+        REASON_TIMED_OUT,
+        &format!(
+            "the ScreenCaptureKit capture helper exceeded its capture budget: {error}; \
+             it restarts for the next capture and this one uses the screencapture fallback"
+        ),
+    );
 }
 
 fn note_start_failure(error: &DesktopError) {
@@ -78,12 +89,13 @@ impl MacCapture {
 
     /// A capture whose display targets may exclude titled windows (B9 SCK).
     ///
-    /// The legacy `screencapture` path runs with no error in all three
-    /// fallback cases (lead ruling 2026-10-12): macOS < 14, a missing helper,
-    /// and a helper that fails to start on 14+ (it cannot spawn, or exits or
-    /// stalls before writing any reply byte). Each logs once per reason and
-    /// reports `legacyCapture: true` on the result. A helper that dies after
-    /// writing a reply byte surfaces the error and resets for the next capture.
+    /// The legacy `screencapture` path runs with no error in these fallback
+    /// cases (lead ruling 2026-10-12): macOS < 14, a missing helper, a helper
+    /// that fails its warm-up ping before the lock (it cannot spawn, exits, or
+    /// stalls; a stall keeps the worker off for 30 s), and a warm helper that
+    /// exceeds its in-lock budget (it is reset and restarts next time). Each
+    /// logs once per reason and reports `legacyCapture: true` on the result.
+    /// A warm helper that dies mid-capture surfaces the error and resets.
     ///
     /// Every route runs inside the cursor-overlay guard, and the visible
     /// cursor-helper windows it reports are excluded by window ID.
@@ -105,9 +117,15 @@ impl MacCapture {
             },
             Err(_) => false,
         };
-        self.with_overlay_exclusion(|excluded| {
+        let routed = self.with_overlay_exclusion(|excluded| {
             self.route_capture(target, exclude_window_titles, excluded, sck_ready)
-        })
+        })?;
+        match routed {
+            Some(captured) => Ok(captured),
+            // The fallback takes its own lock hold, so one capture never holds
+            // the lock for an SCK budget plus a legacy capture.
+            None => self.with_overlay_exclusion(|excluded| self.capture_via_legacy(target, excluded)),
+        }
     }
 
     fn route_capture(
@@ -116,28 +134,29 @@ impl MacCapture {
         exclude_window_titles: &[String],
         excluded: &[u32],
         sck_ready: bool,
-    ) -> CoreResult<(RgbaImage, FrameGeometry)> {
+    ) -> CoreResult<Option<(RgbaImage, FrameGeometry)>> {
         match sck_availability() {
             // The warm-up failed and was noted; skip the worker inside the lock.
-            Ok(()) if !sck_ready => self.capture_via_legacy(target, excluded),
+            Ok(()) if !sck_ready => self.capture_via_legacy(target, excluded).map(Some),
             Ok(()) => match self.capture_via_sck(target, exclude_window_titles, excluded)? {
                 Some(captured) => {
                     if !captured.1.is_legacy_capture() {
                         // Recovery lets a later start failure log its reason again.
                         with_legacy_reasons(|store| {
-                            store.fetch_and(!REASON_START_FAILED, Ordering::Relaxed);
+                            store.fetch_and(!(REASON_START_FAILED | REASON_TIMED_OUT), Ordering::Relaxed);
                         });
                     }
-                    Ok(captured)
+                    Ok(Some(captured))
                 },
-                None => self.capture_via_legacy(target, excluded),
+                // Start failure or in-lock timeout: fall back in a new lock hold.
+                None => Ok(None),
             },
             Err(SckUnavailable::Unsupported) => {
                 note_legacy(
                     REASON_UNSUPPORTED,
                     "ScreenCaptureKit requires macOS 14; using the screencapture fallback",
                 );
-                self.capture_via_legacy(target, excluded)
+                self.capture_via_legacy(target, excluded).map(Some)
             },
             Err(SckUnavailable::HelperUnavailable) => {
                 note_legacy(
@@ -145,13 +164,14 @@ impl MacCapture {
                     "no ScreenCaptureKit capture helper is staged; \
                      using the screencapture fallback",
                 );
-                self.capture_via_legacy(target, excluded)
+                self.capture_via_legacy(target, excluded).map(Some)
             },
         }
     }
 
-    /// The SCK route. `Ok(None)` only when the helper failed to start (the
-    /// caller falls back silently); reply errors and mid-capture transport
+    /// The SCK route. `Ok(None)` when the helper failed to start or a warm
+    /// helper exceeded its in-lock budget (the caller falls back silently, in
+    /// a new lock hold); reply errors and mid-capture transport
     /// deaths surface as errors (the worker resets after a death).
     fn capture_via_sck(
         &self,
@@ -170,6 +190,10 @@ impl MacCapture {
                     Ok(frames) => frames,
                     Err(SckCaptureError::Start(error)) => {
                         note_start_failure(&error);
+                        return Ok(None);
+                    },
+                    Err(SckCaptureError::TimedOut(error)) => {
+                        note_timed_out(&error);
                         return Ok(None);
                     },
                     Err(SckCaptureError::Failed(error)) => return Err(error),
@@ -233,6 +257,10 @@ impl MacCapture {
                     Ok(frames) => composite_sck(&displays, frames).map(Some),
                     Err(SckCaptureError::Start(error)) => {
                         note_start_failure(&error);
+                        Ok(None)
+                    },
+                    Err(SckCaptureError::TimedOut(error)) => {
+                        note_timed_out(&error);
                         Ok(None)
                     },
                     Err(SckCaptureError::Failed(error)) => Err(error),

@@ -200,6 +200,12 @@ static void Request(NSDictionary *request, dispatch_block_t done) {
 }
 
 static void Ready(dispatch_block_t done) {
+	// Without the grant a content fetch could prompt; the capture that follows reports it.
+	if (!CGPreflightScreenCaptureAccess()) {
+		Header(@{ @"kind": @"ready" });
+		done();
+		return;
+	}
 	if (@available(macOS 14.0, *)) {
 		[SCShareableContent getShareableContentExcludingDesktopWindows:NO onScreenWindowsOnly:NO completionHandler:^(SCShareableContent *content, NSError *error) {
 			// Permission and content errors surface on the capture that follows.
