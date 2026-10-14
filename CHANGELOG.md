@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**`thread_create` can start a thread with skills it follows from its first turn.** Pass `skills: ["<name>", ...]` with the names of installed skills; the new session applies each one as if it were loaded with `/skill`, without a slash command and without starting a turn, and keeps applying it after a restart. A path, raw text or a name no installed skill has refuses the create, and nothing is opened. The result lists the attached skills as `thread.skills`.
+
 **Internal: the model-version migration skip bookkeeping is cleaned up.** The set of already-migrated models is now built once per run, and the comment describes the source-keyed rule; behaviour is unchanged. ([#10145](https://github.com/code-yeongyu/oh-my-openagent/pull/10145))
 
 **The [CC] `opus` alias and the retired-model migration no longer land on Opus 4.8.** `mapClaudeModelToOpenCode("opus")` now resolves to the current Opus 5.5 id instead of 4.8, and the config migration that upgrades a retired `anthropic/` entry now targets Opus 5.5, so a default or an automatic migration never puts a user on Opus 4.8 without an explicit pick.

@@ -1,7 +1,9 @@
 import type { AgentToolResult, ToolDefinition } from "@code-yeongyu/senpi"
 import { type Static } from "typebox"
 import { toThreadAddressEntries } from "./address-book"
+import { resolveAgentHome } from "../agent-home/resolve-agent-home"
 import { fuzzyMatch, workspaceEntries } from "./addressing"
+import { checkInitialSkills } from "./initial-skills"
 import {
   parseThreadParams,
   threadToolParamSchemas,
@@ -171,8 +173,12 @@ function buildThreadTools(options: ThreadToolSurfaceOptions): { readonly tools: 
   const create: AnyTool = { ...metadata("thread_create"), parameters: threadToolParamSchemas.thread_create, promptGuidelines: [THREAD_FAMILY_PROMPT_GUIDELINES], execute: (id: string, args: ThreadCreateInput, _signal, _onUpdate, ectx) => execute("thread_create", id, args, ectx, async (current, value) => {
     const entries = resolveEntries(options, current)
     if (value.name !== undefined) { const existing = entries.find((entry) => entry.name.toLowerCase() === value.name?.trim().toLowerCase()); if (existing !== undefined) return failure("name_conflict", `A thread named "${existing.name}" already exists.`, "Call thread_list and choose another name.") }
-    const session = await options.host.openSession({ cwd: value.cwd, forkFrom: value.fork_from, name: value.name })
-    return { kind: "ok", thread: summary(session), deduplicated: false }
+    const skills = value.skills === undefined || value.skills.length === 0 ? undefined : checkInitialSkills(value.skills, { cwd: value.cwd ?? options.callerWorkspaceRoot() ?? process.cwd(), agentDir: options.agentDir?.() ?? resolveAgentHome({ env: process.env }) })
+    if (skills?.kind === "invalid") return failure("invalid_arguments", `Not a skill name: ${skills.names.join(", ")}. Pass the names of installed skills, never a path or text.`, "Pass skill names as listed by the skill index.", { invalid: skills.names })
+    if (skills?.kind === "unknown") return failure("invalid_arguments", `No such skill: ${skills.names.join(", ")}.`, "Pass the names of skills this workspace loads, or install the skill first.", { unknown: skills.names })
+    const loaded = skills?.kind === "ok" ? skills.names : undefined
+    const session = await options.host.openSession({ cwd: value.cwd, forkFrom: value.fork_from, name: value.name, ...(loaded === undefined ? {} : { initialSkills: loaded }) })
+    return { kind: "ok", thread: { ...summary(session), ...(loaded === undefined ? {} : { skills: loaded }) }, deduplicated: false }
   }) }
   const list: AnyTool = {
     ...metadata("thread_list"),
