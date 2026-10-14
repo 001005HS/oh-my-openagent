@@ -57,6 +57,9 @@ pub(crate) struct ReplyBounds {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub(crate) enum Reply {
+    /// The answer to a warm-up ping: the helper is up and has fetched
+    /// shareable content once.
+    Ready,
     Frame {
         index: usize,
         width: u32,

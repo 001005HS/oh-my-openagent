@@ -16,6 +16,7 @@ mod worker_tests;
 
 use std::cell::RefCell;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use senpi_desktop_core::error::{CoreResult, DesktopError};
 
@@ -80,6 +81,16 @@ pub(crate) enum SckCaptureError {
     Failed(DesktopError),
 }
 
+/// How long a warm-up may take: the helper's cold start plus its first
+/// shareable-content fetch. It runs before the capture lock is taken.
+const WARM_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long one capture may hold the cursor-exclusion lock. Other captures
+/// wait at most two seconds for that lock (overlay coordination), so a warm
+/// helper must answer well inside it or the capture fails instead of
+/// starving every other session.
+pub(crate) const IN_LOCK_CAPTURE_TIMEOUT: Duration = Duration::from_millis(1500);
+
 /// The worker handle `MacCapture` holds. Cheap and stateless: the worker
 /// itself is the session-thread singleton above.
 #[derive(Debug, Clone, Copy, Default)]
@@ -96,7 +107,31 @@ impl SckWorker {
         Ok(())
     }
 
-    /// One batch capture through the persistent helper.
+    /// Starts the helper if needed and waits for its warm-up reply. Call it
+    /// before taking the capture lock: a cold or stalled helper then costs the
+    /// caller time without holding the lock. An error is a start failure.
+    pub(crate) fn prepare() -> CoreResult<()> {
+        #[cfg(test)]
+        if TEST_CAPTURE.with(std::cell::Cell::get).is_some() {
+            return Ok(());
+        }
+        HELPER_CLIENT.with_borrow_mut(|slot| {
+            if slot.is_some() {
+                return Ok(());
+            }
+            let (mut client, staging) = start_client()?;
+            match client.ping(WARM_TIMEOUT) {
+                Ok(()) => {
+                    *slot = Some((client, staging));
+                    Ok(())
+                },
+                Err(ClientError::Transport(error) | ClientError::Reply(error)) => Err(error),
+            }
+        })
+    }
+
+    /// One batch capture through the persistent helper, bounded by
+    /// `IN_LOCK_CAPTURE_TIMEOUT`.
     pub(crate) fn capture(
         requests: &[TargetRequest],
     ) -> Result<Vec<frame::Frame>, SckCaptureError> {
@@ -105,14 +140,14 @@ impl SckWorker {
             return fake(requests);
         }
         HELPER_CLIENT.with_borrow_mut(|slot| {
-            if slot.is_none() {
-                match start_client() {
-                    Ok(started) => *slot = Some(started),
-                    Err(error) => return Err(SckCaptureError::Start(error)),
-                }
-            }
-            let (client, _) = slot.as_mut().expect("capture client initialized");
-            match client.capture(requests) {
+            // Never start a helper here: this runs under the capture lock.
+            // `prepare` (before the lock) restarts a worker that died.
+            let Some((client, _)) = slot.as_mut() else {
+                return Err(SckCaptureError::Start(DesktopError::capture_failed(
+                    "the capture worker is not running; it restarts before the next capture",
+                )));
+            };
+            match client.capture_within(requests, IN_LOCK_CAPTURE_TIMEOUT) {
                 Ok(frames) => Ok(frames),
                 Err(ClientError::Transport(error)) => {
                     let first_reply = !client.has_replied;
