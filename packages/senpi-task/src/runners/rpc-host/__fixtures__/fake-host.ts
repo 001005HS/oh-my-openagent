@@ -213,6 +213,16 @@ export async function startFakeHost(options: FakeHostOptions = {}): Promise<Fake
       sendTo(routingId, { type: "agent_end", willRetry: false, messages: [message] })
       sendTo(routingId, { type: "agent_idle" })
     },
+    // The host-side abort of a turn in flight (a user escape, a forced stop): the transcript gains
+    // the aborted assistant row and the session goes idle, exactly as the real host leaves it.
+    abortTurn: (routingId) => {
+      const message = { role: "assistant", content: [{ type: "text", text: "" }], stopReason: "aborted" }
+      table.appendTranscript(routingId, message)
+      table.setStreaming(routingId, false)
+      sendTo(routingId, { type: "message_end", message })
+      sendTo(routingId, { type: "agent_end", willRetry: false, messages: [message] })
+      sendTo(routingId, { type: "agent_idle" })
+    },
     evict: (sessionPath) => {
       const parked = table.park(sessionPath)
       if (parked !== undefined) notifyDrained(parked, { type: "session_parked", sessionPath })

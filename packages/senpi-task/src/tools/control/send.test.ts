@@ -98,6 +98,39 @@ describe("runTaskSend", () => {
     expect(sendCalls).toEqual([])
   })
 
+  test("#given redispatch without a message #when sent #then the task is re-dispatched in one step (senpi#3266)", async () => {
+    // given
+    const dispatched: Array<{ readonly idOrName: string; readonly callerSessionId?: string }> = []
+    const manager = {
+      sendToTask: () => Promise.resolve({ kind: "not_found" as const, reason: "unused", suggestion: "unused" }),
+      list: () => [],
+      redispatchTask: (idOrName: string, callerSessionId?: string) => {
+        dispatched.push({ idOrName, callerSessionId })
+        return Promise.resolve({ kind: "redispatched" as const, task_id: idOrName, run_epoch: 3 })
+      },
+    }
+
+    // when
+    const result = await runTaskSend(manager, { to: "st_00000009", redispatch: true }, "lead-session")
+
+    // then
+    expect(dispatched).toEqual([{ idOrName: "st_00000009", callerSessionId: "lead-session" }])
+    expect(result.details.kind).toBe("redispatched")
+  })
+
+  test("#given redispatch with a message #when sent #then it is rejected: the persisted prompt is what replays", async () => {
+    // given
+    const { manager } = spyManager({ kind: "not_found", reason: "unused", suggestion: "unused" })
+
+    // when
+    const result = await runTaskSend(manager, { to: "st_00000009", redispatch: true, message: "different instructions" }, "lead-session")
+
+    // then
+    expect(result.details.kind).toBe("invalid_arguments")
+    if (result.details.kind !== "invalid_arguments") throw new Error("expected invalid_arguments")
+    expect(result.details.reason).toContain("redispatch")
+  })
+
   test("#given a child owned by another session #when sent without all_scope #then scope is denied naming the owner", async () => {
     const { manager } = makeManager({})
     const started = await manager.start(baseSpec({ parent_session_id: "owner-session" }))
