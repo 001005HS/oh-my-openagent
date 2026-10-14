@@ -94,6 +94,7 @@ describe("event-bridge native task RPC snapshots", () => {
     emitChildEvent(running.task_id, { type: "tool_execution_start", toolName: "read", args: { path: "a.ts" } })
     clock.advance()
     const beforeResume = pi.rpcEvents.at(-1)
+    if (beforeResume === undefined) throw new Error("expected a live-progress snapshot before the resume")
     expect(beforeResume).toMatchObject({ data: { tasks: [{ live_progress: { tool_calls: 1 } }] } })
     pi.rpcEvents.length = 0
 
