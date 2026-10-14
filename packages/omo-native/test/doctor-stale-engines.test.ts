@@ -247,6 +247,8 @@ describe("app-server daemons left over from an older version (#10033)", () => {
     const { stale } = classifyEngineProcesses([daemon])
     const lines = formatStaleEngineLines(stale)
     expect(stale.map((item) => item.pid)).toEqual([75183])
+    // Scripts grep doctor output for `WARN stale engine pid`; a retired daemon is still a stale engine.
+    expect(lines[0]).toStartWith("WARN stale engine pid 75183 ")
     expect(lines[0]).toContain("app-server daemon started by an older version")
     expect(lines[0]).not.toContain("orphaned by a signaled launcher")
     expect(lines.at(-1)).toBe("INFO reap them explicitly by pid: omo doctor --reap 75183")
