@@ -21,6 +21,72 @@ import {
  * never serialized to logs or errors, and callers see only the principal
  * identity, the public keys, and the two operations.
  */
+export type DeviceKeyringSignRequest =
+  | {
+      /** SHA-256 of the batch object up to (excluding) its signature field. */
+      readonly purpose: "object-digest"
+      /** Exactly 32 bytes. */
+      readonly digest: Uint8Array
+    }
+  | {
+      /** A keyring-record preimage. */
+      readonly purpose: "record"
+      /** RFC 8785 canonical JSON whose top-level "t" starts with "omo-sync/v1/". */
+      readonly canonicalJson: Uint8Array
+    }
+
+/**
+ * Refusal for any sign request outside the two typed purposes above. A
+ * DeviceKeyring is never a raw-bytes signing oracle: it signs exactly the
+ * given digest or canonical JSON, and only after the request validates.
+ */
+export class DeviceKeyringSignError extends Error {
+  readonly name = "DeviceKeyringSignError"
+  constructor(
+    readonly reason: "unknown-purpose" | "digest-length" | "record-json" | "record-prefix" | "record-canonical",
+    message: string,
+  ) {
+    super(message)
+  }
+}
+
+function validateSignRequest(request: DeviceKeyringSignRequest): Uint8Array {
+  if (typeof request !== "object" || request === null) {
+    throw new DeviceKeyringSignError("unknown-purpose", "sign: request must be a typed sign request")
+  }
+  if (request.purpose === "object-digest") {
+    if (!(request.digest instanceof Uint8Array) || request.digest.length !== 32) {
+      throw new DeviceKeyringSignError("digest-length", "sign: object-digest needs exactly 32 bytes (SHA-256 of the batch object)")
+    }
+    return request.digest
+  }
+  if (request.purpose === "record") {
+    if (!(request.canonicalJson instanceof Uint8Array)) {
+      throw new DeviceKeyringSignError("record-json", "sign: record needs RFC 8785 canonical JSON bytes")
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(Buffer.from(request.canonicalJson).toString("utf8"))
+    } catch {
+      throw new DeviceKeyringSignError("record-json", "sign: record preimage is not valid JSON")
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed) || typeof (parsed as { t?: unknown }).t !== "string") {
+      throw new DeviceKeyringSignError("record-json", 'sign: record preimage needs a top-level "t" string')
+    }
+    const t = (parsed as { t: string }).t
+    if (!t.startsWith("omo-sync/v1/")) {
+      throw new DeviceKeyringSignError("record-prefix", 'sign: record "t" must start with "omo-sync/v1/"')
+    }
+    // RFC 8785 §3.2.2.3: whitespace is forbidden between tokens, so its
+    // presence proves non-canonical input without re-serializing floats.
+    if (/[\t\n\f\r ]/.test(Buffer.from(request.canonicalJson).toString("utf8"))) {
+      throw new DeviceKeyringSignError("record-canonical", "sign: record preimage must be RFC 8785 canonical JSON (no insignificant whitespace)")
+    }
+    return request.canonicalJson
+  }
+  throw new DeviceKeyringSignError("unknown-purpose", `sign: unsupported purpose ${JSON.stringify((request as { purpose?: unknown }).purpose ?? null)}`)
+}
+
 export interface DeviceKeyring {
   /** The keyring principal identity used in batch headers and record signatures. */
   principal(): { kind: "device"; id: string }
@@ -31,8 +97,13 @@ export interface DeviceKeyring {
     /** X25519 raw public key, base64url. */
     sealing: string
   }
-  /** Ed25519 signature over `bytes`, 64 bytes. */
-  sign(bytes: Uint8Array): Promise<Uint8Array>
+  /**
+   * Ed25519 signature (64 bytes) over exactly the bytes of the request: the
+   * 32-byte object digest, or the record's canonical JSON. Never a raw-bytes
+   * oracle — anything outside the two typed purposes is refused with a
+   * DeviceKeyringSignError before any signing happens.
+   */
+  sign(request: DeviceKeyringSignRequest): Promise<Uint8Array>
   /**
    * Opens a sealed box addressed to this device's sealing key and returns the
    * plaintext (an epoch key wrap in the sync protocol).
@@ -173,7 +244,7 @@ export function createDeviceKeyring(id: string, material: DeviceKeyMaterial): De
   return {
     principal: () => ({ kind: "device", id }),
     publicKeys: () => ({ ...publicKeys }),
-    sign: async bytes => ed25519Sign(null, Buffer.from(bytes), signingPrivateKey),
+    sign: async request => ed25519Sign(null, Buffer.from(validateSignRequest(request)), signingPrivateKey),
     unseal: async wrap => openHpkeSealedBox(sealingPrivateRaw, sealingPublicRaw, wrap),
   }
 }

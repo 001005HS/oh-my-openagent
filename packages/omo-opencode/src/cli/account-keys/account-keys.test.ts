@@ -18,9 +18,9 @@ describe("account keys", () => {
     const reopened = await loadDeviceKeyring(store)
     expect(second.principal()).toEqual(first.principal())
     expect(reopened?.publicKeys()).toEqual(first.publicKeys())
-    const bytes = new TextEncoder().encode("record")
-    const signature = await second.sign(bytes)
-    expect(verify(null, bytes, createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: first.publicKeys().signing }, format: "jwk" }), signature)).toBe(true)
+    const digest = new Uint8Array(32).fill(3)
+    const signature = await second.sign({ purpose: "object-digest", digest })
+    expect(verify(null, digest, createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: first.publicKeys().signing }, format: "jwk" }), signature)).toBe(true)
   })
 
   test("CLI init and status expose public keys only", async () => {

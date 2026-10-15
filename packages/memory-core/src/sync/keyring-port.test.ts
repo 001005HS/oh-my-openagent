@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createCipheriv, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, createHmac, verify } from "node:crypto"
-import { createInMemoryDeviceKeyring } from "./keyring-port"
+import { createInMemoryDeviceKeyring, DeviceKeyringSignError } from "./keyring-port"
 
 // Independent RFC 9180 sender: base mode, DHKEM(X25519, HKDF-SHA256), AES-256-GCM.
 export function sealTo(recipient: string, plaintext: Uint8Array): Uint8Array {
@@ -25,16 +25,48 @@ export function sealTo(recipient: string, plaintext: Uint8Array): Uint8Array {
 }
 
 describe("DeviceKeyring", () => {
-  test("signatures verify with the advertised raw Ed25519 key", async () => {
+  test("signs an object digest and verifies with the advertised raw Ed25519 key", async () => {
     const keyring = createInMemoryDeviceKeyring("fixture-device")
-    const bytes = new TextEncoder().encode("signed sync record")
-    const signature = await keyring.sign(bytes)
+    const digest = new Uint8Array(32).fill(7)
+    const signature = await keyring.sign({ purpose: "object-digest", digest })
     expect(keyring.principal()).toEqual({ kind: "device", id: "fixture-device" })
     const publicKeys = keyring.publicKeys()
     expect(Buffer.from(publicKeys.signing, "base64url")).toHaveLength(32)
     expect(Buffer.from(publicKeys.sealing, "base64url")).toHaveLength(32)
-    expect(verify(null, bytes, createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: publicKeys.signing }, format: "jwk" }), signature)).toBe(true)
+    expect(verify(null, digest, createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: publicKeys.signing }, format: "jwk" }), signature)).toBe(true)
     expect(JSON.stringify(keyring)).not.toContain("PRIVATE")
+  })
+
+  test("signs a canonical record preimage", async () => {
+    const keyring = createInMemoryDeviceKeyring("fixture-device")
+    const canonicalJson = new TextEncoder().encode('{"t":"omo-sync/v1/record","account":"acc","base_seq":1,"digest":"AA","epoch":1,"link":"AA"}')
+    const signature = await keyring.sign({ purpose: "record", canonicalJson })
+    const publicKeys = keyring.publicKeys()
+    expect(verify(null, canonicalJson, createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: publicKeys.signing }, format: "jwk" }), signature)).toBe(true)
+  })
+
+  test("refuses malformed sign requests with a typed error", async () => {
+    const keyring = createInMemoryDeviceKeyring("fixture-device")
+    const digest31 = new Uint8Array(31)
+    const withoutT = new TextEncoder().encode('{"account":"acc"}')
+    const wrongPrefix = new TextEncoder().encode('{"t":"omo-other/v1/record"}')
+    const nonCanonical = new TextEncoder().encode('{ "t":"omo-sync/v1/record" }')
+    const unknownPurpose = { purpose: "anything", digest: new Uint8Array(32) } as unknown as Parameters<typeof keyring.sign>[0]
+    for (const request of [
+      { purpose: "object-digest", digest: digest31 },
+      { purpose: "record", canonicalJson: withoutT },
+      { purpose: "record", canonicalJson: wrongPrefix },
+      { purpose: "record", canonicalJson: nonCanonical },
+      unknownPurpose,
+    ] as const) {
+      let failure: unknown
+      try {
+        await keyring.sign(request)
+      } catch (error) {
+        failure = error
+      }
+      expect(failure).toBeInstanceOf(DeviceKeyringSignError)
+    }
   })
 
   test("opens an independently constructed HPKE sealed box", async () => {
