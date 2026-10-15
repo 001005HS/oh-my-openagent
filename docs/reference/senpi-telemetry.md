@@ -53,8 +53,38 @@ The curated plan agents were renamed to `plan-consultant` and `plan-reviewer`; `
 | `turn_completed` | `output_tokens` | `number` | - |
 | `turn_completed` | `provider` | `string` | `alibaba-token-plan`, `alibaba-token-plan-cn`, `anthropic`, `anthropic-api`, `anthropic-subscription`, `bailian-coding-plan`, `chatgpt-subscription`, `claude-sdk-oauth`, `deepseek`, `google`, `github-copilot`, `kimi-coding`, `kimi-for-coding`, `moonshotai`, `openai`, `openai-codex`, `opencode`, `opencode-go`, `qwen-token-plan`, `qwen-token-plan-cn`, `vercel`, `xai`, `xiaomi`, `zai`, `zai-coding-cn`, `zai-coding-plan`, `custom` |
 | `turn_completed` | `reasoning_tokens` | `number` | - |
+| `turn_completed` | `sample_rate` | `number` | - |
 | `turn_completed` | `total_tokens` | `number` | - |
 | `turn_completed` | `turn_index` | `number` | - |
+| `session_summary` | `$session_id` | `string` | - |
+| `session_summary` | `aborted_turns` | `number` | - |
+| `session_summary` | `cache_read_tokens` | `number` | - |
+| `session_summary` | `cache_write_tokens` | `number` | - |
+| `session_summary` | `cost_usd` | `number` | - |
+| `session_summary` | `custom_model_turns` | `number` | - |
+| `session_summary` | `dominant_model` | `string` | `qwen3.6-flash`, `qwen3.8-max-preview`, `claude-fable-5`, `claude-fable-5-1`, `claude-haiku-4-5`, `claude-haiku-5-5`, `claude-opus-4-6`, `claude-opus-5`, `claude-opus-5-5`, `claude-sonnet-5`, `claude-sonnet-5-5`, `gpt-5.6-luna-fast`, `gpt-5.6-sol`, `gpt-5.6-sol-fast`, `gpt-5.6-terra`, `gpt-6-astra`, `gpt-6-luna`, `gpt-6-luna-fast`, `gpt-6-sol`, `gpt-6-sol-fast`, `gpt-6.1-sol`, `gpt-6.1-sol-fast`, `deepseek-flash`, `deepseek-v4-flash`, `deepseek-v4-pro`, `gemini-3.1-pro`, `gemini-3.6-flash`, `grok-4.6`, `grok-4.7`, `k3`, `kimi-for-coding-highspeed`, `kimi-k3`, `glm-5.2`, `glm-5.3`, `mimo-v2.5-pro`, `mimo-v2.6-pro`, `minimax-m2.7`, `minimax-m3`, `grok-4.20-0309-non-reasoning`, `mimo-v2.6-flash`, `glm-5.3-flash`, `custom` |
+| `session_summary` | `dominant_model_turns` | `number` | - |
+| `session_summary` | `dominant_provider` | `string` | `alibaba-token-plan`, `alibaba-token-plan-cn`, `anthropic`, `anthropic-api`, `anthropic-subscription`, `bailian-coding-plan`, `chatgpt-subscription`, `claude-sdk-oauth`, `deepseek`, `google`, `github-copilot`, `kimi-coding`, `kimi-for-coding`, `moonshotai`, `openai`, `openai-codex`, `opencode`, `opencode-go`, `qwen-token-plan`, `qwen-token-plan-cn`, `vercel`, `xai`, `xiaomi`, `zai`, `zai-coding-cn`, `zai-coding-plan`, `custom` |
+| `session_summary` | `error_turns` | `number` | - |
+| `session_summary` | `first_turn_index` | `number` | - |
+| `session_summary` | `input_tokens` | `number` | - |
+| `session_summary` | `invalid_usage_turns` | `number` | - |
+| `session_summary` | `is_final` | `boolean` | - |
+| `session_summary` | `last_turn_index` | `number` | - |
+| `session_summary` | `model_count` | `number` | - |
+| `session_summary` | `output_tokens` | `number` | - |
+| `session_summary` | `raw_turns_sampled` | `boolean` | - |
+| `session_summary` | `reasoning_tokens` | `number` | - |
+| `session_summary` | `sample_rate` | `number` | - |
+| `session_summary` | `summary_seq` | `number` | - |
+| `session_summary` | `tool_error_count` | `number` | - |
+| `session_summary` | `tool_result_count` | `number` | - |
+| `session_summary` | `total_tokens` | `number` | - |
+| `session_summary` | `total_tokens_max` | `number` | - |
+| `session_summary` | `total_tokens_p50` | `number` | - |
+| `session_summary` | `total_tokens_p95` | `number` | - |
+| `session_summary` | `turns` | `number` | - |
+| `session_summary` | `window_ms` | `number` | - |
 | `skill_loaded` | `$session_id` | `string` | - |
 | `skill_loaded` | `skill_name` | `string` | `ast-grep`, `browser`, `coding-agent-sessions`, `dag-library`, `data-scientist`, `debugging`, `frontend`, `git-master`, `give-me-tips`, `hyperplan`, `init-deep`, `lsp-setup`, `mass-ulw`, `onboarding`, `programming`, `refactor`, `remove-ai-slops`, `review-work`, `ulw-execute`, `ultimate-browsing`, `ultrawork`, `ulw-loop`, `ulw-plan`, `ulw-research`, `visual-qa`, `visualize` |
 | `delegation_started` | `$session_id` | `string` | - |

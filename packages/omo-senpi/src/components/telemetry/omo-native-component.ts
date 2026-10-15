@@ -31,6 +31,7 @@ import {
 } from "./omo-native-session"
 import { registerOmoNativeToolTelemetry } from "./omo-native-tools"
 import { createOmoNativeTurnHandler } from "./omo-native-turns"
+import { createSessionSummaryRecorder } from "./omo-native-session-summary"
 import {
   OMO_NATIVE_PROPERTY_ALLOWLISTS,
   OMO_NATIVE_SCHEMA_VERSION,
@@ -54,6 +55,8 @@ export type OmoNativeTelemetryComponentOptions = OmoNativeSessionOptions & {
   /** Where senpi-task keeps its records and per-task event logs. Defaults to the session's project. */
   readonly taskStateDir?: string
   readonly computerUseTelemetryObservers?: ComputerUseTelemetryObservers
+  /** Share of sessions that also send every raw `turn_completed`; tests pin it to 0 or 1. */
+  readonly rawTurnSampleRate?: number
 }
 
 export function createOmoNativeTelemetryComponent(options: OmoNativeTelemetryComponentOptions = {}): OmoSenpiComponent {
@@ -96,6 +99,16 @@ export function createOmoNativeTelemetryComponent(options: OmoNativeTelemetryCom
         detachKibitzerSummary()
       })
 
+      // Same ordering constraint again: the final summary window must be captured before the session
+      // component's shutdown handler clears `state.capture`.
+      const summary = createSessionSummaryRecorder({
+        captureEvent: client.captureEvent,
+        ...(options.rawTurnSampleRate === undefined ? {} : { sampleRate: options.rawTurnSampleRate }),
+      })
+      pi.on("session_shutdown", (_payload, eventCtx) => {
+        summary.finish(state.sessionHash ?? hashForContext(eventCtx, options.hashSessionId))
+      })
+
       createOmoNativePromptComponent({
         client,
         hashSessionId: options.hashSessionId,
@@ -136,6 +149,7 @@ export function createOmoNativeTelemetryComponent(options: OmoNativeTelemetryCom
           client,
           diagnostics: options.diagnostics,
           sessionId: sessionHash,
+          summary,
         })(payload)
       })
 
