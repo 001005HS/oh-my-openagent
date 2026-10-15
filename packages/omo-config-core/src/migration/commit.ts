@@ -104,7 +104,7 @@ function sameResolvedPath(a: string, b: string): boolean {
   return toPosixPath(resolve(a)) === toPosixPath(resolve(b))
 }
 
-export const writeOmoMigrationTarget: MigrationTargetWriter = (input): void => {
+export const writeOmoMigrationTarget: MigrationTargetWriter = (input) => {
   const options = writerInput(input.targetPath, input.env)
   const result = updateOmoConfig({
     ...options,
@@ -116,6 +116,7 @@ export const writeOmoMigrationTarget: MigrationTargetWriter = (input): void => {
   if (!sameResolvedPath(result.path, input.targetPath)) {
     throw new MigrationTransactionError(`Migration writer resolved ${result.path} instead of ${input.targetPath}`)
   }
+  return result.backupPath === undefined ? {} : { backupPath: result.backupPath }
 }
 
 export type PreparedTargetWrite = {
@@ -181,13 +182,14 @@ export function writePreparedTarget(input: {
   readonly prepared: PreparedTargetWrite
   readonly targetPath: string
   readonly writeTarget: MigrationTargetWriter
-}): void {
-  input.writeTarget({
+}): string | undefined {
+  const written = input.writeTarget({
     edits: input.prepared.edits,
     env: input.env,
     fileSystem: input.fileSystem,
     targetPath: input.targetPath,
   })
+  return written?.backupPath
 }
 
 export { parseDocument, targetDocument }

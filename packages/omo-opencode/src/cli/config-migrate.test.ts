@@ -130,4 +130,37 @@ describe("runConfigMigrate", () => {
     expect(existsSync(join(fixture.homeDir, ".omo", "backup.json"))).toBe(true)
     expect(lines.join("\n")).toContain("Recovered pending migration")
   })
+  test("#given a unified config with a user edit and a legacy file #when migrating #then the edit survives, every backup it wrote is named, and a rerun writes nothing (#8187)", () => {
+    // given
+    const fixture = createFixture()
+    mkdirSync(join(fixture.homeDir, ".omo"), { recursive: true })
+    writeFileSync(fixture.targetPath, '// my notes\n{"agents":{"oracle":{"model":"anthropic/MINE"}}}\n')
+    const environment = { HOME: fixture.homeDir, XDG_CONFIG_HOME: join(fixture.homeDir, ".config") }
+    const lines: string[] = []
+
+    // when
+    const exitCode = runConfigMigrate({ cwd: fixture.root, environment, output: (line) => lines.push(line) })
+
+    // then
+    expect(exitCode).toBe(0)
+    const migrated = readFileSync(fixture.targetPath, "utf8")
+    expect(migrated).toContain("anthropic/MINE")
+    expect(migrated).toContain("// my notes")
+    const named = lines.flatMap((line) => line.startsWith("backup: ") ? [line.slice("backup: ".length)] : [])
+    expect(named.length).toBeGreaterThan(0)
+    for (const backup of named) {
+      expect(existsSync(backup)).toBe(true)
+      expect(readFileSync(backup, "utf8")).toContain("anthropic/MINE")
+    }
+
+    // when
+    const before = statSync(fixture.targetPath).mtimeMs
+    const rerun: string[] = []
+    runConfigMigrate({ cwd: fixture.root, environment, output: (line) => rerun.push(line) })
+
+    // then
+    expect(rerun).toContain("Nothing to migrate.")
+    expect(readFileSync(fixture.targetPath, "utf8")).toBe(migrated)
+    expect(statSync(fixture.targetPath).mtimeMs).toBe(before)
+  })
 })

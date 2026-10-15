@@ -156,7 +156,7 @@ function executePlan(input: {
   writeMigrationJournal(journal, fileSystem, env, input.process, input.clock)
   input.onBoundary?.("journal-written")
   input.renewLock()
-  writePreparedTarget({ env, fileSystem, prepared, targetPath: plan.targetPath, writeTarget: input.writeTarget })
+  const targetBackupPath = writePreparedTarget({ env, fileSystem, prepared, targetPath: plan.targetPath, writeTarget: input.writeTarget })
   input.onBoundary?.("target-written")
   const targetRecorded = { ...journal, targetWritten: true }
   writeMigrationJournal(targetRecorded, fileSystem, env, input.process, input.clock)
@@ -171,7 +171,7 @@ function executePlan(input: {
     input.onBoundary?.("source-recorded")
   }
   removeMigrationJournal(fileSystem, env)
-  return { diagnostics, journalResumed, preview, status: "migrated" }
+  return { diagnostics, journalResumed, preview, status: "migrated", ...(targetBackupPath === undefined ? {} : { targetBackupPath }) }
 }
 
 export function runMigrations(options: RunMigrationsOptions): MigrationBatchRunResult {

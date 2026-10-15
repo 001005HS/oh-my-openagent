@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**`omo config migrate` names every backup it wrote.** Before rewriting an existing `~/.omo/omo.jsonc`, the migration keeps a timestamped copy (`omo.jsonc.bak.<time>`), and now prints `backup: <path>` for it (`targetBackupPath` in `--json`), so a user who disagrees with a rewrite can find the previous file. Edits in `omo.jsonc` survive the migration, and when there is nothing to migrate the file is not touched at all (same bytes, same modification time). Both are now pinned by a regression test. ([#8187](https://github.com/code-yeongyu/oh-my-openagent/issues/8187))
+
 **Thread tool results carry a link to the thread.** `thread_list`, `thread_create`, `thread_read`, `thread_send` and `thread_handoff` now return `link`, a ready `[title](omo-thread://v1/<thread_id>)` the agent pastes when it mentions a thread, so a client can render it as something the user clicks to open that thread. ([omo-desktop-app#1868](https://github.com/code-yeongyu/omo-desktop-app/issues/1868))
 
 **A background task whose child ends on a provider error that will not be retried now ends `failed` with that error.** It used to stay `running` and go stale when the engine skipped its idle signal. After one heartbeat with the child idle and nothing scheduled to wake it, the task fails with the provider's own message. A goal waiting out a provider outage, a terminal monitor or a wake channel still keeps it running, including a monitor started in an earlier turn. ([senpi#3262](https://github.com/code-yeongyu/senpi/issues/3262), [#10149](https://github.com/code-yeongyu/oh-my-openagent/pull/10149))
