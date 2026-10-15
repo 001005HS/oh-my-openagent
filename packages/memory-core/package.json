@@ -27,5 +27,8 @@
   },
   "devDependencies": {
     "yaml": "2.9.1"
+  },
+  "dependencies": {
+    "loro-crdt": "1.16.4"
   }
 }
