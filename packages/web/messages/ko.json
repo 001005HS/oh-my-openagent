@@ -493,5 +493,28 @@
       "windows": "Windows",
       "linux": "Linux"
     }
+  },
+  "support": {
+    "metadata": {
+      "title": "OmO 지원",
+      "description": "OmO 문제를 신고하거나 커뮤니티에 도움을 요청하세요."
+    },
+    "eyebrow": "지원",
+    "title": "OmO 지원",
+    "lead": "문제를 발견했거나 궁금한 점이 있나요? GitHub에 이슈를 열거나 커뮤니티 Discord에서 물어보세요.",
+    "leadWithReport": "OmO 앱에서 작성한 신고 내용이 아래에 있습니다. GitHub 이슈로 보내거나 커뮤니티 Discord에 가져와 주세요.",
+    "report": {
+      "heading": "신고 내용",
+      "titleLabel": "제목",
+      "bodyLabel": "자세한 내용",
+      "copy": "신고 내용 복사",
+      "copied": "복사됨"
+    },
+    "actions": {
+      "openIssue": "GitHub 이슈 열기",
+      "openIssueNote": "신고 내용이 채워진 GitHub 이슈가 열립니다. GitHub 이슈는 공개되니 제출 전에 내용을 확인해 주세요. 진단 zip 파일이 있다면 그곳에 첨부해 주세요.",
+      "discord": "Discord에서 물어보기"
+    },
+    "privacy": "이 페이지는 신고 내용을 저장하지 않습니다. 다만 앱이 연 링크에 담겨 omo.dev로 전달되었습니다. GitHub에는 직접 이슈를 제출할 때만 전달됩니다."
   }
 }
