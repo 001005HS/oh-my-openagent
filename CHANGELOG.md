@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**A usage limit or a flaky network no longer strands you on a fallback model (senpi 2026.10.15).** After a usage-limit fallback, your model comes back once that limit resets, and a timeout or dropped connection that outlasts the same-model retries moves only that one turn to the next model. Fallback chains that list one model at several thinking levels now try every level. MCP servers that follow the newest MCP spec (2026-07-28) now connect. If you signed in to a Claude Pro/Max subscription through the plain Anthropic provider, omo moves it to the Claude Agent SDK lane, the one that draws from your plan ([senpi v2026.10.15](https://github.com/code-yeongyu/senpi/releases/tag/v2026.10.15)).
+
 **A background task keeps the session awake until it really finishes.** The task engine's wake-source snapshot now lists each live child as an item the engine reads, and it updates when one child finishes while another starts, not only when the number of children changes. Before, that swap left a stale snapshot, so the todo backstop could warn that the agent stopped while it was still waiting on a child. (#10026)
 
 **A screenshot never captures a live virtual cursor that capture could not exclude.** When another session's cursor helper is still open but missing from what ScreenCaptureKit lists, the capture now fails instead of taking a frame that could show that cursor; a helper that has really closed is still skipped without an error. ([#10161](https://github.com/code-yeongyu/oh-my-openagent/pull/10161), follow-up to [#9889](https://github.com/code-yeongyu/oh-my-openagent/pull/9889))
