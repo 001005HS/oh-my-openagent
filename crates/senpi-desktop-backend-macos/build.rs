@@ -30,11 +30,19 @@ fn main() {
     println!("cargo:rustc-env={ENV_OUT}={}", helper.display());
 }
 
-/// The release pipeline's pre-signed helper, when it staged one.
+/// The release pipeline's pre-signed helper, when it staged one. A set
+/// directory without the helper is a broken release, never a reason to ship
+/// the ad-hoc dev helper instead.
 fn signed_helper() -> Option<PathBuf> {
     let directory = env::var_os(ENV_SIGNED)?;
     let candidate = PathBuf::from(directory).join(BINARY);
-    candidate.is_file().then_some(candidate)
+    assert!(
+        candidate.is_file(),
+        "{ENV_SIGNED} is set but {} holds no signed capture helper",
+        candidate.display()
+    );
+    println!("cargo:rerun-if-changed={}", candidate.display());
+    Some(candidate)
 }
 
 /// Local/dev build: clang from Xcode CLT, ad-hoc signature. Missing clang is
