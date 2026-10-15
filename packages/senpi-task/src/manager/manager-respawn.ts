@@ -162,13 +162,14 @@ async function respawnProcess(input: {
     // The exception: a session whose last turn ENDED while no parent was attached. An aborted or
     // unanswered turn that sits IDLE can never move again, and the abort may have been deliberate,
     // so nothing is nudged - the task is flagged "resumed, waiting for input" instead (senpi#3266).
-    // A turn still running on the host is reconciled first (a turn that ended while detached is settled,
-    // a running one continues); only then is a session left idle flagged as waiting.
+    // Every other re-joined session is reconciled with the host's own turn state (a finished turn is
+    // adopted, a deadline or failure settles, a turn the host interrupted continues).
     if (joinedLiveHostSession(handle)) {
-      await reconcileDaemonTurn(input.record, handle)
       const awaitingInput = await resumedSessionAwaitingInput(handle, sessionPath)
       const adapted = adaptRpcHandle(handle)
-      return awaitingInput === undefined ? { ok: true, handle: adapted } : { ok: true, handle: adapted, awaitingInput }
+      if (awaitingInput !== undefined) return { ok: true, handle: adapted, awaitingInput }
+      await reconcileDaemonTurn(input.record, handle)
+      return { ok: true, handle: adapted }
     }
     // A host session with nothing live to re-join and its session directory gone lost its work:
     // report that child by itself instead of resuming an empty session under its task id.

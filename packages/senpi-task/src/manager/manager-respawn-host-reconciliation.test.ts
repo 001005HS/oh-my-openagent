@@ -85,14 +85,13 @@ describe("respawn reconciliation on the real host runner", () => {
     await f.result.handle.dispose()
   })
 
-  test("attached idle aborted tail sends one continuation and never adopts partial text", async () => {
+  // senpi#3266: an aborted turn left idle may have been stopped on purpose, so nothing is nudged; the
+  // task is flagged as waiting for input and never adopts the partial text.
+  test("attached idle aborted tail is flagged as waiting for input, sends no continuation and never adopts partial text", async () => {
     const f = await detachedChild(false, true)
-    expect(f.host.commands.filter((command) => command.type === "prompt")).toHaveLength(2)
-    const answer = f.result.handle.waitForOutcome()
-    const session = f.host.sessions()[0]
-    if (session === undefined) throw new Error("missing continued session")
-    f.host.completeTurn(session.routingId, "CONTINUATION ANSWER")
-    expect(await answer).toEqual({ status: "completed", finalResponse: "CONTINUATION ANSWER" })
+    expect(f.result.ok ? f.result.awaitingInput : undefined).toEqual({ reason: "resumed_turn_aborted" })
+    expect(f.host.commands.filter((command) => command.type === "prompt")).toHaveLength(1)
+    expect(f.store.load(f.record.task_id)?.final_response).toBeUndefined()
     await f.result.handle.dispose()
   })
   test("pre-S1 deadline marker interrupts the record without sending input", async () => {
