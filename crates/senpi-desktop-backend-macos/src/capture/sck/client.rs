@@ -13,8 +13,11 @@ use senpi_desktop_core::frame::MAX_COMPOSITE_PIXELS;
 use super::frame::{decode, frame_bytes, Frame};
 use super::protocol::{Batch, Reply, TargetRequest};
 
+/// Test-only deadline for `capture`. The wire tests' fake helpers are Python scripts whose
+/// interpreter start alone can take over 5 s on a loaded host, and none of those tests is about
+/// timing; deadline behaviour is tested through `ping` and `capture_within` with explicit budgets.
 #[cfg(test)]
-const CAPTURE_TIMEOUT: Duration = Duration::from_secs(5);
+const CAPTURE_TIMEOUT: Duration = Duration::from_secs(30);
 /// The warm-up ping's own line; the helper answers `{"kind":"ready"}`.
 const PING: &[u8] = b"{\"kind\":\"ping\"}\n";
 const HEADER_LIMIT: usize = 65_536;
