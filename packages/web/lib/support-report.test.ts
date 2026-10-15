@@ -1,10 +1,19 @@
 import { describe, expect, test } from "bun:test"
 
-import { GITHUB_ISSUE_URL_MAX, githubIssueUrl, readSupportQuery, sliceAtCodePoint, SUPPORT_BODY_MAX, SUPPORT_TITLE_MAX } from "./support-report"
+import {
+  GITHUB_ISSUE_URL_MAX,
+  githubIssueUrl,
+  readSupportQuery,
+  sliceAtCodePoint,
+  SUPPORT_BODY_MAX,
+  SUPPORT_TITLE_MAX,
+} from "./support-report"
 
 describe("readSupportQuery", () => {
   test("#given the desktop report query #when read #then title and body come back trimmed", () => {
-    expect(readSupportQuery({ title: "  Anthropic sign-in missing  ", body: "Steps\n1. open" })).toEqual({
+    expect(
+      readSupportQuery({ title: "  Anthropic sign-in missing  ", body: "Steps\n1. open" }),
+    ).toEqual({
       title: "Anthropic sign-in missing",
       body: "Steps\n1. open",
     })
@@ -19,7 +28,10 @@ describe("readSupportQuery", () => {
   })
 
   test("#given an oversized title and body #when read #then both are capped", () => {
-    const query = readSupportQuery({ title: "t".repeat(SUPPORT_TITLE_MAX + 50), body: "b".repeat(SUPPORT_BODY_MAX + 50) })
+    const query = readSupportQuery({
+      title: "t".repeat(SUPPORT_TITLE_MAX + 50),
+      body: "b".repeat(SUPPORT_BODY_MAX + 50),
+    })
     expect(query.title).toHaveLength(SUPPORT_TITLE_MAX)
     expect(query.body).toHaveLength(SUPPORT_BODY_MAX)
   })
@@ -28,7 +40,9 @@ describe("readSupportQuery", () => {
 describe("githubIssueUrl", () => {
   test("#given a report #when the issue link is built #then it opens a new issue on the public repo with the report prefilled", () => {
     const url = new URL(githubIssueUrl({ title: "Report a problem 404", body: "a & b = c" }))
-    expect(`${url.origin}${url.pathname}`).toBe("https://github.com/code-yeongyu/oh-my-openagent/issues/new")
+    expect(`${url.origin}${url.pathname}`).toBe(
+      "https://github.com/code-yeongyu/oh-my-openagent/issues/new",
+    )
     expect(url.searchParams.get("title")).toBe("Report a problem 404")
     expect(url.searchParams.get("body")).toBe("a & b = c")
   })
@@ -61,4 +75,3 @@ describe("sliceAtCodePoint", () => {
     expect(title.length).toBeLessThanOrEqual(SUPPORT_TITLE_MAX)
   })
 })
-

@@ -26,7 +26,12 @@ export interface SupportReportPanelProps {
 }
 
 /** The prefilled report, as plain text the user can read and copy, and the two ways to send it. */
-export function SupportReportPanel({ report, issueUrl, discordUrl, labels }: SupportReportPanelProps): JSX.Element {
+export function SupportReportPanel({
+  report,
+  issueUrl,
+  discordUrl,
+  labels,
+}: SupportReportPanelProps): JSX.Element {
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!copied) return
@@ -46,7 +51,10 @@ export function SupportReportPanel({ report, issueUrl, discordUrl, labels }: Sup
   return (
     <div className="mt-10 max-w-3xl space-y-8">
       {hasReport ? (
-        <section aria-labelledby="support-report" className="border-line bg-ink-1 border p-6 lg:p-8">
+        <section
+          aria-labelledby="support-report"
+          className="border-line bg-ink-1 border p-6 lg:p-8"
+        >
           <div className="flex flex-wrap items-center justify-between gap-4">
             <h2 id="support-report" className="type-heading text-text-hi">
               {labels.reportHeading}
@@ -68,7 +76,7 @@ export function SupportReportPanel({ report, issueUrl, discordUrl, labels }: Sup
               <p className="text-text-lo font-mono text-xs uppercase">{labels.bodyLabel}</p>
               <pre
                 data-testid="support-report-body"
-                className="text-text-mid bg-ink-0 border-line mt-1 max-h-96 overflow-auto border p-4 font-mono text-sm whitespace-pre-wrap break-words"
+                className="text-text-mid bg-ink-0 border-line mt-1 max-h-96 overflow-auto border p-4 font-mono text-sm break-words whitespace-pre-wrap"
               >
                 {report.body}
               </pre>

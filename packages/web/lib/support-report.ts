@@ -26,7 +26,10 @@ function first(value: QueryValue): string {
 }
 
 /** The report the desktop app's "Report a problem" passes as `?title=&body=`: untrusted text, trimmed and capped. */
-export function readSupportQuery(query: { readonly title?: QueryValue; readonly body?: QueryValue }): SupportReport {
+export function readSupportQuery(query: {
+  readonly title?: QueryValue
+  readonly body?: QueryValue
+}): SupportReport {
   return {
     title: sliceAtCodePoint(first(query.title).trim(), SUPPORT_TITLE_MAX),
     body: sliceAtCodePoint(first(query.body).trim(), SUPPORT_BODY_MAX),
