@@ -24,6 +24,12 @@ env:
   GENERATED_LABEL: lazycodex-generated
   PACKAGE_LABEL_COLOR: ededed
 
+concurrency:
+  # One run per PR (or per comment thread / dispatch target): a newer PR Automation Signal completion supersedes the
+  # older run, so a busy PR no longer queues three runs per event on the account's shared runners.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_run' && format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) || github.event.issue.number || github.event.inputs.pr_number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   resolve-pr:
     if: github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch'
