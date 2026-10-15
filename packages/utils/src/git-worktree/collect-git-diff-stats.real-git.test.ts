@@ -3,14 +3,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
 import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
-import { devNull, tmpdir } from "node:os"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { removeTree } from "../../../../test-support/remove-tree"
 import { collectGitDiffStats } from "./collect-git-diff-stats"
 import { formatFileChanges } from "./format-file-changes"
 
+// GIT_CONFIG_GLOBAL is set per test to an empty file: os.devNull is `\\.\nul` on Windows, which git cannot open.
 const HERMETIC_GIT_ENV: Record<string, string> = {
-  GIT_CONFIG_GLOBAL: devNull,
   GIT_CONFIG_NOSYSTEM: "1",
   GIT_AUTHOR_NAME: "t",
   GIT_AUTHOR_EMAIL: "t@example.com",
@@ -34,16 +34,24 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 describe("collectGitDiffStats with a real repository", () => {
+  let root: string
   let repo: string
   let savedEnv: Record<string, string | undefined>
 
   beforeEach(() => {
     savedEnv = Object.fromEntries(
-      [...Object.keys(HERMETIC_GIT_ENV), ...REPOSITORY_SELECTING_GIT_ENV].map((key) => [key, process.env[key]]),
+      ["GIT_CONFIG_GLOBAL", ...Object.keys(HERMETIC_GIT_ENV), ...REPOSITORY_SELECTING_GIT_ENV].map((key) => [
+        key,
+        process.env[key],
+      ]),
     )
     for (const key of REPOSITORY_SELECTING_GIT_ENV) delete process.env[key]
     Object.assign(process.env, HERMETIC_GIT_ENV)
-    repo = mkdtempSync(join(tmpdir(), "omo-diff-stats-"))
+    root = mkdtempSync(join(tmpdir(), "omo-diff-stats-"))
+    writeFileSync(join(root, "gitconfig"), "")
+    process.env.GIT_CONFIG_GLOBAL = join(root, "gitconfig")
+    repo = join(root, "repo")
+    mkdirSync(repo)
     git(repo, "init", "-q")
     writeFileSync(join(repo, "keep.txt"), "one\n")
     writeFileSync(join(repo, "old_name.txt"), "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n")
@@ -56,7 +64,7 @@ describe("collectGitDiffStats with a real repository", () => {
       if (value === undefined) delete process.env[key]
       else process.env[key] = value
     }
-    await removeTree(repo)
+    await removeTree(root)
   })
 
   test("#given untracked files with spaces and non-ASCII names #when collecting #then reports raw paths as created with real line counts", () => {
