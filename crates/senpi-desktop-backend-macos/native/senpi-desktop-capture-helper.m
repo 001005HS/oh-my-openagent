@@ -69,17 +69,19 @@ static NSArray<SCWindow *> *ExcludedWindows(SCShareableContent *content, NSArray
 // The first excludeWindowIds entry that WindowServer still lists but the shareable content does
 // not, or 0. Such a helper could not be excluded, so the frame is refused rather than captured
 // unfiltered; a helper that really closed is absent from both lists and is skipped (#10161).
+// A window list that cannot be read counts as alive, so the check never fails open.
 static uint32_t LiveMissingExclusion(SCShareableContent *content, NSArray *ids) {
 	if (![ids isKindOfClass:NSArray.class]) return 0;
-	for (NSNumber *entry in ids) {
-		uint32_t wid = entry.unsignedIntValue;
+	for (id entry in ids) {
+		if (![entry isKindOfClass:NSNumber.class]) continue;
+		uint32_t wid = [entry unsignedIntValue];
 		BOOL listed = NO;
 		for (SCWindow *window in content.windows) {
 			if (window.windowID == wid) { listed = YES; break; }
 		}
 		if (listed) continue;
 		CFArrayRef info = CGWindowListCopyWindowInfo(kCGWindowListOptionIncludingWindow, wid);
-		BOOL alive = info != NULL && CFArrayGetCount(info) > 0;
+		BOOL alive = info == NULL || CFArrayGetCount(info) > 0;
 		if (info) CFRelease(info);
 		if (alive) return wid;
 	}
