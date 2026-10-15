@@ -24,7 +24,7 @@ export function sealTo(recipient: string, plaintext: Uint8Array): Uint8Array {
   return Buffer.concat([enc, cipher.update(plaintext), cipher.final(), cipher.getAuthTag()])
 }
 
-const SIGNING_TAGS = { "object-digest": "omo-sync/v1/digest", record: "omo-sync/v1/record" } as const
+const SIGNING_TAGS = { "object-digest": "omo-sync/v1/object-digest", record: "omo-sync/v1/record" } as const
 
 function taggedMessage(tag: string, payload: Uint8Array): Buffer {
   return Buffer.concat([Buffer.from(tag, "ascii"), Buffer.from([0]), Buffer.from(payload)])
@@ -74,7 +74,7 @@ describe("DeviceKeyring", () => {
     const digest31 = new Uint8Array(31)
     const withoutT = new TextEncoder().encode('{"account":"acc"}')
     const wrongPrefix = new TextEncoder().encode('{"t":"omo-other/v1/record"}')
-    const digestTagAsRecord = new TextEncoder().encode('{"t":"omo-sync/v1/digest"}')
+    const digestTagAsRecord = new TextEncoder().encode('{"t":"omo-sync/v1/object-digest"}')
     const nonCanonical = new TextEncoder().encode('{ "t":"omo-sync/v1/record" }')
     const unknownPurpose = { purpose: "anything", digest: new Uint8Array(32) } as unknown as Parameters<typeof keyring.sign>[0]
     for (const request of [

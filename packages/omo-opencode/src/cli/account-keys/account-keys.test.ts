@@ -20,7 +20,7 @@ describe("account keys", () => {
     expect(reopened?.publicKeys()).toEqual(first.publicKeys())
     const digest = new Uint8Array(32).fill(3)
     const signature = await second.sign({ purpose: "object-digest", digest })
-    const tagged = Buffer.concat([Buffer.from("omo-sync/v1/digest", "ascii"), Buffer.from([0]), Buffer.from(digest)])
+    const tagged = Buffer.concat([Buffer.from("omo-sync/v1/object-digest", "ascii"), Buffer.from([0]), Buffer.from(digest)])
     expect(verify(null, tagged, createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: first.publicKeys().signing }, format: "jwk" }), signature)).toBe(true)
     expect(verify(null, digest, createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: first.publicKeys().signing }, format: "jwk" }), signature)).toBe(false)
   })

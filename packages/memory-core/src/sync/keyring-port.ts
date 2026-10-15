@@ -51,13 +51,13 @@ export class DeviceKeyringSignError extends Error {
 }
 
 /**
- * Domain separation tags (Opus delta review of desktop #2665): every device
- * or recovery signature is Ed25519 over `tag || 0x00 || payload`. No
- * signature is ever made over untagged bytes, so a signature minted for one
- * purpose can never be replayed as another.
+ * Domain separation tags (Opus delta review of desktop #2665, tag names
+ * corrected): every device or recovery signature is Ed25519 over
+ * `tag || 0x00 || payload`. No signature is ever made over untagged bytes,
+ * so a signature minted for one purpose can never be replayed as another.
  */
 const SIGNING_DOMAIN_TAGS: Record<DeviceKeyringSignRequest["purpose"], string> = {
-  "object-digest": "omo-sync/v1/digest",
+  "object-digest": "omo-sync/v1/object-digest",
   record: "omo-sync/v1/record",
 }
 
