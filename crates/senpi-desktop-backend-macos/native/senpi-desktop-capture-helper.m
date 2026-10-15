@@ -66,6 +66,26 @@ static NSArray<SCWindow *> *ExcludedWindows(SCShareableContent *content, NSArray
 	return excluded;
 }
 
+// The first excludeWindowIds entry that WindowServer still lists but the shareable content does
+// not, or 0. Such a helper could not be excluded, so the frame is refused rather than captured
+// unfiltered; a helper that really closed is absent from both lists and is skipped (#10161).
+static uint32_t LiveMissingExclusion(SCShareableContent *content, NSArray *ids) {
+	if (![ids isKindOfClass:NSArray.class]) return 0;
+	for (NSNumber *entry in ids) {
+		uint32_t wid = entry.unsignedIntValue;
+		BOOL listed = NO;
+		for (SCWindow *window in content.windows) {
+			if (window.windowID == wid) { listed = YES; break; }
+		}
+		if (listed) continue;
+		CFArrayRef info = CGWindowListCopyWindowInfo(kCGWindowListOptionIncludingWindow, wid);
+		BOOL alive = info != NULL && CFArrayGetCount(info) > 0;
+		if (info) CFRelease(info);
+		if (alive) return wid;
+	}
+	return 0;
+}
+
 static void CaptureNext(SCShareableContent *content, NSArray *requests, NSUInteger index,
 	uint64_t maxPixels, dispatch_block_t done) API_AVAILABLE(macos(14.0));
 
@@ -91,6 +111,13 @@ static void CaptureNext(SCShareableContent *content, NSArray *requests, NSUInteg
 			break;
 		}
 	} else {
+		uint32_t unexcludable = LiveMissingExclusion(content, request[@"excludeWindowIds"]);
+		if (unexcludable != 0) {
+			Failure(@"CaptureFailed", [NSString stringWithFormat:
+				@"cursor helper window %u exists but is absent from the capture content; refusing an unfiltered frame",
+				unexcludable]);
+			done(); return;
+		}
 		for (SCDisplay *display in content.displays) {
 			if (display.displayID != identifier) continue;
 			filter = [[SCContentFilter alloc] initWithDisplay:display
