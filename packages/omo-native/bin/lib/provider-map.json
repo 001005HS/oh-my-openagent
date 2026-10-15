@@ -52,7 +52,6 @@
     "zai-coding-cn"
   ],
   "oauthProviderIds": [
-    "anthropic",
     "chatgpt-subscription",
     "cursor",
     "devin",
@@ -74,6 +73,7 @@
     "zhipuai": "zai"
   },
   "oauthLogins": {
+    "anthropic": "anthropic-subscription",
     "claude-sdk-oauth": "anthropic-subscription",
     "kimi-for-coding": "kimi-coding",
     "openai": "chatgpt-subscription",
