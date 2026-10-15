@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import { GITHUB_ISSUE_URL_MAX, githubIssueUrl, readSupportQuery, SUPPORT_BODY_MAX, SUPPORT_TITLE_MAX } from "./support-report"
+import { GITHUB_ISSUE_URL_MAX, githubIssueUrl, readSupportQuery, sliceAtCodePoint, SUPPORT_BODY_MAX, SUPPORT_TITLE_MAX } from "./support-report"
 
 describe("readSupportQuery", () => {
   test("#given the desktop report query #when read #then title and body come back trimmed", () => {
@@ -47,3 +47,18 @@ describe("githubIssueUrl", () => {
     expect(url.searchParams.has("body")).toBe(false)
   })
 })
+
+describe("sliceAtCodePoint", () => {
+  test("#given a cut that would split an emoji #when sliced #then the emoji is dropped whole, never left as half a pair", () => {
+    const text = `ab${"😀"}cd`
+    expect(sliceAtCodePoint(text, 3)).toBe("ab")
+    expect(sliceAtCodePoint(text, 4)).toBe("ab😀")
+  })
+
+  test("#given an emoji-heavy title over the cap #when read #then the capped title has no lone surrogate", () => {
+    const title = readSupportQuery({ title: "😀".repeat(SUPPORT_TITLE_MAX) }).title
+    expect(title).not.toMatch(/[\uD800-\uDBFF]$/)
+    expect(title.length).toBeLessThanOrEqual(SUPPORT_TITLE_MAX)
+  })
+})
+

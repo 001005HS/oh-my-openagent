@@ -515,6 +515,6 @@
       "openIssueNote": "将打开已填好报告内容的 GitHub issue。GitHub issue 是公开的，提交前请先检查内容。如果有诊断 zip 文件，请在那里附上。",
       "discord": "在 Discord 提问"
     },
-    "privacy": "此页面不会发送或保存任何内容。只有在你自己提交时，报告才会离开浏览器。"
+    "privacy": "此页面不会保存你的报告，但报告已包含在应用打开的链接中发送到 omo.dev。只有在你自己提交 issue 时，报告才会发送到 GitHub。"
   }
 }

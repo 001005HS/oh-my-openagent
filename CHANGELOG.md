@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**`omo.dev/support` exists, so the desktop app's Report a problem no longer lands on a 404.** The page shows the report the app passes, as text only, with a copy button. It opens a prefilled GitHub issue, kept under GitHub's URL limit, or the community Discord, in all four site languages. Nothing on the page is sent or stored. Thanks to 문광훈 for the report. ([#10179](https://github.com/code-yeongyu/oh-my-openagent/issues/10179))
+**`omo.dev/support` exists, so the desktop app's Report a problem no longer lands on a 404.** The page shows the report the app passes, as text only, with a copy button. It opens a prefilled GitHub issue, kept under GitHub's URL limit, or the community Discord, in all four site languages. The page saves nothing, and the report reaches GitHub only when the user submits the issue. Thanks to 문광훈 for the report. ([#10179](https://github.com/code-yeongyu/oh-my-openagent/issues/10179))
 
 **A background task keeps the session awake until it really finishes.** The task engine's wake-source snapshot now lists each live child as an item the engine reads, and it updates when one child finishes while another starts, not only when the number of children changes. Before, that swap left a stale snapshot, so the todo backstop could warn that the agent stopped while it was still waiting on a child. (#10026)
 

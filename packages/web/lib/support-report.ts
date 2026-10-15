@@ -13,6 +13,13 @@ export interface SupportReport {
 
 type QueryValue = string | readonly string[] | undefined
 
+/** `text.slice(0, end)` that never leaves half of a surrogate pair (an emoji) at the cut. */
+export function sliceAtCodePoint(text: string, end: number): string {
+  if (end >= text.length) return text
+  const last = text.charCodeAt(end - 1)
+  return text.slice(0, last >= 0xd800 && last <= 0xdbff ? end - 1 : end)
+}
+
 function first(value: QueryValue): string {
   if (value === undefined) return ""
   return typeof value === "string" ? value : (value[0] ?? "")
@@ -21,8 +28,8 @@ function first(value: QueryValue): string {
 /** The report the desktop app's "Report a problem" passes as `?title=&body=`: untrusted text, trimmed and capped. */
 export function readSupportQuery(query: { readonly title?: QueryValue; readonly body?: QueryValue }): SupportReport {
   return {
-    title: first(query.title).trim().slice(0, SUPPORT_TITLE_MAX),
-    body: first(query.body).trim().slice(0, SUPPORT_BODY_MAX),
+    title: sliceAtCodePoint(first(query.title).trim(), SUPPORT_TITLE_MAX),
+    body: sliceAtCodePoint(first(query.body).trim(), SUPPORT_BODY_MAX),
   }
 }
 
@@ -34,7 +41,7 @@ export function githubIssueUrl(report: SupportReport): string {
   let body = report.body
   url.searchParams.set("body", body)
   while (url.href.length > GITHUB_ISSUE_URL_MAX && body.length > 0) {
-    body = body.slice(0, Math.floor(body.length * 0.9)).trimEnd()
+    body = sliceAtCodePoint(body, Math.floor(body.length * 0.9)).trimEnd()
     url.searchParams.set("body", `${body}…`)
   }
   return url.href

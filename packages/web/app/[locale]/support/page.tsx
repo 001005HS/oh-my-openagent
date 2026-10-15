@@ -9,6 +9,9 @@ import { githubIssueUrl, readSupportQuery } from "@/lib/support-report"
 
 const DISCORD_URL = "https://discord.gg/PUwSMR9XNk"
 
+// The report arrives in the query, so the page is rendered per request, like the download page.
+export const dynamic = "force-dynamic"
+
 export async function generateMetadata({
   params,
 }: {
@@ -21,7 +24,8 @@ export async function generateMetadata({
 
 /**
  * Where the desktop app's "Report a problem" lands (`?title=&body=`). The report is shown as text
- * only and handed on to a prefilled GitHub issue; nothing is stored or sent from here.
+ * only and handed on to a prefilled GitHub issue. The page itself saves nothing, but the query (the report)
+ * reaches this server and its edge like any URL, so the privacy note says exactly that.
  */
 export default async function SupportPage({
   params,

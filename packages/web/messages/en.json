@@ -515,6 +515,6 @@
       "openIssueNote": "The issue opens on GitHub with your report filled in. Check it before you submit: GitHub issues are public. If your report has a diagnostics zip, attach it there.",
       "discord": "Ask on Discord"
     },
-    "privacy": "Nothing here is sent or stored by this page. The report only leaves your browser when you submit it yourself."
+    "privacy": "This page doesn't save your report, but it was sent to omo.dev in the link the app opened. It reaches GitHub only when you submit the issue yourself."
   }
 }
