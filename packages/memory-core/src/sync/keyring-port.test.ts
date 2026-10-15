@@ -24,8 +24,14 @@ export function sealTo(recipient: string, plaintext: Uint8Array): Uint8Array {
   return Buffer.concat([enc, cipher.update(plaintext), cipher.final(), cipher.getAuthTag()])
 }
 
+const SIGNING_TAGS = { "object-digest": "omo-sync/v1/digest", record: "omo-sync/v1/record" } as const
+
+function taggedMessage(tag: string, payload: Uint8Array): Buffer {
+  return Buffer.concat([Buffer.from(tag, "ascii"), Buffer.from([0]), Buffer.from(payload)])
+}
+
 describe("DeviceKeyring", () => {
-  test("signs an object digest and verifies with the advertised raw Ed25519 key", async () => {
+  test("signs an object digest as tagged bytes and verifies with the advertised raw Ed25519 key", async () => {
     const keyring = createInMemoryDeviceKeyring("fixture-device")
     const digest = new Uint8Array(32).fill(7)
     const signature = await keyring.sign({ purpose: "object-digest", digest })
@@ -33,16 +39,34 @@ describe("DeviceKeyring", () => {
     const publicKeys = keyring.publicKeys()
     expect(Buffer.from(publicKeys.signing, "base64url")).toHaveLength(32)
     expect(Buffer.from(publicKeys.sealing, "base64url")).toHaveLength(32)
-    expect(verify(null, digest, createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: publicKeys.signing }, format: "jwk" }), signature)).toBe(true)
+    const publicKey = createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: publicKeys.signing }, format: "jwk" })
+    expect(verify(null, taggedMessage(SIGNING_TAGS["object-digest"], digest), publicKey, signature)).toBe(true)
     expect(JSON.stringify(keyring)).not.toContain("PRIVATE")
   })
 
-  test("signs a canonical record preimage", async () => {
+  test("signs a canonical record preimage as tagged bytes", async () => {
     const keyring = createInMemoryDeviceKeyring("fixture-device")
     const canonicalJson = new TextEncoder().encode('{"t":"omo-sync/v1/record","account":"acc","base_seq":1,"digest":"AA","epoch":1,"link":"AA"}')
     const signature = await keyring.sign({ purpose: "record", canonicalJson })
     const publicKeys = keyring.publicKeys()
-    expect(verify(null, canonicalJson, createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: publicKeys.signing }, format: "jwk" }), signature)).toBe(true)
+    const publicKey = createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: publicKeys.signing }, format: "jwk" })
+    expect(verify(null, taggedMessage(SIGNING_TAGS.record, canonicalJson), publicKey, signature)).toBe(true)
+  })
+
+  test("domain separation: no signature verifies across purposes or untagged", async () => {
+    const keyring = createInMemoryDeviceKeyring("fixture-device")
+    const publicKeys = keyring.publicKeys()
+    const publicKey = createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: publicKeys.signing }, format: "jwk" })
+    const digest = new Uint8Array(32).fill(9)
+    const canonicalJson = new TextEncoder().encode('{"t":"omo-sync/v1/record","epoch":2}')
+    const digestSig = await keyring.sign({ purpose: "object-digest", digest })
+    const recordSig = await keyring.sign({ purpose: "record", canonicalJson })
+    // A signature made for one purpose must not verify under the other purpose's tag.
+    expect(verify(null, taggedMessage(SIGNING_TAGS.record, digest), publicKey, digestSig)).toBe(false)
+    expect(verify(null, taggedMessage(SIGNING_TAGS["object-digest"], canonicalJson), publicKey, recordSig)).toBe(false)
+    // And no signature verifies over the untagged payload.
+    expect(verify(null, digest, publicKey, digestSig)).toBe(false)
+    expect(verify(null, canonicalJson, publicKey, recordSig)).toBe(false)
   })
 
   test("refuses malformed sign requests with a typed error", async () => {
@@ -50,12 +74,14 @@ describe("DeviceKeyring", () => {
     const digest31 = new Uint8Array(31)
     const withoutT = new TextEncoder().encode('{"account":"acc"}')
     const wrongPrefix = new TextEncoder().encode('{"t":"omo-other/v1/record"}')
+    const digestTagAsRecord = new TextEncoder().encode('{"t":"omo-sync/v1/digest"}')
     const nonCanonical = new TextEncoder().encode('{ "t":"omo-sync/v1/record" }')
     const unknownPurpose = { purpose: "anything", digest: new Uint8Array(32) } as unknown as Parameters<typeof keyring.sign>[0]
     for (const request of [
       { purpose: "object-digest", digest: digest31 },
       { purpose: "record", canonicalJson: withoutT },
       { purpose: "record", canonicalJson: wrongPrefix },
+      { purpose: "record", canonicalJson: digestTagAsRecord },
       { purpose: "record", canonicalJson: nonCanonical },
       unknownPurpose,
     ] as const) {

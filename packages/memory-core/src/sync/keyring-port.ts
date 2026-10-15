@@ -50,6 +50,21 @@ export class DeviceKeyringSignError extends Error {
   }
 }
 
+/**
+ * Domain separation tags (Opus delta review of desktop #2665): every device
+ * or recovery signature is Ed25519 over `tag || 0x00 || payload`. No
+ * signature is ever made over untagged bytes, so a signature minted for one
+ * purpose can never be replayed as another.
+ */
+const SIGNING_DOMAIN_TAGS: Record<DeviceKeyringSignRequest["purpose"], string> = {
+  "object-digest": "omo-sync/v1/digest",
+  record: "omo-sync/v1/record",
+}
+
+function domainSeparatedMessage(purpose: DeviceKeyringSignRequest["purpose"], payload: Uint8Array): Buffer {
+  return Buffer.concat([Buffer.from(SIGNING_DOMAIN_TAGS[purpose], "ascii"), Buffer.from([0]), Buffer.from(payload)])
+}
+
 function validateSignRequest(request: DeviceKeyringSignRequest): Uint8Array {
   if (typeof request !== "object" || request === null) {
     throw new DeviceKeyringSignError("unknown-purpose", "sign: request must be a typed sign request")
@@ -76,6 +91,11 @@ function validateSignRequest(request: DeviceKeyringSignRequest): Uint8Array {
     const t = (parsed as { t: string }).t
     if (!t.startsWith("omo-sync/v1/")) {
       throw new DeviceKeyringSignError("record-prefix", 'sign: record "t" must start with "omo-sync/v1/"')
+    }
+    // The digest tag belongs to the object-digest purpose; a record carrying
+    // it would collapse the domain separation, so it is refused here too.
+    if (t === SIGNING_DOMAIN_TAGS["object-digest"]) {
+      throw new DeviceKeyringSignError("record-prefix", 'sign: record "t" must name a record or snapshot type, not the object-digest tag')
     }
     // RFC 8785 §3.2.2.3: whitespace is forbidden between tokens, so its
     // presence proves non-canonical input without re-serializing floats.
@@ -244,7 +264,10 @@ export function createDeviceKeyring(id: string, material: DeviceKeyMaterial): De
   return {
     principal: () => ({ kind: "device", id }),
     publicKeys: () => ({ ...publicKeys }),
-    sign: async request => ed25519Sign(null, Buffer.from(validateSignRequest(request)), signingPrivateKey),
+    sign: async request => {
+      const payload = validateSignRequest(request)
+      return ed25519Sign(null, domainSeparatedMessage(request.purpose, payload), signingPrivateKey)
+    },
     unseal: async wrap => openHpkeSealedBox(sealingPrivateRaw, sealingPublicRaw, wrap),
   }
 }
