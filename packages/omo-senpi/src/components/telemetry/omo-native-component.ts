@@ -13,7 +13,7 @@ import type {
 } from "@oh-my-opencode/telemetry-core"
 
 import type { OmoSenpiComponent } from "../../extension/types"
-import { isHostWarmupSession, resolveStateDir } from "@oh-my-opencode/senpi-task"
+import { isHostWarmupSession, readSessionRole, resolveStateDir } from "@oh-my-opencode/senpi-task"
 
 import { sharedTaskTerminalObservers, type TaskTerminalObservers } from "../task/terminal-observers"
 import {
@@ -32,6 +32,7 @@ import {
 import { registerOmoNativeToolTelemetry } from "./omo-native-tools"
 import { createOmoNativeTurnHandler } from "./omo-native-turns"
 import { createSessionSummaryRecorder } from "./omo-native-session-summary"
+import { createSummaryStore } from "./session-summary-store"
 import {
   OMO_NATIVE_PROPERTY_ALLOWLISTS,
   OMO_NATIVE_SCHEMA_VERSION,
@@ -103,10 +104,14 @@ export function createOmoNativeTelemetryComponent(options: OmoNativeTelemetryCom
       // component's shutdown handler clears `state.capture`.
       const summary = createSessionSummaryRecorder({
         captureEvent: client.captureEvent,
+        store: createSummaryStore({ stateDir }),
+        sessionRole: readSessionRole(pi, env) ?? "main",
+        ...(options.diagnostics === undefined ? {} : { diagnostics: options.diagnostics }),
         ...(options.rawTurnSampleRate === undefined ? {} : { sampleRate: options.rawTurnSampleRate }),
       })
-      pi.on("session_shutdown", (_payload, eventCtx) => {
-        summary.finish(state.sessionHash ?? hashForContext(eventCtx, options.hashSessionId))
+      pi.on("session_shutdown", (payload, eventCtx) => {
+        const reason = isRecord(payload) && typeof payload.reason === "string" ? payload.reason : undefined
+        summary.finish(state.sessionHash ?? hashForContext(eventCtx, options.hashSessionId), reason)
       })
 
       createOmoNativePromptComponent({

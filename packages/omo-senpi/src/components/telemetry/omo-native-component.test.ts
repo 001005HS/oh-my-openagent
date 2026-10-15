@@ -277,6 +277,31 @@ describe("OmO Native telemetry component integration", () => {
     })
   })
 
+  test("#given a task-child session #when it reports its summary #then session_role says child so delegated cost is not counted twice", async () => {
+    await withTempAgentDir(async (agentDir) => {
+      writeInventory(agentDir)
+      const recorder = createTransportRecorder()
+      const pi = new FakeExtensionAPI()
+      const session = context("child-session")
+      createOmoNativeTelemetryComponent({
+        rawTurnSampleRate: 0,
+        env: { ...createEnabledEnv(agentDir), OMO_SENPI_TASK_RPC_CHILD: "1" },
+        hashSessionId: (raw) => `hashed:${raw}`,
+        isConfigEnabled: () => true,
+        now: FIXED_NOW,
+        osProvider: createOsProvider("child-host"),
+        stateDir: join(agentDir, "omo-senpi", "omo-native"),
+        transportFactory: recorder.factory,
+      }).register(pi, { config: pi, logger: createSilentLogger() })
+
+      await pi.dispatch("session_start", { type: "session_start", reason: "startup" }, session)
+      await pi.dispatch("turn_end", turnEnd(), session)
+      await pi.dispatch("session_shutdown", { type: "session_shutdown", reason: "quit" }, session)
+
+      expect(recorder.messages.find(({ event }) => event === "session_summary")?.properties).toMatchObject({ session_role: "child", turns: 1 })
+    })
+  })
+
   test("#given a delegation capture carrying a foreign $session_id #when forwarded #then state.sessionHash is unchanged and only session_start may set it", async () => {
     await withTempAgentDir(async (agentDir) => {
       // given: a live session plus a terminal edge for a task spawned by an OLDER session

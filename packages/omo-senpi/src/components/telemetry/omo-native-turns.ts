@@ -7,6 +7,7 @@ import {
   KNOWN_MODELS,
   KNOWN_PROVIDERS,
   OMO_NATIVE_PROPERTY_ALLOWLISTS,
+  maskProviderAndModel,
 } from "./product-identity"
 import type { SessionSummaryRecorder } from "./omo-native-session-summary"
 
@@ -52,10 +53,11 @@ export function createOmoNativeTurnHandler(
     } satisfies Record<TurnCompletedProperty, string | number>
 
     const usageValid = [input, output, cacheRead, cacheWrite, reasoning, total, costTotal].every(({ valid }) => valid)
+    const summaryModel = maskProviderAndModel(event.message.provider, event.message.model)
     options.summary.recordTurn(options.sessionId, {
       turnIndex: event.turnIndex,
-      provider: masked.provider,
-      modelId: masked.model_id,
+      provider: summaryModel.provider,
+      modelId: summaryModel.model_id,
       inputTokens: input.value,
       outputTokens: output.value,
       cacheReadTokens: cacheRead.value,
