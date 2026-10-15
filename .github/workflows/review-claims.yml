@@ -28,10 +28,11 @@ permissions:
   checks: write
 
 concurrency:
-  # One run per PR (or per comment thread / dispatch target): a newer PR Automation Signal completion supersedes the
-  # older run, so a busy PR no longer queues three runs per event on the account's shared runners.
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_run' && format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) || github.event.issue.number || github.event.inputs.pr_number || github.run_id }}
-  cancel-in-progress: true
+  # Only PR Automation Signal runs are grouped: a newer signal for the same PR head supersedes the older run. Every
+  # other trigger (CLA signing/recheck comments, any other comment, issues, dispatch, schedule, merge_group) keys on its
+  # own run id, so nothing can cancel or replace a run that is recording a CLA signature or a manual recheck.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_run' && format('signal-{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_run' }}
 
 jobs:
   gate:
