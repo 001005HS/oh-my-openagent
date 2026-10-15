@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**`thread_create` can start a thread with skills it follows from its first turn.** Pass `skills: ["<name>", ...]` with the names of installed skills; the new session applies each one as if it were loaded with `/skill`, without a slash command and without starting a turn, and keeps applying it after a restart. A path or raw text refuses the create, and nothing is opened. The new session applies each skill its own registry holds (the same roots and trust rules as `/skill`) and logs any it does not; the result echoes the names passed as `thread.requested_skills`.
+
 **Thread tool results carry a link to the thread.** `thread_list`, `thread_create`, `thread_read`, `thread_send` and `thread_handoff` now return `link`, a ready `[title](omo-thread://v1/<thread_id>)` the agent pastes when it mentions a thread, so a client can render it as something the user clicks to open that thread. ([omo-desktop-app#1868](https://github.com/code-yeongyu/omo-desktop-app/issues/1868))
 
 **A background task whose child ends on a provider error that will not be retried now ends `failed` with that error.** It used to stay `running` and go stale when the engine skipped its idle signal. After one heartbeat with the child idle and nothing scheduled to wake it, the task fails with the provider's own message. A goal waiting out a provider outage, a terminal monitor or a wake channel still keeps it running, including a monitor started in an earlier turn. ([senpi#3262](https://github.com/code-yeongyu/senpi/issues/3262), [#10149](https://github.com/code-yeongyu/oh-my-openagent/pull/10149))
