@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**`visual-engineering` and `writing` lead with Gemini 4 Argon at its lowest thinking level once the engine serves it.** Both category chains and defaults put `google/gemini-4-argon` (low) first; every previous entry keeps its place one rung down. The rung resolves only when the pinned engine catalog carries the model, so sessions on the current pin keep resolving Claude Fable 5.1 and Claude Opus 5.5 until the next engine adoption ([#10187](https://github.com/code-yeongyu/oh-my-openagent/issues/10187)).
+
 **A background task resumed onto a session that can no longer move says so, and one call restarts it.** After a host restart, a task whose child had stopped on an aborted or unanswered turn used to sit on `starting` forever. It now shows `resumed, waiting for input` with the reason in `task_output`, the task list and the RPC status, and `task_send` with `redispatch: true` relaunches it on a fresh child under the same task, while a cancel still works as before. A task resumed onto a live, working session is never flagged, and the flag clears as soon as the child moves again. ([senpi#3266](https://github.com/code-yeongyu/senpi/issues/3266), [#10151](https://github.com/code-yeongyu/oh-my-openagent/pull/10151))
 
 **A background task keeps the session awake until it really finishes.** The task engine's wake-source snapshot now lists each live child as an item the engine reads, and it updates when one child finishes while another starts, not only when the number of children changes. Before, that swap left a stale snapshot, so the todo backstop could warn that the agent stopped while it was still waiting on a child. (#10026)
