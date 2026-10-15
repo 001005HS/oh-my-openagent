@@ -493,5 +493,28 @@
       "windows": "Windows",
       "linux": "Linux"
     }
+  },
+  "support": {
+    "metadata": {
+      "title": "Get help with OmO",
+      "description": "Report a problem with OmO or ask the community for help."
+    },
+    "eyebrow": "Support",
+    "title": "Get help with OmO",
+    "lead": "Found a problem or have a question? Open an issue on GitHub, or ask in the community Discord.",
+    "leadWithReport": "Your report from the OmO app is below. Send it as a GitHub issue, or bring it to the community Discord.",
+    "report": {
+      "heading": "Your report",
+      "titleLabel": "Title",
+      "bodyLabel": "Details",
+      "copy": "Copy report",
+      "copied": "Copied"
+    },
+    "actions": {
+      "openIssue": "Open a GitHub issue",
+      "openIssueNote": "The issue opens on GitHub with your report filled in. Check it before you submit: GitHub issues are public. If your report has a diagnostics zip, attach it there.",
+      "discord": "Ask on Discord"
+    },
+    "privacy": "This page doesn't save your report, but it was sent to omo.dev in the link the app opened. It reaches GitHub only when you submit the issue yourself."
   }
 }

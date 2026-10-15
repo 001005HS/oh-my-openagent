@@ -493,5 +493,28 @@
       "windows": "Windows",
       "linux": "Linux"
     }
+  },
+  "support": {
+    "metadata": {
+      "title": "OmO 帮助",
+      "description": "报告 OmO 的问题，或向社区寻求帮助。"
+    },
+    "eyebrow": "支持",
+    "title": "OmO 帮助",
+    "lead": "发现问题或有疑问？在 GitHub 上提交 issue，或在社区 Discord 中提问。",
+    "leadWithReport": "你在 OmO 应用中写的报告如下。可以作为 GitHub issue 提交，或带到社区 Discord。",
+    "report": {
+      "heading": "你的报告",
+      "titleLabel": "标题",
+      "bodyLabel": "详细信息",
+      "copy": "复制报告",
+      "copied": "已复制"
+    },
+    "actions": {
+      "openIssue": "提交 GitHub issue",
+      "openIssueNote": "将打开已填好报告内容的 GitHub issue。GitHub issue 是公开的，提交前请先检查内容。如果有诊断 zip 文件，请在那里附上。",
+      "discord": "在 Discord 提问"
+    },
+    "privacy": "此页面不会保存你的报告，但报告已包含在应用打开的链接中发送到 omo.dev。只有在你自己提交 issue 时，报告才会发送到 GitHub。"
   }
 }

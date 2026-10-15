@@ -493,5 +493,28 @@
       "windows": "Windows",
       "linux": "Linux"
     }
+  },
+  "support": {
+    "metadata": {
+      "title": "OmO のサポート",
+      "description": "OmO の問題を報告するか、コミュニティに相談してください。"
+    },
+    "eyebrow": "サポート",
+    "title": "OmO のサポート",
+    "lead": "問題を見つけた、または質問がありますか？ GitHub で issue を作成するか、コミュニティの Discord で質問してください。",
+    "leadWithReport": "OmO アプリで作成したレポートが下にあります。GitHub の issue として送るか、コミュニティの Discord で共有してください。",
+    "report": {
+      "heading": "あなたのレポート",
+      "titleLabel": "タイトル",
+      "bodyLabel": "詳細",
+      "copy": "レポートをコピー",
+      "copied": "コピーしました"
+    },
+    "actions": {
+      "openIssue": "GitHub で issue を作成",
+      "openIssueNote": "レポートが入力された状態で GitHub の issue が開きます。GitHub の issue は公開されるので、送信前に内容を確認してください。診断用の zip がある場合はそこに添付してください。",
+      "discord": "Discord で質問"
+    },
+    "privacy": "このページはレポートを保存しませんが、アプリが開いたリンクに含まれて omo.dev に送られています。GitHub には、ご自身で issue を送信したときにだけ届きます。"
   }
 }
