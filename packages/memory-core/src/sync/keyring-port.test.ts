@@ -1,0 +1,56 @@
+import { describe, expect, test } from "bun:test"
+import { createCipheriv, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, createHmac, verify } from "node:crypto"
+import { createInMemoryDeviceKeyring } from "./keyring-port"
+
+// Independent RFC 9180 sender: base mode, DHKEM(X25519, HKDF-SHA256), AES-256-GCM.
+export function sealTo(recipient: string, plaintext: Uint8Array): Uint8Array {
+  const ephemeral = generateKeyPairSync("x25519")
+  const enc = Buffer.from(ephemeral.publicKey.export({ format: "jwk" }).x ?? "", "base64url")
+  const pkR = Buffer.from(recipient, "base64url")
+  const dh = diffieHellman({ privateKey: ephemeral.privateKey, publicKey: createPublicKey({ key: { kty: "OKP", crv: "X25519", x: recipient }, format: "jwk" }) })
+  const kem = Buffer.concat([Buffer.from("KEM"), Buffer.from([0, 32])])
+  const suite = Buffer.concat([Buffer.from("HPKE"), Buffer.from([0, 32, 0, 1, 0, 2])])
+  const extract = (suiteId: Buffer, label: string, value: Uint8Array, salt = Buffer.alloc(0)) =>
+    createHmac("sha256", salt).update(Buffer.concat([Buffer.from("HPKE-v1"), suiteId, Buffer.from(label), value])).digest()
+  const expand = (suiteId: Buffer, label: string, key: Buffer, info: Uint8Array, length: number) => {
+    const context = Buffer.concat([Buffer.from([0, length]), Buffer.from("HPKE-v1"), suiteId, Buffer.from(label), info])
+    // HKDF expand only: these outputs are <= one SHA-256 block.
+    return createHmac("sha256", key).update(context).update(Buffer.from([1])).digest().subarray(0, length)
+  }
+  const secret = expand(kem, "shared_secret", extract(kem, "eae_prk", dh), Buffer.concat([enc, pkR]), 32)
+  const context = Buffer.concat([Buffer.from([0]), extract(suite, "psk_id_hash", Buffer.alloc(0)), extract(suite, "info_hash", Buffer.alloc(0))])
+  const schedule = extract(suite, "secret", Buffer.alloc(0), secret)
+  const cipher = createCipheriv("aes-256-gcm", expand(suite, "key", schedule, context, 32), expand(suite, "base_nonce", schedule, context, 12))
+  return Buffer.concat([enc, cipher.update(plaintext), cipher.final(), cipher.getAuthTag()])
+}
+
+describe("DeviceKeyring", () => {
+  test("signatures verify with the advertised raw Ed25519 key", async () => {
+    const keyring = createInMemoryDeviceKeyring("fixture-device")
+    const bytes = new TextEncoder().encode("signed sync record")
+    const signature = await keyring.sign(bytes)
+    expect(keyring.principal()).toEqual({ kind: "device", id: "fixture-device" })
+    const publicKeys = keyring.publicKeys()
+    expect(Buffer.from(publicKeys.signing, "base64url")).toHaveLength(32)
+    expect(Buffer.from(publicKeys.sealing, "base64url")).toHaveLength(32)
+    expect(verify(null, bytes, createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: publicKeys.signing }, format: "jwk" }), signature)).toBe(true)
+    expect(JSON.stringify(keyring)).not.toContain("PRIVATE")
+  })
+
+  test("opens an independently constructed HPKE sealed box", async () => {
+    const keyring = createInMemoryDeviceKeyring("receiver")
+    const plaintext = new TextEncoder().encode("epoch key fixture")
+    expect(await keyring.unseal(sealTo(keyring.publicKeys().sealing, plaintext))).toEqual(plaintext)
+  })
+
+  test("rejects tampering, truncation and a different recipient", async () => {
+    const keyring = createInMemoryDeviceKeyring("receiver")
+    const box = sealTo(keyring.publicKeys().sealing, new Uint8Array(32))
+    const corrupt = Uint8Array.from(box)
+    corrupt[33] ^= 1
+    for (const invalid of [corrupt, box.subarray(0, 31), new Uint8Array(48)]) {
+      await expect(keyring.unseal(invalid)).rejects.toThrow()
+    }
+    await expect(createInMemoryDeviceKeyring("other").unseal(box)).rejects.toThrow()
+  })
+})
