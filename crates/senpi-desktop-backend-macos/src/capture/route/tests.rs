@@ -285,7 +285,9 @@ fn a_stalled_helper_start_does_not_hold_the_capture_lock() {
     let lock = dir.path().join("capture.lock");
     let (fifo, signalled) = started_signal(&dir);
     let helper = signalling_helper(&dir, &fifo, "signal()\ntime.sleep(30)");
-    let session = capture_on_session_thread(helper, lock.clone(), Duration::from_secs(1));
+    // The warm-up budget must outlast the fake helper's interpreter start on a loaded host
+    // (over 1 s at load ~180), or the helper is killed before it signals.
+    let session = capture_on_session_thread(helper, lock.clone(), Duration::from_secs(8));
     signalled.recv_timeout(Duration::from_secs(10)).expect("helper started");
     // When: another session captures while that helper is still starting
     let other = concurrent_capture(&lock);
