@@ -10,17 +10,21 @@ export type StoredRollup = {
   readonly sessionRole: string
   readonly nextSeq: number
   readonly window: SummaryWindow | null
+  readonly updatedAt: number
 }
 
 export type SummaryStore = {
   readonly read: (sessionHash: string) => StoredRollup | undefined
-  readonly write: (rollup: Omit<StoredRollup, "v" | "pid">) => void
+  readonly write: (rollup: Omit<StoredRollup, "v" | "pid" | "updatedAt"> & { readonly updatedAt?: number }) => void
   readonly remove: (sessionHash: string) => void
   /** Claims every rollup whose owning process is gone; each is returned once across racing processes. */
   readonly claimOrphans: () => readonly StoredRollup[]
 }
 
 const FILE_SUFFIX = ".json"
+export const ROLLUP_TTL_MS = 14 * 24 * 60 * 60_000
+const TEMP_FILE = /\.(\d+)\.tmp$/
+const CLAIM_FILE = /\.claimed-(\d+)$/
 const SAFE_NAME = /^[A-Za-z0-9:_-]{1,128}$/
 
 export function rollupDir(stateDir: string): string {
@@ -31,7 +35,9 @@ export function createSummaryStore(input: {
   readonly stateDir: string
   readonly pid?: number
   readonly isAlive?: (pid: number) => boolean
+  readonly now?: () => number
 }): SummaryStore {
+  const now = input.now ?? Date.now
   const dir = rollupDir(input.stateDir)
   const pid = input.pid ?? process.pid
   const isAlive = input.isAlive ?? processIsAlive
@@ -43,16 +49,26 @@ export function createSummaryStore(input: {
       mkdirSync(dir, { recursive: true, mode: 0o700 })
       const target = pathOf(rollup.sessionHash)
       const temp = `${target}.${pid}.tmp`
-      writeFileSync(temp, JSON.stringify({ v: 1, pid, ...rollup }), { mode: 0o600 })
+      writeFileSync(temp, JSON.stringify({ v: 1, pid, ...rollup, updatedAt: rollup.updatedAt ?? now() }), { mode: 0o600 })
       renameSync(temp, target)
     },
     remove: (sessionHash) => rmSync(pathOf(sessionHash), { force: true }),
     claimOrphans() {
       const claimed: StoredRollup[] = []
       for (const name of listNames(dir)) {
-        if (!name.endsWith(FILE_SUFFIX)) continue
         const path = join(dir, name)
+        const leftover = TEMP_FILE.exec(name) ?? CLAIM_FILE.exec(name)
+        if (leftover !== null) {
+          const owner = Number(leftover[1])
+          if (owner !== pid && !isAlive(owner)) rmSync(path, { force: true })
+          continue
+        }
+        if (!name.endsWith(FILE_SUFFIX)) continue
         const rollup = parseRollup(readText(path))
+        if (rollup !== undefined && now() - rollup.updatedAt > ROLLUP_TTL_MS) {
+          rmSync(path, { force: true })
+          continue
+        }
         if (rollup !== undefined && (rollup.pid === pid || isAlive(rollup.pid))) continue
         const claimPath = `${path}.claimed-${pid}`
         try {
@@ -105,7 +121,7 @@ function parseRollup(text: string | undefined): StoredRollup | undefined {
     if (typeof value !== "object" || value === null) return undefined
     const record = value as Record<string, unknown>
     if (record["v"] !== 1 || typeof record["pid"] !== "number" || typeof record["sessionHash"] !== "string") return undefined
-    if (typeof record["nextSeq"] !== "number" || typeof record["sessionRole"] !== "string") return undefined
+    if (typeof record["nextSeq"] !== "number" || typeof record["sessionRole"] !== "string" || typeof record["updatedAt"] !== "number") return undefined
     const window = record["window"]
     if (window !== null && (typeof window !== "object" || !Array.isArray((window as Record<string, unknown>)["models"]))) return undefined
     return value as StoredRollup

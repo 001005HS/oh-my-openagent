@@ -149,7 +149,7 @@ describe("session_summary across reload and crash", () => {
 
     const recovered = [...next.captured, ...racing.captured].filter(({ properties }) => properties.ended_by === "recovered")
     expect(recovered).toHaveLength(1)
-    expect(recovered[0]?.properties).toMatchObject({ $session_id: "dead", summary_seq: 0, turns: 2, total_tokens: 12, is_final: true })
+    expect(recovered[0]?.properties).toMatchObject({ $session_id: "dead", summary_seq: 0, turns: 2, total_tokens: 12, is_final: false })
   })
 
   test("#given a crashed session that is resumed #when it records again #then its seq continues after the recovered row", () => {
@@ -169,6 +169,59 @@ describe("session_summary across reload and crash", () => {
     next.summary.recordTurn("s2", turn())
     next.summary.finish("s2", "quit")
     expect(seqs(next.captured)).toEqual([[0, "shutdown", 1]])
+  })
+})
+
+describe("session_summary review findings", () => {
+  test("#given process C recovers a crashed session #when the user resumes it in process B #then seq continues and the recovered row is not final", () => {
+    const dir = stateDir()
+    const deadPid = 999_990
+    recorder({ dir, pid: deadPid }).summary.recordTurn("s1", turn({ turnIndex: 0 }))
+    const c = recorder({ dir, pid: 111_111, alive: false })
+    c.summary.recordTurn("other", turn())
+    const bCaptured: Captured[] = []
+    const b = createSessionSummaryRecorder({
+      captureEvent: (name, properties) => bCaptured.push({ name, properties }),
+      store: createSummaryStore({ stateDir: dir, pid: 222_222, isAlive: (pid) => pid !== deadPid }),
+      sampleRate: 0.05,
+    })
+    b.recordTurn("s1", turn({ turnIndex: 1 }))
+    b.finish("s1", "quit")
+
+    const recovered = c.captured.find(({ properties }) => properties.ended_by === "recovered")
+    expect(recovered?.properties).toMatchObject({ $session_id: "s1", summary_seq: 0, is_final: false })
+    expect(seqs(bCaptured)).toEqual([[1, "shutdown", 1]])
+  })
+
+  test("#given a checkpoint #when the window is sent #then the closed window was already removed from disk", () => {
+    const dir = stateDir()
+    const store = createSummaryStore({ stateDir: dir })
+    const order: string[] = []
+    const summary = createSessionSummaryRecorder({
+      captureEvent: () => order.push(`emit:${store.read("s1")?.window === null ? "persisted" : "stale"}`),
+      store,
+      sampleRate: 0,
+    })
+    for (let index = 0; index < CHECKPOINT_MAX_TURNS; index += 1) summary.recordTurn("s1", turn({ turnIndex: index }))
+    expect(order).toEqual(["emit:persisted"])
+  })
+
+  test("#given leftover temp and claim files of dead processes #when recovery runs #then they are deleted", () => {
+    const dir = stateDir()
+    recorder({ dir, pid: 999_991 }).summary.recordTurn("s1", turn())
+    writeFileSync(join(rollupDir(dir), "s9.json.999992.tmp"), "{}")
+    writeFileSync(join(rollupDir(dir), "s8.json.claimed-999993"), "{}")
+    recorder({ dir, alive: false }).summary.recordTurn("s2", turn())
+    expect(readdirSync(rollupDir(dir)).filter((name) => name.includes(".tmp") || name.includes(".claimed-"))).toEqual([])
+  })
+
+  test("#given an orphan with no window and nothing sent #when its session resumes #then seq starts at 0", () => {
+    const dir = stateDir()
+    createSummaryStore({ stateDir: dir, pid: 999_994 }).write({ sessionHash: "s1", sessionRole: "main", nextSeq: 0, window: null })
+    const resumed = recorder({ dir, alive: false })
+    resumed.summary.recordTurn("s1", turn())
+    resumed.summary.finish("s1", "quit")
+    expect(seqs(resumed.captured)).toEqual([[0, "shutdown", 1]])
   })
 })
 

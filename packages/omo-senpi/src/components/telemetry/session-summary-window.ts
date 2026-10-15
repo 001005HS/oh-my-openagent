@@ -104,7 +104,7 @@ export function summaryProperties(sessionHash: string, window: SummaryWindow, me
   return {
     $session_id: sessionHash,
     summary_seq: meta.seq,
-    is_final: meta.endedBy !== "checkpoint" && meta.endedBy !== "reload",
+    is_final: meta.endedBy === "shutdown",
     ended_by: meta.endedBy,
     session_role: meta.sessionRole,
     sample_rate: meta.sampleRate,

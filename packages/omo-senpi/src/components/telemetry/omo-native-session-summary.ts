@@ -50,7 +50,6 @@ export function createSessionSummaryRecorder(options: SessionSummaryOptions): Se
   const sampleRate = options.sampleRate ?? RAW_TURN_SAMPLE_RATE
   const sessionRole = options.sessionRole ?? "main"
   const live = new Map<string, Live>()
-  const resumedSeq = new Map<string, number>()
   let recovered = false
 
   const emit = (sessionHash: string, window: SummaryWindow, seq: number, endedBy: EndedBy, role: string): void => {
@@ -64,14 +63,18 @@ export function createSessionSummaryRecorder(options: SessionSummaryOptions): Se
   }
 
   // Rollups a crashed or killed process left behind are sent once, from the first live event, so the
-  // capture path is already installed and only one of several racing processes claims each file.
+  // capture path is already installed and only one of several racing processes claims each file. The
+  // claimer leaves a window-less placeholder carrying the next seq (and the orphan's age, so it expires),
+  // because the user may resume that session in any other process.
   const recoverOrphans = (): void => {
     if (recovered) return
     recovered = true
     for (const orphan of options.store.claimOrphans()) {
-      resumedSeq.set(orphan.sessionHash, orphan.nextSeq + 1)
-      if (orphan.window === null && orphan.nextSeq === 0) continue
-      emit(orphan.sessionHash, orphan.window ?? openWindow(now(), 0), orphan.nextSeq, "recovered", orphan.sessionRole)
+      const nextSeq = orphan.window === null ? orphan.nextSeq : orphan.nextSeq + 1
+      if (nextSeq > 0) {
+        writeSafely({ sessionHash: orphan.sessionHash, sessionRole: orphan.sessionRole, nextSeq, window: null, updatedAt: orphan.updatedAt })
+      }
+      if (orphan.window !== null) emit(orphan.sessionHash, orphan.window, orphan.nextSeq, "recovered", orphan.sessionRole)
     }
   }
 
@@ -79,16 +82,18 @@ export function createSessionSummaryRecorder(options: SessionSummaryOptions): Se
     const cached = live.get(sessionHash)
     if (cached !== undefined) return cached
     const stored = options.store.read(sessionHash)
-    const entry: Live = stored === undefined
-      ? { nextSeq: resumedSeq.get(sessionHash) ?? 0, window: null }
-      : { nextSeq: stored.nextSeq, window: stored.window }
+    const entry: Live = stored === undefined ? { nextSeq: 0, window: null } : { nextSeq: stored.nextSeq, window: stored.window }
     live.set(sessionHash, entry)
     return entry
   }
 
   const persist = (sessionHash: string, entry: Live): void => {
+    writeSafely({ sessionHash, sessionRole, nextSeq: entry.nextSeq, window: entry.window })
+  }
+
+  function writeSafely(rollup: Parameters<SummaryStore["write"]>[0]): void {
     try {
-      options.store.write({ sessionHash, sessionRole, nextSeq: entry.nextSeq, window: entry.window })
+      options.store.write(rollup)
     } catch (error) {
       options.diagnostics?.({
         event: "telemetry_activity_state_write_failed",
@@ -99,10 +104,16 @@ export function createSessionSummaryRecorder(options: SessionSummaryOptions): Se
     }
   }
 
+  // The closed window leaves disk BEFORE it is sent: a crash in between loses one window instead of
+  // sending it twice, so summed totals can only undercount, never double count.
   const flush = (sessionHash: string, entry: Live, endedBy: EndedBy): void => {
-    emit(sessionHash, entry.window ?? openWindow(now(), 0), entry.nextSeq, endedBy, sessionRole)
+    const window = entry.window ?? openWindow(now(), 0)
+    const seq = entry.nextSeq
     entry.nextSeq += 1
     entry.window = null
+    if (endedBy === "shutdown") options.store.remove(sessionHash)
+    else persist(sessionHash, entry)
+    emit(sessionHash, window, seq, endedBy, sessionRole)
   }
 
   return {
@@ -116,8 +127,9 @@ export function createSessionSummaryRecorder(options: SessionSummaryOptions): Se
       addTurn(entry.window, turn, at)
       if (entry.window.turns >= CHECKPOINT_MAX_TURNS || at - entry.window.startedAt >= CHECKPOINT_MAX_WINDOW_MS) {
         flush(sessionHash, entry, "checkpoint")
+      } else {
+        persist(sessionHash, entry)
       }
-      persist(sessionHash, entry)
     },
     finish(sessionHash, reason) {
       recoverOrphans()
@@ -125,11 +137,11 @@ export function createSessionSummaryRecorder(options: SessionSummaryOptions): Se
       live.delete(sessionHash)
       if (reason === "reload") {
         if (entry.window !== null) flush(sessionHash, entry, "reload")
-        if (entry.nextSeq > 0) persist(sessionHash, entry)
+        else if (entry.nextSeq > 0) persist(sessionHash, entry)
         return
       }
       if (entry.window !== null || entry.nextSeq > 0) flush(sessionHash, entry, "shutdown")
-      options.store.remove(sessionHash)
+      else options.store.remove(sessionHash)
     },
   }
 }
