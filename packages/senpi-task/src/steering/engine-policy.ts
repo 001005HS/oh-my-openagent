@@ -99,6 +99,7 @@ export function buildRevived(record: TaskRecord, timestamp: string): TaskRecord 
     provisional_exit: _provisionalExit,
     stop_reason: _stopReason,
     deadline: _deadline,
+    awaiting_input: _awaitingInput,
     ...rest
   } = record
   return {
