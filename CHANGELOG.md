@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**`omo.dev/support` exists, so the desktop app's Report a problem no longer lands on a 404.** The page shows the report the app passes, as text only, with a copy button. It opens a prefilled GitHub issue, kept under GitHub's URL limit, or the community Discord, in all four site languages. Nothing on the page is sent or stored. Thanks to 문광훈 for the report. ([#10179](https://github.com/code-yeongyu/oh-my-openagent/issues/10179))
+
 **A background task keeps the session awake until it really finishes.** The task engine's wake-source snapshot now lists each live child as an item the engine reads, and it updates when one child finishes while another starts, not only when the number of children changes. Before, that swap left a stale snapshot, so the todo backstop could warn that the agent stopped while it was still waiting on a child. (#10026)
 
 **A screenshot never captures a live virtual cursor that capture could not exclude.** When another session's cursor helper is still open but missing from what ScreenCaptureKit lists, the capture now fails instead of taking a frame that could show that cursor; a helper that has really closed is still skipped without an error. ([#10161](https://github.com/code-yeongyu/oh-my-openagent/pull/10161), follow-up to [#9889](https://github.com/code-yeongyu/oh-my-openagent/pull/9889))
