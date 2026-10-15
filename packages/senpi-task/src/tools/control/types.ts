@@ -40,6 +40,9 @@ export type SendResultDetails =
   | { readonly kind: "scope_denied"; readonly task_id: string; readonly owning_session_id: string; readonly reason: string }
   | { readonly kind: "not_found"; readonly reason: string; readonly known_tasks: readonly string[] }
   | { readonly kind: "invalid_arguments"; readonly reason: string }
+  | { readonly kind: "delivering"; readonly to: string; readonly reason: "host_slow" | "aborted" }
+  | { readonly kind: "aborted"; readonly to: string }
+  | { readonly kind: "send_failed"; readonly to: string; readonly reason: string }
   | { readonly kind: "team_message"; readonly team: TeamSendDetails }
   | { readonly kind: "shutdown_requested"; readonly team_run_id: string; readonly member: string }
   | { readonly kind: "shutdown_responded"; readonly team_run_id: string; readonly member: string; readonly approved: boolean }

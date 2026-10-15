@@ -155,6 +155,9 @@ export type StartResult =
       // absent for a queued start that has not launched yet (#9722).
       readonly effective_model?: ResolvedModelRecord
       readonly queue_position?: number
+      // The task host has not admitted the child yet; its start outcome arrives on the record (#10042).
+      // run_epoch and resolved_model are then the plan's: a start-time fallback may still move both.
+      readonly starting?: true
       readonly name_warning?: string
       // Where an isolated child is working. The merge outcome is NOT here: it does not exist yet.
       readonly isolation?: IsolationStartedDetails
@@ -301,6 +304,10 @@ export type TaskManager = {
   readonly concurrency?: TaskConcurrency
   findTaskByChildSession?(sessionId: string): TaskRecord | undefined
   start(spec: ManagerStartSpec): Promise<StartResult>
+  // Settles once the task's in-flight launch settles (a `starting` result keeps launching, #10042).
+  whenLaunched?(taskId: string): Promise<void>
+  /** Bounded wait for in-flight first launches at session shutdown; later admissions are discarded. */
+  settleLaunchesForShutdown?(boundMs: number): Promise<void>
   startOwned(spec: ManagerStartSpec, owner: DagTaskOwner): Promise<OwnedStartResult>
   findOwnedTask(owner: DagTaskOwnerKey): TaskRecord | undefined
   continueTask(taskIdOrName: string, prompt: string, deliverAs?: "steer" | "followUp"): Promise<ContinueResult>
